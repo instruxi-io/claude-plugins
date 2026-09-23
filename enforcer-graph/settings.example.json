@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__plugin_enforcer_enforcer__graph_next_work",
+      "mcp__plugin_enforcer_enforcer__graph_report",
+      "mcp__plugin_enforcer_enforcer__graph_heartbeat",
+      "mcp__plugin_enforcer_enforcer__graph_remember",
+      "mcp__plugin_enforcer_enforcer__graph_plan_status",
+      "mcp__enforcer-graph__graph_next_work",
+      "mcp__enforcer-graph__graph_report",
+      "mcp__enforcer-graph__graph_heartbeat",
+      "mcp__enforcer-graph__graph_remember",
+      "mcp__enforcer-graph__graph_plan_status"
+    ]
+  }
+}

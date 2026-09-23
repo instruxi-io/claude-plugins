@@ -1,0 +1,45 @@
+{
+  "_comment": "What `claude-loadout setup` installs. The marketplace catalog (.claude-plugin/marketplace.json) says where each plugin comes from; this says which ones a new developer gets by default, what each person must supply themselves, and the MCP servers no plugin can carry because they authenticate per developer. The wizard reads this from the marketplace clone Claude Code already makes, so it needs no extra credentials.",
+  "name": "instruxi",
+  "marketplace": "instruxi-io/claude-plugins",
+  "plugins": [
+    {
+      "id": "enforcer@instruxi",
+      "default": true,
+      "summary": "The enforcer MCP server and the shared Enforcer sign-in. Run /enforcer:login once after install"
+    },
+    {
+      "id": "enforcer-graph@instruxi",
+      "default": true,
+      "summary": "Work and write plans held in enforcer-graph. Uses the enforcer plugin's sign-in; no key"
+    },
+    {
+      "id": "jev-hooks@instruxi",
+      "default": false,
+      "needs": [
+        "TYPESAFE_API_KEY"
+      ],
+      "summary": "Risk gates, subagent model routing and verification, a stop self-check, loop detection. Opt in: it judges your commands and reports with TypeSafe's Jev"
+    },
+    {
+      "id": "enforcer-governor@instruxi",
+      "default": false,
+      "summary": "Allows or refuses an agent action before it runs, with a tamper-evident record. Uses the enforcer plugin's sign-in"
+    }
+  ],
+  "env": [
+    {
+      "key": "TYPESAFE_API_KEY",
+      "title": "TypeSafe Jev key",
+      "where": "console.typesafe.ai \u2014 your own key, never shared",
+      "sensitive": true
+    }
+  ],
+  "mcpServers": [],
+  "notes": [
+    "The `enforcer` MCP server comes with the enforcer plugin. Sign in once with /enforcer:login; signing in through /mcp instead covers the tools but not the governor.",
+    "enforcer and enforcer-governor are public. jev-hooks and enforcer-graph are private: installing them needs access to instruxi-io, because Claude Code clones them with your own git credentials.",
+    "The Enforcer API is documented by the MCP server itself: enforcer_api_search and enforcer_api_describe answer from the live spec, so there is no separate doc plugin to fall out of date.",
+    "No API keys for people: /enforcer:login is one OAuth sign-in for the enforcer MCP server, enforcer-governor and enforcer-graph's hooks. It grants the graph work loop and plan authoring; deletes and plan sharing stay with a person. Scoped keys (GRAPH_API_KEY / ENFORCER_API_KEY) are for CI and containers only."
+  ]
+}

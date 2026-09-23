@@ -1,0 +1,41 @@
+{
+  "name": "instruxi",
+  "description": "The Instruxi kit for Claude Code: Enforcer itself, the Enforcer governor and the enforcer-graph planner, plus Jev hooks for Instruxi staff.",
+  "owner": {
+    "name": "Instruxi",
+    "url": "https://instruxi.io"
+  },
+  "plugins": [
+    {
+      "name": "enforcer",
+      "description": "Connects Claude Code to your Enforcer workspace: the enforcer MCP server, one sign-in (/enforcer:login) that every Instruxi plugin shares, and a short skill on how Enforcer is organised.",
+      "category": "platform",
+      "source": "./enforcer"
+    },
+    {
+      "name": "enforcer-governor",
+      "description": "Decides whether an agent action is allowed before it runs, and keeps a tamper-evident record of every decision. Brings the enforcer MCP server.",
+      "category": "governance",
+      "source": {
+        "source": "github",
+        "repo": "instruxi-io/enforcer-governor",
+        "ref": "v2.6.1"
+      }
+    },
+    {
+      "name": "jev-hooks",
+      "description": "Instruxi staff only (private repo; installing needs instruxi-io access). Claude Code hooks backed by TypeSafe's Jev: a Bash and edit risk gate, subagent model routing, subagent verification, a stop self-check, loop detection and compaction triage.",
+      "category": "safety",
+      "source": {
+        "source": "github",
+        "repo": "instruxi-io/jev-hooks"
+      }
+    },
+    {
+      "name": "enforcer-graph",
+      "description": "Work a plan held in enforcer-graph: claim the next runnable node, keep its lease alive, and report against its acceptance criteria.",
+      "category": "planning",
+      "source": "./enforcer-graph"
+    }
+  ]
+}

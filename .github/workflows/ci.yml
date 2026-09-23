@@ -1,0 +1,47 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: enforcer plugin tests
+        working-directory: enforcer
+        run: npm test
+      - name: enforcer-graph plugin tests
+        working-directory: enforcer-graph
+        run: bash test/run.sh
+      - name: manifests are valid JSON
+        run: |
+          for f in .claude-plugin/marketplace.json kit.json enforcer/.claude-plugin/plugin.json enforcer/.mcp.json enforcer-graph/.claude-plugin/plugin.json enforcer-graph/hooks/hooks.json; do
+            node -e 'JSON.parse(require("fs").readFileSync(process.argv[1]))' "$f" && echo "$f ok"
+          done
+      # A local source that stops resolving breaks every new install while
+      # every existing one keeps working, so check the entries here.
+      - name: local marketplace entries resolve to real plugins
+        run: |
+          node -e '
+            const fs = require("fs"), path = require("path");
+            const m = JSON.parse(fs.readFileSync(".claude-plugin/marketplace.json", "utf8"));
+            for (const p of m.plugins) {
+              if (typeof p.source !== "string") continue;
+              const f = path.join(p.source, ".claude-plugin", "plugin.json");
+              if (!fs.existsSync(f)) { console.error(`FAIL ${p.name}: no ${f}`); process.exit(1); }
+              const own = JSON.parse(fs.readFileSync(f, "utf8"));
+              if (own.name !== p.name) { console.error(`FAIL ${p.name}: plugin.json says ${own.name}`); process.exit(1); }
+              console.log(`${p.name} -> ${p.source} ok`);
+            }
+            const kit = JSON.parse(fs.readFileSync("kit.json", "utf8"));
+            const listed = new Set(m.plugins.map(p => p.name + "@" + m.name));
+            for (const k of kit.plugins) if (!listed.has(k.id)) { console.error(`FAIL kit.json names ${k.id}, not in the marketplace`); process.exit(1); }
+            console.log("kit.json plugins all listed");
+          '
+      - name: the helper prints JSON and exits 0 when signed out
+        run: HOME=$(mktemp -d) node enforcer/bin/enforcer-headers.mjs | node -e 'const h=JSON.parse(require("fs").readFileSync(0,"utf8")); if (Object.keys(h).length) process.exit(1); console.log("{} ok")'
