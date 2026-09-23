@@ -17,6 +17,8 @@ jobs:
         run: npm test
       - name: enforcer-graph plugin tests
         working-directory: enforcer-graph
+        env:
+          GH_TOKEN: ${{ github.token }}   # one test resolves a public PR with `gh`
         run: bash test/run.sh
       - name: manifests are valid JSON
         run: |
