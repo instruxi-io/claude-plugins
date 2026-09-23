@@ -216,7 +216,9 @@ m=importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
 r=m.check_pr(sys.argv[1]); print(json.dumps(r) if r else '')" "$1"; }
 out=$(pr_json "https://github.com/instruxi-io/enforcer-graph/pull/999999")
 check "pr: a pull request that does not exist is recorded as NOT FOUND" 'echo "$out" | grep -q "NOT FOUND"'
-out=$(pr_json "https://github.com/instruxi-io/enforcer-graph/pull/65")
+# A PUBLIC repo's merged PR, so this resolves in the public catalog's CI too
+# (enforcer-graph is private: its PRs are readable only with an org login).
+out=$(pr_json "https://github.com/instruxi-io/enforcer-governor/pull/11")
 check "pr: a real pull request resolves to its state and title" 'echo "$out" | grep -q "merged" && echo "$out" | grep -q "state=MERGED"'
 out=$(pr_json "not a url")
 check "pr: a non-URL is not a claim to check" '[ -z "$out" ]'
