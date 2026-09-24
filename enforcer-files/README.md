@@ -8,7 +8,7 @@ Files in your Enforcer workspace, from Claude Code.
 - **Move the bytes** with two commands. The file goes between this machine and
   storage directly, never through the model or the MCP server:
   - `/enforcer-files:upload <path> [--name <file_name>] [--dir <directory>] [--overwrite]`
-  - `/enforcer-files:download <file_id|object_key> [--out <path>]`
+  - `/enforcer-files:download <file_id|path> [--out <path>]` (the path as you uploaded it, e.g. `docs/report.pdf`)
 
 The tenant's storage provider decides the flow: S3 uploads go straight to
 storage through a short-lived presigned URL and are then recorded; GCS and

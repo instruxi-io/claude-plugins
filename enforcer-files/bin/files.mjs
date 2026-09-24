@@ -2,7 +2,7 @@
 // Move file BYTES between this machine and an Enforcer workspace.
 //
 //   files.mjs upload <path> [--name <file_name>] [--dir <directory>] [--overwrite]
-//   files.mjs download <file_id|object_key> [--out <path>]
+//   files.mjs download <file_id|path> [--out <path>]
 //   files.mjs provider
 //
 // Finding, reading metadata and sharing go through the enforcer MCP server's
@@ -42,8 +42,14 @@ export function parseArgs(argv) {
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-/** A file is named by its id (a UUID) or by its object key; the API takes either. */
-export const fileRef = (ref) => (UUID.test(ref) ? { file_id: ref } : { object_key: ref });
+// The storage key enforcer-files returns is the FULL key:
+// <instance>/t/<tenant>/u/<account>/<path>. The API's object_key parameter is
+// the path under the caller's own root, and the service prepends that root
+// itself, so passing the full key back asks for <root>/<root>/<path> and 404s.
+// Verified live 2026-09-24. Accept either spelling.
+const OWN_ROOT = /^[^/]+\/t\/[^/]+\/u\/[0-9a-f-]{36}\//i;
+/** A file is named by its id (a UUID) or by its path; a full storage key is trimmed to the path. */
+export const fileRef = (ref) => (UUID.test(ref) ? { file_id: ref } : { object_key: ref.replace(OWN_ROOT, '') });
 
 async function call(fetchImpl, base, path, { method = 'GET', query, body, headers = {} } = {}) {
   const url = new URL(base + API + path);
@@ -84,7 +90,7 @@ export async function upload(path, opts = {}, { fetchImpl = fetch, base = baseUr
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ file_name: fileName, overwrite: !!opts.overwrite }),
     });
-    return { provider: prov, object_key: pre.data.object_key, bytes: size, file: done?.data };
+    return { provider: prov, path: fileName, object_key: pre.data.object_key, bytes: size, file: done?.data };
   }
 
   const form = new FormData();
@@ -93,7 +99,7 @@ export async function upload(path, opts = {}, { fetchImpl = fetch, base = baseUr
   if (opts.dir) form.set('directory', opts.dir);
   if (opts.overwrite) form.set('overwrite', 'true');
   const r = await call(fetchImpl, base, `/file/${prov}/upload`, { method: 'POST', body: form });
-  return { provider: prov, bytes: size, file: r?.data };
+  return { provider: prov, path: fileName, bytes: size, file: r?.data };
 }
 
 export async function download(ref, opts = {}, { fetchImpl = fetch, base = baseUrl() } = {}) {
@@ -120,13 +126,14 @@ async function main(argv) {
     out(`Storage: ${p.provider} (${p.mode === 'presigned' ? 'uploads go straight to storage by presigned URL' : 'uploads pass through enforcer-files'}).`);
   } else if (cmd === 'upload' && opts._[0]) {
     const r = await upload(opts._[0], opts);
-    out(`Uploaded ${r.bytes} bytes to ${r.provider}${r.object_key ? ` as ${r.object_key}` : ''}.`);
-    if (r.file?.file_id || r.file?.id) out(`file_id: ${r.file.file_id || r.file.id}`);
+    out(`Uploaded ${r.bytes} bytes to ${r.provider} as ${r.path}.`);
+    const id = r.file?.file_id || r.file?.id;
+    out(`Download it with: /enforcer-files:download ${id || r.path}`);
   } else if (cmd === 'download' && opts._[0]) {
     const r = await download(opts._[0], opts);
     out(`Downloaded ${r.bytes} bytes from ${r.provider} to ${r.path}.`);
   } else {
-    out('Usage: files.mjs upload <path> [--name <n>] [--dir <d>] [--overwrite] | download <file_id|object_key> [--out <path>] | provider');
+    out('Usage: files.mjs upload <path> [--name <n>] [--dir <d>] [--overwrite] | download <file_id|path> [--out <path>] | provider');
     process.exitCode = 2;
   }
 }

@@ -25,7 +25,7 @@ A tool call cannot carry a file, and a file's contents should not pass through
 the model. Use:
 
 - `/enforcer-files:upload <path> [--dir <directory>] [--overwrite]`
-- `/enforcer-files:download <file_id|object_key> [--out <path>]`
+- `/enforcer-files:download <file_id|path> [--out <path>]` (the path as you uploaded it, e.g. `docs/report.pdf`)
 
 They pick the provider's flow themselves (presigned URL for S3, multipart for
 GCS and Storj) and use the `/enforcer:login` sign-in.

@@ -36,7 +36,7 @@ const srv = createServer(async (req, res) => {
   if (u.pathname === `${P}/provider`) return json(200, { provider: state.provider, configured: true, upload_mode: state.mode });
   if (state.refuse) return json(403, { success: false, error: 'insufficient_scope', message: 'this operation requires enforcer:files-files.write' });
   if (u.pathname === `${P}/file/s3/presigned-upload-url`) {
-    const k = 'u1/' + u.searchParams.get('file_name');
+    const k = 'ix/t/abc/u/11111111-2222-3333-4444-555555555555/' + u.searchParams.get('file_name');
     return json(200, { success: true, data: { url: `${base}/bucket/${encodeURIComponent(k)}`, object_key: k, expires_in: 900 } });
   }
   if (u.pathname === `${P}/file/s3/presigned-upload-complete`) {
@@ -44,7 +44,8 @@ const srv = createServer(async (req, res) => {
     return json(200, { success: true, data: { file_id: '11111111-2222-3333-4444-555555555555', file_name: b.file_name } });
   }
   if (u.pathname === `${P}/file/s3/presigned-url`) {
-    const k = u.searchParams.get('object_key') || 'u1/by-id.txt';
+    // Like the real service: object_key is under the caller's root, which it prepends.
+    const k = 'ix/t/abc/u/11111111-2222-3333-4444-555555555555/' + (u.searchParams.get('object_key') || 'by-id.txt');
     return json(200, { success: true, data: { url: `${base}/bucket/${encodeURIComponent(k)}` } });
   }
   if (u.pathname === `${P}/file/gcs/upload` && req.method === 'POST') {
@@ -75,19 +76,26 @@ process.env.ENFORCER_API_KEY = 'env3_' + 'k'.repeat(43);
 await ok('presigned (S3): the bytes go straight to storage, then the upload is recorded', async () => {
   state.log = [];
   const r = await upload(src, { dir: 'docs' }, { base });
-  assert.equal(r.object_key, 'u1/docs/report.pdf');
-  assert.deepEqual([...state.stored['u1/docs/report.pdf']], [...readFileSync(src)], 'exact bytes, binary-safe');
+  assert.equal(r.path, 'docs/report.pdf');
+  assert.deepEqual([...state.stored['ix/t/abc/u/11111111-2222-3333-4444-555555555555/docs/report.pdf']], [...readFileSync(src)], 'exact bytes, binary-safe');
   const put = state.log.find((l) => l.m === 'PUT');
   assert.equal(put.key, undefined, 'no Enforcer credential is sent to the storage URL');
   assert.ok(state.log.some((l) => l.p.endsWith('/presigned-upload-complete')), 'recorded so it is listable');
   assert.equal(r.file.file_id, '11111111-2222-3333-4444-555555555555');
 });
 
-await ok('presigned (S3): download by object key writes the exact bytes', async () => {
+await ok('presigned (S3): download by the path it was uploaded as writes the exact bytes', async () => {
   const dest = join(home, 'out.pdf');
-  const r = await download('u1/docs/report.pdf', { out: dest }, { base });
+  const r = await download('docs/report.pdf', { out: dest }, { base });
   assert.deepEqual([...readFileSync(dest)], [...readFileSync(src)]);
   assert.equal(r.bytes, readFileSync(src).length);
+});
+
+await ok('a full storage key is trimmed to the path (the service prepends the root itself)', async () => {
+  const dest = join(home, 'out2.pdf');
+  await download('ix/t/abc/u/11111111-2222-3333-4444-555555555555/docs/report.pdf', { out: dest }, { base });
+  assert.deepEqual([...readFileSync(dest)], [...readFileSync(src)]);
+  assert.deepEqual(fileRef('ix/t/abc/u/11111111-2222-3333-4444-555555555555/a/b.txt'), { object_key: 'a/b.txt' });
 });
 
 await ok('every enforcer-files call names the client (Cloudflare refuses anonymous agents)', () => {
