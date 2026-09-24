@@ -20,9 +20,18 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}   # one test resolves a public PR with `gh`
         run: bash test/run.sh
+      - name: enforcer-files plugin tests
+        working-directory: enforcer-files
+        run: npm test
+      # Every Enforcer plugin reads and writes ~/.enforcer/credentials.json. The
+      # module that does it is copied, not shared (a plugin cannot import another
+      # at runtime), so the copies must not drift: a format change in one would
+      # sign the other out.
+      - name: the shared credential module is one module
+        run: cmp enforcer/src/credentials.mjs enforcer-files/src/credentials.mjs
       - name: manifests are valid JSON
         run: |
-          for f in .claude-plugin/marketplace.json kit.json enforcer/.claude-plugin/plugin.json enforcer/.mcp.json enforcer-graph/.claude-plugin/plugin.json enforcer-graph/hooks/hooks.json; do
+          for f in .claude-plugin/marketplace.json kit.json enforcer/.claude-plugin/plugin.json enforcer/.mcp.json enforcer-graph/.claude-plugin/plugin.json enforcer-graph/hooks/hooks.json enforcer-files/.claude-plugin/plugin.json; do
             node -e 'JSON.parse(require("fs").readFileSync(process.argv[1]))' "$f" && echo "$f ok"
           done
       # A local source that stops resolving breaks every new install while

@@ -14,6 +14,11 @@
       "summary": "Work and write plans held in enforcer-graph. Uses the enforcer plugin's sign-in; no key"
     },
     {
+      "id": "enforcer-files@instruxi",
+      "default": false,
+      "summary": "Find, read and share workspace files; /enforcer-files:upload and :download move the bytes. Uses the enforcer plugin's sign-in; no key"
+    },
+    {
       "id": "jev-hooks@instruxi",
       "default": false,
       "needs": [
