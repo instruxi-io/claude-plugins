@@ -1,0 +1,10 @@
+{
+  "name": "enforcer-files",
+  "displayName": "Enforcer Files",
+  "description": "Files in your Enforcer workspace from Claude Code: find, read and share them through the enforcer MCP server, and move the bytes with /enforcer-files:upload and /enforcer-files:download, on the enforcer plugin's sign-in.",
+  "version": "0.1.0",
+  "author": { "name": "Instruxi", "url": "https://instruxi.io" },
+  "homepage": "https://instruxi.io",
+  "repository": "https://github.com/instruxi-io/claude-plugins",
+  "keywords": ["enforcer", "files", "storage", "upload"]
+}

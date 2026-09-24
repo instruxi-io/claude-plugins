@@ -1,6 +1,6 @@
 {
   "name": "instruxi",
-  "description": "The Instruxi kit for Claude Code: Enforcer itself, the Enforcer governor and the enforcer-graph planner, plus Jev hooks for Instruxi staff.",
+  "description": "The Instruxi kit for Claude Code: Enforcer itself, its files, the Enforcer governor and the enforcer-graph planner, plus Jev hooks for Instruxi staff.",
   "owner": {
     "name": "Instruxi",
     "url": "https://instruxi.io"
@@ -36,6 +36,12 @@
       "description": "Work a plan held in enforcer-graph: claim the next runnable node, keep its lease alive, and report against its acceptance criteria.",
       "category": "planning",
       "source": "./enforcer-graph"
+    },
+    {
+      "name": "enforcer-files",
+      "description": "Files in your Enforcer workspace: find, read and share them through the enforcer MCP server, and move the bytes with /enforcer-files:upload and /enforcer-files:download. Uses the enforcer plugin's sign-in.",
+      "category": "platform",
+      "source": "./enforcer-files"
     }
   ]
 }
