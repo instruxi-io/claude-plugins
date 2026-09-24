@@ -285,6 +285,29 @@ OUTPUT_CLIP = 4000         # per command record, stdout+stderr together
 EXCERPT_CLIP = 600         # per file record
 
 
+def clip_output(s, n=OUTPUT_CLIP, head_share=0.3):
+    """Clip command output to n characters keeping BOTH ends.
+
+    A test runner, a build and a linter all print their verdict LAST: `ok`,
+    `FAIL`, `Tests 2879 passed`, `exit status 1`. Keeping only the first n
+    characters - what this did until 2026-09-24 - handed the judge the start of
+    a long log and never the line saying whether it passed. The head is kept
+    too, because a compile error or a panic surfaces there. The marker says how
+    much went missing, so the judge knows the middle exists.
+    """
+    if len(s) <= n:
+        return s
+    head = int(n * head_share)
+    marker = ""
+    for _ in range(3):  # the count's own digits change the marker's length
+        tail = n - head - len(marker)
+        marker = f"\n...[{len(s) - head - tail} characters elided]...\n"
+    tail = n - head - len(marker)
+    if tail <= 0:
+        return s[:n]
+    return s[:head] + marker + s[-tail:]
+
+
 def evidence_dir():
     d = os.environ.get("CLAUDE_PLUGIN_DATA") or os.path.expanduser("~/.claude/enforcer-graph")
     d = os.path.join(d, "evidence")

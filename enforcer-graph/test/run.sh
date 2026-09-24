@@ -130,6 +130,20 @@ check "capture: output is clipped, never unbounded" 'python3 -c "
 import json,sys
 r=[json.loads(l) for l in open(sys.argv[1])][-1]
 sys.exit(0 if len(r[\"output\"])==4000 else 1)" "$evfile"'
+check "capture: a clipped output keeps its END, where the verdict is" 'python3 -c "
+import json,sys
+o=[json.loads(l) for l in open(sys.argv[1])][-1][\"output\"]
+sys.exit(0 if o.endswith(\"and a tail on stderr\") and o.startswith(\"xxx\") and \"characters elided]\" in o else 1)" "$evfile"'
+gotest=$(python3 -c '
+import json,sys
+lines=["=== RUN   TestCase%d\n--- PASS: TestCase%d (0.01s)" % (i,i) for i in range(400)]
+out="\n".join(lines)+"\nPASS\nok  \tenforcer-graph/internal/stream\t6.812s"
+print(json.dumps({"session_id":sys.argv[1],"tool_name":"Bash","tool_input":{"command":"go test -v ./internal/stream/"},"tool_response":{"stdout":out,"stderr":""}}))' "$SID")
+cap "$gotest"
+check "capture: a long go test -v keeps its ok line" 'python3 -c "
+import json,sys
+o=[json.loads(l) for l in open(sys.argv[1])][-1][\"output\"]
+sys.exit(0 if len(o)==4000 and o.rstrip().endswith(\"6.812s\") and \"=== RUN   TestCase0\" in o else 1)" "$evfile"'
 
 # --- selection at report time
 out=$(hook attach_evidence.py "{\"session_id\":\"$SID\",\"tool_name\":\"mcp__enforcer-graph__graph_report\",\"tool_input\":{\"node_id\":\"n1\",\"run_id\":\"r1\",\"status\":\"succeeded\",\"report\":\"1. done\"}}")
