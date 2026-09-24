@@ -63,7 +63,7 @@ def bash_record(tool_input, resp):
         else:
             out = resp
     return {"kind": "command", "cmd": cmd[:lib.OUTPUT_CLIP], "exit": exit_code,
-            "output": out[:lib.OUTPUT_CLIP]}
+            "output": lib.clip_output(out)}
 
 
 def file_record(name, tool_input):
