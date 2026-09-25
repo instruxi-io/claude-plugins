@@ -15,7 +15,7 @@ plugin to drift out of date.
 | `enforcer-files` | opt-in | Files in your workspace: find, read and share them through the MCP server; `/enforcer-files:upload` and `:download` move the bytes, never through the model. | this repo, `enforcer-files/` |
 | `enforcer-graph` | **on** | Work a plan held in enforcer-graph: claim a node, keep its lease, report against its criteria. | this repo, `enforcer-graph/` |
 | `jev-hooks` | opt-in, **Instruxi staff** | Jev-backed hooks: Bash and edit risk gates, subagent model routing, subagent verification, a stop self-check, loop detection, compaction triage. | `instruxi-io/jev-hooks`, default branch |
-| `enforcer-governor` | opt-in | Decides whether an agent action may run and keeps a tamper-evident record. Uses the `enforcer` sign-in. | `instruxi-io/enforcer-governor`, tag `v2.6.2` |
+| `enforcer-governor` | opt-in | Decides whether an agent action may run and keeps a tamper-evident record. Uses the `enforcer` sign-in. | `instruxi-io/enforcer-governor`, tag `v2.7.0` |
 
 ## Before you start
 
