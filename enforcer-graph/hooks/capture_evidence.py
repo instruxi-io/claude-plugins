@@ -62,8 +62,14 @@ def bash_record(tool_input, resp):
             exit_code, out = 1, resp
         else:
             out = resp
-    return {"kind": "command", "cmd": cmd[:lib.OUTPUT_CLIP], "exit": exit_code,
-            "output": lib.clip_output(out)}
+    rec = {"kind": "command", "cmd": cmd[:lib.OUTPUT_CLIP], "exit": exit_code,
+           "output": lib.clip_output(out)}
+    # The whole output rides beside the clip ONLY when the clip lost something,
+    # so the data dir does not double for the common short command.
+    # attach_evidence.py uploads it to enforcer-files and never sends it on.
+    if len(out) > lib.OUTPUT_CLIP:
+        rec["raw"] = lib.clip_output(out, lib.RAW_KEEP)
+    return rec
 
 
 def file_record(name, tool_input):

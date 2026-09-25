@@ -120,6 +120,21 @@ def main():
     checked = check_pr(pr) if isinstance(pr, str) and pr.strip() else None
     if checked:
         evidence = (evidence + [checked])[:lib.MAX_EVIDENCE] if hasattr(lib, "MAX_EVIDENCE") else evidence + [checked]
+    # A command whose output was longer than the clip: its whole output goes
+    # to the USER's enforcer-files under the user's credential, and the item
+    # carries the id. Unset files_base_url, an upload failure, a timeout: the
+    # item stays exactly as it was (clipped, no file) and the report goes on.
+    # The raw output never reaches the report either way.
+    try:
+        cfg = lib.find_config(inp.get("cwd"))
+    except Exception:
+        cfg = None
+    try:
+        evidence = lib.attach_files(evidence, cfg)
+    except Exception:
+        for it in evidence:
+            if isinstance(it, dict):
+                it.pop("raw", None)
     out = {"hookEventName": "PreToolUse"}
     if MODE == "context":
         out["additionalContext"] = HANDOFF.format(js=json.dumps(evidence, indent=None))
