@@ -14,7 +14,7 @@ HTTP_TIMEOUT = float(os.environ.get("GRAPH_HOOK_TIMEOUT", "1.5"))
 # (a banned client signature) before the request reaches the API. Because every
 # hook fails open, that looked exactly like "no graph configured": verified
 # 2026-09-23, the same call was 403 with the default agent and 200 with this one.
-USER_AGENT = "enforcer-graph-plugin/0.6.0"
+USER_AGENT = "enforcer-graph-plugin/0.7.0"
 
 
 def read_stdin():
