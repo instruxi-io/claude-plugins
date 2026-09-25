@@ -29,6 +29,14 @@ jobs:
       # sign the other out.
       - name: the shared credential module is one module
         run: cmp enforcer/src/credentials.mjs enforcer-files/src/credentials.mjs
+      # One credential file, four implementations (enforcer, enforcer-files,
+      # enforcer-governor at the tag this catalog pins, and the graph hooks'
+      # Python): each must read what the others write, refreshes included.
+      - name: every plugin reads the credential file the others write
+        run: |
+          ref=$(node -e 'const m=require("./.claude-plugin/marketplace.json");console.log(m.plugins.find(p=>p.name==="enforcer-governor").source.ref)')
+          git clone -q --depth 1 --branch "$ref" https://github.com/instruxi-io/enforcer-governor.git /tmp/enforcer-governor
+          GOVERNOR_DIR=/tmp/enforcer-governor node test/credential-format.test.mjs
       - name: manifests are valid JSON
         run: |
           for f in .claude-plugin/marketplace.json kit.json enforcer/.claude-plugin/plugin.json enforcer/.mcp.json enforcer-graph/.claude-plugin/plugin.json enforcer-graph/hooks/hooks.json enforcer-files/.claude-plugin/plugin.json; do
