@@ -19,7 +19,7 @@
       "source": {
         "source": "github",
         "repo": "instruxi-io/enforcer-governor",
-        "ref": "v2.6.1"
+        "ref": "v2.6.2"
       }
     },
     {
