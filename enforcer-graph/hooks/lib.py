@@ -5,7 +5,7 @@ no output. A coordination service must never be the reason a session stalls.
 Nothing here calls Jev or any model; hooks are plain HTTP to enforcer-graph.
 """
 import hashlib
-import json, os, sys
+import json, os, re, sys
 
 HTTP_TIMEOUT = float(os.environ.get("GRAPH_HOOK_TIMEOUT", "1.5"))
 
@@ -306,6 +306,120 @@ def clip_output(s, n=OUTPUT_CLIP, head_share=0.3):
     if tail <= 0:
         return s[:n]
     return s[:head] + marker + s[-tail:]
+
+
+# --- full outputs in enforcer-files ---------------------------------------
+#
+# The clip above keeps the verdict line and loses the middle, and the person
+# reading a rejected verdict sometimes needs the middle. The hook has the bytes
+# and the USER's credential at report time; the graph server has neither and
+# must never become a file store. So a command output longer than the clip is
+# uploaded to the user's own enforcer-files storage, under the user's own
+# credential, and the evidence item carries its id (`file`) and size
+# (`file_bytes`). The server judges the clip exactly as before and tells the
+# judge the whole is stored; it never downloads it.
+#
+# Configured by `files_base_url` in .claude/graph.json (or GRAPH_FILES_BASE_URL),
+# the enforcer-files base INCLUDING its /api/v1/files prefix. Unset disables
+# uploads: no network call at all. Everything here FAILS OPEN — an upload that
+# fails leaves the item exactly as it was (clipped, no file) and the report goes.
+
+RAW_KEEP = 5 * 1024 * 1024   # the most of one output kept in the capture file
+UPLOAD_BUDGET_S = 10.0       # every upload of one report together, not each
+_provider_cache = {}         # base url -> provider, read once per process
+
+
+def files_base_url(cfg):
+    base = os.environ.get("GRAPH_FILES_BASE_URL") or (cfg or {}).get("files_base_url") or ""
+    return str(base).strip().rstrip("/")
+
+
+def _files_request(url, auth, timeout, data=None, content_type=None):
+    import urllib.request
+    headers = {**auth, "User-Agent": USER_AGENT, "Accept": "application/json"}
+    if content_type:
+        headers["Content-Type"] = content_type
+    req = urllib.request.Request(url, data=data, method="POST" if data is not None else "GET", headers=headers)
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return json.loads(r.read() or b"null")
+
+
+def _files_provider(base, auth, timeout):
+    """GET /storage/provider: which backend serves THIS user's tenant. Read,
+    never assumed (enforcer-graph GRAPH.md §6): the upload path is
+    /storage/file/{provider}/upload and a tenant on storj or gcs 404s on a
+    hardcoded /s3/. A failed read is not cached, so the next report retries."""
+    if base in _provider_cache:
+        return _provider_cache[base]
+    d = _files_request(base + "/storage/provider", auth, timeout)
+    prov = d.get("provider") if isinstance(d, dict) and d.get("configured") else None
+    if not isinstance(prov, str) or not re.fullmatch(r"[a-z0-9_-]{1,32}", prov):
+        return None
+    _provider_cache[base] = prov
+    return prov
+
+
+UUID_RE = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
+
+
+def upload_full_output(text, cfg, timeout=UPLOAD_BUDGET_S):
+    """Store `text` in the user's enforcer-files and return its file_id, or
+    None. Multipart POST to /storage/file/{provider}/upload — the proxy flow
+    every provider serves, as enforcer-graph's exports use it. Never raises."""
+    try:
+        base = files_base_url(cfg)
+        if not base or timeout <= 0:
+            return None
+        auth = auth_headers(cfg)
+        if not auth:
+            return None
+        prov = _files_provider(base, auth, timeout)
+        if not prov:
+            return None
+        body = text.encode("utf-8", "replace")
+        # A name of its own per upload: enforcer-files answers a same-path
+        # upload 409 unless told to overwrite, and a log must never replace one.
+        import datetime, uuid
+        name = "graph-evidence/%s-%s.log" % (
+            datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ"), uuid.uuid4().hex[:12])
+        b = ("enforcer-graph-" + uuid.uuid4().hex).encode()
+        payload = b"".join([
+            b"--", b, b"\r\n",
+            b'Content-Disposition: form-data; name="file"; filename="', name.split("/")[-1].encode(), b'"\r\n',
+            b"Content-Type: text/plain; charset=utf-8\r\n\r\n", body, b"\r\n",
+            b"--", b, b"\r\n",
+            b'Content-Disposition: form-data; name="file_name"\r\n\r\n', name.encode(), b"\r\n",
+            b"--", b, b"--\r\n",
+        ])
+        d = _files_request("%s/storage/file/%s/upload" % (base, prov), auth, timeout,
+                           data=payload, content_type="multipart/form-data; boundary=" + b.decode())
+        fid = ((d or {}).get("data") or {}).get("file_id") if isinstance(d, dict) else None
+        if isinstance(fid, str) and UUID_RE.fullmatch(fid.strip()):
+            return fid.strip().lower()
+    except Exception:
+        pass
+    return None
+
+
+def attach_files(items, cfg):
+    """For every item that carries its `raw` output (captured only when the
+    output exceeded the clip), upload it and set `file` / `file_bytes`. `raw`
+    is ALWAYS removed: it never reaches the report. Bounded by UPLOAD_BUDGET_S
+    across every item; one that does not fit is left as it is today."""
+    import time
+    deadline = time.monotonic() + UPLOAD_BUDGET_S
+    enabled = bool(files_base_url(cfg)) and cfg is not None
+    for it in items:
+        if not isinstance(it, dict) or "raw" not in it:
+            continue
+        raw = it.pop("raw")
+        if not enabled or not isinstance(raw, str) or len(raw) <= OUTPUT_CLIP:
+            continue
+        fid = upload_full_output(raw, cfg, timeout=deadline - time.monotonic())
+        if fid:
+            it["file"] = fid
+            it["file_bytes"] = len(raw.encode("utf-8", "replace"))
+    return items
 
 
 def evidence_dir():

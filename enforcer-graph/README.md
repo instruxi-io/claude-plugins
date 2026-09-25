@@ -56,6 +56,22 @@ variable if you use one. Environment overrides: `GRAPH_ID`, `GRAPH_BASE_URL`,
 `GRAPH_API_KEY`. A key wins over the sign-in when both are present. With no
 graph id, or no credential at all, every hook exits silently.
 
+**Full command output beyond the clip** (optional). Evidence clips each
+command's output to 4000 characters, keeping both ends. Set `files_base_url`
+(env `GRAPH_FILES_BASE_URL`) to your enforcer-files base, including its
+`/api/v1/files` prefix, for example `https://api.instruxi.dev/api/v1/files`.
+The attach hook then uploads any longer output to **your** enforcer-files
+storage under **your** credential, using the provider that
+`GET /storage/provider` reports, and the evidence item carries `file` (the
+file id) and `file_bytes`. The graph judges the clip as before and tells the
+judge that the whole output is stored. It never downloads the file while it
+judges. The uploads are ordinary files in your storage, named
+`graph-evidence/<timestamp>-<id>.log`, and follow that service's retention
+and visibility. If the setting is unset, no upload is attempted. If an upload
+fails or runs past the hook's 10-second budget, the item stays as it was
+(clipped, no file) and the report still goes through. The whole output is
+kept in the capture file only when it is longer than the clip.
+
 **Allow-list the five tools** or the loop is not autonomous: every graph write
 tool carries `requiresUserInteraction`, so Claude Code asks before each
 `graph_next_work` / `graph_report` / `graph_heartbeat` / `graph_remember`

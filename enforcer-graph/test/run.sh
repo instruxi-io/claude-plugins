@@ -354,5 +354,14 @@ for s in ("plugin_enforcer_enforcer","enforcer","enforcer-graph"):
 assert not re.fullmatch(pre,"mcp__other__graph_report") and not re.fullmatch(post,"mcp__enforcer__enforcer_whoami")
 PY'
 check "heartbeat: skips graph tools under the plugin server name too" 'python3 -c "import sys;sys.path.insert(0,\"hooks\");import lib;assert lib.is_graph_tool(\"mcp__plugin_enforcer_enforcer__graph_report\") and not lib.is_graph_tool(\"Bash\")"'
+check "attach: the attach hook's timeout covers the upload budget and the PR check" 'python3 -c "
+import json
+d=json.load(open(\"hooks/hooks.json\"))[\"hooks\"][\"PreToolUse\"]
+t=[h[\"timeout\"] for m in d for h in m[\"hooks\"] if \"attach_evidence\" in h[\"command\"]][0]
+assert t >= 25, t"'
+
+# --- full outputs beyond the clip go to the user's enforcer-files (adapter-files)
+check "attach: full outputs upload to enforcer-files, and every failure leaves the item as it was (unittest)" \
+  'env -u GRAPH_API_KEY -u CLAUDE_PLUGIN_DATA python3 -m unittest discover -s test -p "test_*.py" 2>&1 | tail -3 | grep -q "^OK"'
 
 echo; echo "$pass passed, $fail failed"; [ "$fail" -eq 0 ]
