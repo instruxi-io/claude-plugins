@@ -1,8 +1,8 @@
 ---
 description: Sign this machine in to Enforcer, once, for the Enforcer MCP server and every Instruxi plugin
-argument-hint: [browser | api-key <key> | status | logout]
+argument-hint: [<WORKSPACE-CODE> | api-key <key> | status | logout]
 allowed-tools: Bash(node:*)
 ---
-Sign in to Enforcer and print the result verbatim. With no argument this opens a browser sign-in and waits for it to finish.
+Sign in to Enforcer and print the result verbatim. With no argument this opens a browser sign-in and waits for it to finish. With a workspace code (e.g. `ACME-1234-ABCD`, or `ENFORCER_TENANT_CODE` in settings) the sign-in page skips asking for it.
 
 !`node "${CLAUDE_PLUGIN_ROOT}/bin/login.mjs" $ARGUMENTS`

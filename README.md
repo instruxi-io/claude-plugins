@@ -54,6 +54,10 @@ Then, in Claude Code, sign in once:
 /enforcer:login
 ```
 
+If your admin gave you a workspace code, add it (`/enforcer:login ACME-1234-ABCD`)
+and the sign-in page goes straight to your workspace's email step. A team can
+set `ENFORCER_TENANT_CODE` in its shared settings to do the same for everyone.
+
 That one browser sign-in is what the `enforcer` MCP server and
 `enforcer-governor` both use. Don't sign in through `/mcp` instead: that covers
 the MCP tools but leaves the governor signed out.
