@@ -1,7 +1,7 @@
 {
   "name": "enforcer-graph",
   "description": "Work a plan held in enforcer-graph from Claude Code: a skill that teaches the claim / work / heartbeat / report loop, and hooks that keep the lease alive on tool activity, save progress before compaction, capture the evidence a report is judged on from your own tool results, and refuse to stop with a run left open. No Jev key, no model calls in hooks.",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "author": {
     "name": "instruxi"
   }
