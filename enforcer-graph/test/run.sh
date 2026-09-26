@@ -152,6 +152,15 @@ import json,sys
 o=json.load(sys.stdin)[\"hookSpecificOutput\"]
 u=o[\"updatedInput\"]
 sys.exit(0 if o[\"hookEventName\"]==\"PreToolUse\" and u[\"report\"]==\"1. done\" and u[\"node_id\"]==\"n1\" and isinstance(u[\"evidence\"],list) and u[\"evidence\"] else 1)"'
+# updatedInput REPLACES the whole argument object, so a key this hook does not
+# echo is lost on the way to the server. `outputs` (declared output values,
+# typed-outputs-and-links) is the newest argument graph_report takes: it must
+# arrive exactly as the model wrote it, beside the attached evidence.
+out=$(hook attach_evidence.py "{\"session_id\":\"$SID\",\"tool_name\":\"mcp__enforcer-graph__graph_report\",\"tool_input\":{\"node_id\":\"n1\",\"run_id\":\"r1\",\"status\":\"succeeded\",\"report\":\"1. done\",\"outputs\":{\"variance\":0.004,\"chosen\":\"ENG-7\"}}}")
+check "attach: an outputs argument survives the rewrite unchanged" 'echo "$out" | python3 -c "
+import json,sys
+u=json.load(sys.stdin)[\"hookSpecificOutput\"][\"updatedInput\"]
+sys.exit(0 if u.get(\"outputs\")=={\"variance\":0.004,\"chosen\":\"ENG-7\"} and u[\"evidence\"] and u[\"report\"]==\"1. done\" else 1)"'
 check "attach: evidence the model wrote itself is replaced, not merged" 'echo "$(hook attach_evidence.py "{\"session_id\":\"$SID\",\"tool_name\":\"mcp__enforcer-graph__graph_report\",\"tool_input\":{\"report\":\"x\",\"evidence\":[{\"kind\":\"note\",\"text\":\"trust me\"}]}}")" | python3 -c "
 import json,sys
 u=json.load(sys.stdin)[\"hookSpecificOutput\"][\"updatedInput\"]
