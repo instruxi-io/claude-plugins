@@ -22,7 +22,13 @@ never decide what to do next: the graph does, from the edges.
      time-gated. When the card has `wait_until`, nothing can start before that
      instant: say so and stop. Do not poll in a tight loop.
    - `state: complete` — nothing runnable, running, verifying or time-gated. The
-     plan is done, or failed nodes block the rest; the card says which.
+     plan is done, or failed nodes block the rest; the card says which. An
+     **open** graph never completes: it answers `idle` instead, which means
+     "nothing to do right now", not "finished".
+   - **Assignment:** when the project config sets `graph.assignment` (`me` or
+     `mine`), pass it as `for`. `assigned_elsewhere` means only other people's
+     nodes are runnable; assignment is advisory, so take one only if a human
+     says to.
 2. **Work the node** in its own worktree or branch named after `node.key`.
 3. **`graph_heartbeat`** — you hold a lease, not the node. The plugin's hook
    heartbeats every ten tool calls for you; call it yourself before any long
@@ -34,6 +40,8 @@ never decide what to do next: the graph does, from the edges.
      A report from this run will be refused. `graph_remember` any progress worth
      keeping, then `graph_next_work`.
    - `finished` — the run already ended. Nothing to report; `graph_next_work`.
+     A graph **reset** also ends every open run this way: stop, re-read the
+     plan (`graph_plan_status`), and never report the old run.
 4. **`graph_report`** — `status: succeeded | failed | cancelled` plus a `report`.
    The response carries `verification` (when judgment is enabled on the tenant),
    an `outputs` block when the node declares outputs, a `checks` block when its
@@ -59,7 +67,9 @@ verifying, waiting (with `not_before`), failed, unverified runs. Call it when as
   rev-parse`, re-read a log or re-compute a number to get a value the card
   already handed you: the point is that the value is the one the upstream run
   was judged on. An input marked `ABSENT` is not an error — proceed without it,
-  or report why you cannot.
+  or report why you cannot. **Inputs never cross epochs:** after a reset they
+  resolve from the current epoch's runs only, unless the plan writes the input
+  as `<key>.<output>@previous`. Don't go looking for an earlier epoch's value.
 - **Declare `outputs` only for computed values.** Anything verbatim in your
   evidence — a PR URL, a commit sha, a pushed image — is extracted from the
   evidence without you. Pass `outputs: {name: value}` on `graph_report` only
@@ -70,6 +80,11 @@ verifying, waiting (with `not_before`), failed, unverified runs. Call it when as
   (a worker re-judge, or a person approving it in `graph_review`). Do not
   heartbeat it, re-report it or call `graph_plan_status` in a loop waiting for
   it; take other work, or stop.
+
+- **A reset is a human's call.** `graph_reset` starts a new epoch and can
+  cancel running work. Never reset a graph to get unstuck, to retry, or because
+  a loop looks due (the server's loop worker does that). Only reset when a
+  person asks, through the tool's own confirmation.
 
 ## Two conventions that silently invert the plan if reversed
 
