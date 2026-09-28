@@ -10,7 +10,7 @@ import { join } from 'node:path';
 const home = mkdtempSync(join(tmpdir(), 'gov-login-'));
 process.env.HOME = home; process.env.ENFORCER_HOME = join(home, '.enforcer'); process.env.GOVERNOR_HOME = join(home, '.g');
 
-const { browserSignIn, pkce, resourcesFor, requestedScope, parseLoginArgs, isWorkspaceCode } = await import('../bin/login.mjs');
+const { browserSignIn, pkce, resourcesFor, requestedScope, chooseScope, extractScope, parseLoginArgs, isWorkspaceCode } = await import('../bin/login.mjs');
 let pass = 0;
 const ok = async (label, fn) => { await fn(); pass++; console.log('  ok  ' + label); };
 const b64url = (b) => b.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -51,6 +51,19 @@ await ok('asks for every scope the server advertises, and read-only when it adve
   assert.equal(requestedScope({ scopes_supported: ['enforcer:read', 'enforcer:graph-runs.write'] }), 'enforcer:read enforcer:graph-runs.write');
   assert.equal(requestedScope({}), 'enforcer:read');
   assert.equal(requestedScope({ scopes_supported: [] }), 'enforcer:read');
+});
+
+await ok('--scope asks for only the named scopes, each of which must be offered', () => {
+  // --scope names a subset; each must be offered, or nothing opens.
+  const meta = { scopes_supported: ['enforcer:read', 'policy:self', 'enforcer:graph-runs.write'] };
+  assert.equal(chooseScope(meta, undefined), 'enforcer:read policy:self enforcer:graph-runs.write', 'no --scope asks for everything offered');
+  assert.equal(chooseScope(meta, 'enforcer:read, enforcer:read policy:self'), 'enforcer:read policy:self', 'commas and repeats collapse');
+  assert.throws(() => chooseScope(meta, 'enforcer:read enforcer:admin'), /not offered by this Enforcer: enforcer:admin/);
+  assert.deepEqual(extractScope(['ACME-1234-ABCD', '--scope', 'enforcer:read policy:self'], {}), { argv: ['ACME-1234-ABCD'], scope: 'enforcer:read policy:self' });
+  assert.deepEqual(extractScope(['--scope=enforcer:read'], {}), { argv: [], scope: 'enforcer:read' });
+  assert.deepEqual(extractScope(['status'], { ENFORCER_SCOPE: 'policy:self' }), { argv: ['status'], scope: 'policy:self' });
+  assert.deepEqual(extractScope([], {}), { argv: [], scope: undefined });
+  assert.deepEqual(parseLoginArgs(extractScope(['--scope', 'enforcer:read']).argv), ['browser', undefined], 'a flag alone is still a browser sign-in');
 });
 
 await ok('a workspace code: `/enforcer:login CODE` is a browser sign-in into it; commands still win', () => {

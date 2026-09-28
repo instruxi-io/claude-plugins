@@ -2,6 +2,8 @@
 // Sign this machine in to Enforcer — once, for the MCP server and every plugin that reads ~/.enforcer.
 //
 //   login.mjs              browser sign-in (OAuth 2.1, PKCE, loopback redirect)
+//   login.mjs --scope "a b" browser sign-in asking for only those scopes
+//   login.mjs scopes       list the scopes this Enforcer offers a sign-in
 //   login.mjs api-key KEY  use an existing Enforcer API key instead
 //   login.mjs status       who is signed in, and how
 //   login.mjs logout       forget the credential on this machine
@@ -25,6 +27,37 @@ const out = (s) => process.stdout.write(s + '\n');
 export function requestedScope(meta) {
   const s = Array.isArray(meta?.scopes_supported) ? meta.scopes_supported.filter((x) => typeof x === 'string' && x.trim()) : [];
   return s.length ? s.join(' ') : 'enforcer:read';
+}
+
+/**
+ * The scope to ask for when the caller named one: every named scope must be
+ * one the server offers, or the sign-in is refused before a browser opens. An
+ * unknown scope would otherwise be narrowed away silently at consent, and the
+ * sign-in would "succeed" without the access it was run for.
+ */
+export function chooseScope(meta, wanted) {
+  const names = String(wanted || '').split(/[\s,]+/).filter(Boolean);
+  if (!names.length) return requestedScope(meta);
+  const offered = Array.isArray(meta?.scopes_supported) ? meta.scopes_supported : [];
+  const unknown = names.filter((n) => !offered.includes(n));
+  if (unknown.length) {
+    throw new Error(`not offered by this Enforcer: ${unknown.join(' ')}. Offered: ${offered.join(' ') || '(none listed)'}`);
+  }
+  return [...new Set(names)].join(' ');
+}
+
+/** `--scope "a b"` / `--scope=a,b` anywhere in argv, removed; ENFORCER_SCOPE otherwise. */
+export function extractScope(argv, env = process.env) {
+  const rest = [];
+  let scope;
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === '--scope' || a === '--scopes') { scope = argv[++i] ?? ''; continue; }
+    const m = /^--scopes?=(.*)$/.exec(a);
+    if (m) { scope = m[1]; continue; }
+    rest.push(a);
+  }
+  return { argv: rest, scope: scope ?? (env.ENFORCER_SCOPE || undefined) };
 }
 
 export async function discover(base, fetchImpl = fetch) {
@@ -60,7 +93,7 @@ export async function browserSignIn({ base, resource, resources, scope, tenantCo
   // client's ceiling IS that list, so asking for less only threw scopes away:
   // this sign-in asked for enforcer:read alone for weeks after the server began
   // granting the graph's write scopes, and every graph tool refused the token.
-  scope = scope || requestedScope(meta);
+  scope = chooseScope(meta, scope);
   const { verifier, challenge } = pkce();
   const state = b64url(randomBytes(16));
 
@@ -152,7 +185,7 @@ async function whoAmI(base) {
 
 // A workspace code, as a tenant hands it out (e.g. ACME-1234-ABCD). Anything
 // that is not a command and looks like one is read as `/enforcer:login <CODE>`.
-const COMMANDS = new Set(['browser', 'api-key', 'status', 'logout']);
+const COMMANDS = new Set(['browser', 'api-key', 'status', 'logout', 'scopes']);
 export const isWorkspaceCode = (s) => typeof s === 'string' && !COMMANDS.has(s) && /^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)+$/.test(s.trim());
 
 /** `[cmd, arg]` from argv, with a bare workspace code meaning a browser sign-in into it. */
@@ -162,7 +195,8 @@ export function parseLoginArgs(argv) {
   return [first || 'browser', arg];
 }
 
-async function main(argv) {
+async function main(rawArgv) {
+  const { argv, scope } = extractScope(rawArgv);
   const [cmd, arg] = parseLoginArgs(argv);
   // A saved sign-in pins the origin it was made against; otherwise
   // ENFORCER_BASE_URL (a self-hosted workspace), then the public one.
@@ -176,6 +210,15 @@ async function main(argv) {
     if (!me || me.error) { out(`Signed in with ${how}, but Enforcer did not accept it (${me?.error || 'no credential'}). Run /enforcer:login again.`); return; }
     out(`Signed in to ${base} with ${how} as ${who(me)} (${me.role?.slug || 'unknown role'}, tenant ${me.tenant?.name || me.tenant?.id || '?'}).`);
     out(`Shared by every Enforcer plugin on this machine: ${SHARED_FILE()}`);
+    return;
+  }
+
+  if (cmd === 'scopes') {
+    const meta = await discover(base);
+    const offered = Array.isArray(meta.scopes_supported) ? meta.scopes_supported : [];
+    out(`${base} offers a sign-in these scopes (a plain /enforcer:login asks for all of them):`);
+    for (const s of offered) out(`  ${s}`);
+    out('Ask for fewer with: /enforcer:login --scope "enforcer:read policy:self"');
     return;
   }
 
@@ -209,7 +252,7 @@ async function main(argv) {
       : await resourcesFor(base);
     const code = (arg || process.env.ENFORCER_TENANT_CODE || '').trim().toUpperCase() || undefined;
     if (code && !isWorkspaceCode(code)) { out(`"${code}" is not a workspace code. Usage: /enforcer:login [<WORKSPACE-CODE>]`); process.exitCode = 2; return; }
-    const oauth = await browserSignIn({ base, resources, tenantCode: code, onUrl: (url) => {
+    const oauth = await browserSignIn({ base, resources, scope, tenantCode: code, onUrl: (url) => {
       out('Opening your browser to sign in to Enforcer. If it does not open, visit:');
       out(url);
       openBrowser(url);
@@ -222,11 +265,12 @@ async function main(argv) {
     saveCredentials({ ...doc, enforcer: { ...kept, base_url: base, oauth } });
     const me = await whoAmI(base).catch(() => null);
     out(me && !me.error ? `Signed in as ${who(me)}.` : 'Signed in.');
+    out(`Granted: ${oauth.scope || '(the server did not say)'}`);
     out('Every Enforcer plugin on this machine shares this sign-in.');
     return;
   }
 
-  out('Usage: /enforcer:login [<WORKSPACE-CODE> | api-key <key> | status | logout]  — no argument opens a browser');
+  out('Usage: /enforcer:login [<WORKSPACE-CODE>] [--scope "<scopes>"] | api-key <key> | scopes | status | logout  — no argument opens a browser');
   process.exitCode = 2;
 }
 

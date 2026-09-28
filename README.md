@@ -58,6 +58,11 @@ If your admin gave you a workspace code, add it (`/enforcer:login ACME-1234-ABCD
 and the sign-in page goes straight to your workspace's email step. A team can
 set `ENFORCER_TENANT_CODE` in its shared settings to do the same for everyone.
 
+The sign-in asks for every scope your Enforcer offers. To ask for fewer, name
+them: `/enforcer:login --scope "enforcer:read policy:self"` (or set
+`ENFORCER_SCOPE`). `/enforcer:login scopes` lists what is offered, and a scope
+that is not offered is refused before the browser opens.
+
 That one browser sign-in is what the `enforcer` MCP server and
 `enforcer-governor` both use. Don't sign in through `/mcp` instead: that covers
 the MCP tools but leaves the governor signed out.
