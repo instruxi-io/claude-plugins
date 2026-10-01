@@ -373,4 +373,10 @@ assert t >= 25, t"'
 check "attach: full outputs upload to enforcer-files, and every failure leaves the item as it was (unittest)" \
   'env -u GRAPH_API_KEY -u CLAUDE_PLUGIN_DATA python3 -m unittest discover -s test -p "test_*.py" 2>&1 | tail -3 | grep -q "^OK"'
 
+# --- the skill every worker loads: real tools and params, and the worker rule kept
+check "skill: frontmatter names the skill, description within 1024 chars" 'python3 test/check_skill.py frontmatter'
+check "skill: names only real graph tools, with their real params" 'python3 test/check_skill.py tools'
+check "skill: keeps the worker rule, evidence, stale-acceptance, merge and coordinator rules" 'python3 test/check_skill.py rules'
+check "skill: the enforcer-files upload command it gives exists and takes --dir" 'python3 test/check_skill.py upload'
+
 echo; echo "$pass passed, $fail failed"; [ "$fail" -eq 0 ]
