@@ -162,7 +162,10 @@ review is NOT MET: report `failed` with the PR URL in `pr`. On the node before
 a merge node, open the PR, pass `pr` and report. Do not merge it unless your
 own node says to.
 
-To merge, queue it: `gh pr merge <n> --squash --auto`. When the base branch
+To merge, run the plugin's lander, which needs no model in the loop:
+`"$(ls -d ~/.claude/plugins/cache/*/enforcer-graph/*/bin/land-pr.sh | tail -1)" <n>`.
+It queues `gh pr merge <n> --squash --auto`, keeps the branch current, and exits
+0 merged (printing the evidence below), 2 CI failed, 3 conflicts, 4 timed out. When the base branch
 requires branches to be up to date, GitHub merges only once the PR is current
 and green; if it falls behind, `gh pr update-branch <n>` (or rebase, re-verify,
 push) and it stays queued. Do not poll `gh pr view` in a loop or re-run the full
