@@ -29,13 +29,28 @@ done
 view() { gh pr view "$pr" "${repo[@]}" --json "$1" --jq "$2" 2>/dev/null; }
 
 state=$(view state .state) || { echo "land-pr: cannot read PR $pr" >&2; exit 5; }
-if [ "$state" != "MERGED" ]; then
-  [ "$state" = "OPEN" ] || { echo "land-pr: PR $pr is $state" >&2; exit 5; }
-  gh pr merge "$pr" "${repo[@]}" --squash --auto --delete-branch >/dev/null 2>&1 \
-    || gh pr merge "$pr" "${repo[@]}" --squash --delete-branch >/dev/null 2>&1 || true
+
+# GitHub enforces "green before merge" only on a branch whose protection
+# requires checks; everywhere else `--auto` is refused or merges at once. So
+# queue --auto only where it is enforced, and otherwise merge ourselves once
+# every check on the head commit has finished green — never before. (A repo
+# with no protection merged a red PR on 2026-10-01 through the old fallback.)
+manual=1
+if [ "$state" = "OPEN" ]; then
+  nwo=$(gh repo view "${repo[@]:1}" --json nameWithOwner --jq .nameWithOwner 2>/dev/null)
+  base=$(view baseRefName .baseRefName)
+  required=$(gh api "repos/$nwo/branches/$base/protection" --jq '.required_status_checks.checks | length' 2>/dev/null || echo 0)
+  if [ "${required:-0}" -gt 0 ] && gh pr merge "$pr" "${repo[@]}" --squash --auto --delete-branch >/dev/null 2>&1; then
+    manual=0
+  fi
+elif [ "$state" != "MERGED" ]; then
+  echo "land-pr: PR $pr is $state" >&2; exit 5
 fi
 
-deadline=$(( $(date +%s) + timeout ))
+# Checks on the head commit, from both check runs and commit statuses.
+ROLLUP='.statusCheckRollup // [] | map({n: (.name // .context), done: ((.status // "COMPLETED") == "COMPLETED" and (.state // "") != "PENDING" and (.state // "") != "EXPECTED"), bad: ((.conclusion // .state // "") as $c | ["FAILURE","CANCELLED","TIMED_OUT","ACTION_REQUIRED","ERROR","STARTUP_FAILURE"] | index($c) != null)})'
+
+start=$(date +%s); deadline=$(( start + timeout ))
 last=""
 while :; do
   state=$(view state .state)
@@ -50,11 +65,21 @@ while :; do
       gh pr update-branch "$pr" "${repo[@]}" >/dev/null 2>&1 || {
         echo "land-pr: #$pr is behind and could not be updated cleanly (conflict); rebase by hand" >&2; exit 3; } ;;
   esac
-  failed=$(view statusCheckRollup '[.statusCheckRollup[] | select(.conclusion=="FAILURE" or .conclusion=="CANCELLED" or .conclusion=="TIMED_OUT") | .name] | join(", ")')
+  failed=$(view statusCheckRollup "$ROLLUP | map(select(.bad) | .n) | join(\", \")")
   if [ -n "$failed" ]; then
     echo "land-pr: #$pr CI failed: $failed" >&2
     gh pr checks "$pr" "${repo[@]}" 2>&1 | grep -iv "pass\|skipping" >&2
     exit 2
+  fi
+  if [ "$manual" = 1 ] && [ "$ms" != "BEHIND" ] && [ "$ms" != "BLOCKED" ]; then
+    total=$(view statusCheckRollup "$ROLLUP | length")
+    pending=$(view statusCheckRollup "$ROLLUP | map(select(.done | not)) | length")
+    # A fresh push has no checks yet; give them 90s to register before
+    # treating "no checks" as "nothing to wait for".
+    if [ "${pending:-1}" = 0 ] && { [ "${total:-0}" -gt 0 ] || [ $(( $(date +%s) - start )) -ge 90 ]; }; then
+      head=$(view headRefOid .headRefOid)
+      gh pr merge "$pr" "${repo[@]}" --squash --delete-branch --match-head-commit "$head" >/dev/null 2>&1 || true
+    fi
   fi
   [ "$(date +%s)" -lt "$deadline" ] || { echo "land-pr: #$pr still $ms after ${timeout}s" >&2; exit 4; }
   sleep 15
