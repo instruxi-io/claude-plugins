@@ -25,6 +25,10 @@ subagents, relaying their summaries as evidence, and all 18 were judged
 - **Never claim by id.** Do not claim through `enforcer_api_write` or
   `take_task`. The hooks only follow `graph_next_work`, so a run claimed any
   other way gets no heartbeat and no captured evidence.
+- **No `graph_next_work` in your tools?** Your token lacks the graph write
+  scopes (or the server predates enforcer-v3-mcp 0.9.4, which stopped hiding the
+  worker tools from fine-scoped tokens). Stop and say so; do not fall back to
+  `enforcer_api_write`. `/enforcer:login` with the graph scopes fixes it.
 - **Report before you return.** The Stop guard does not run for subagents, so
   nothing reminds you. A run left open when you hand back is a lease that
   lapses with nothing to show for it.
@@ -108,6 +112,9 @@ well-written report with nothing behind it scores like no report at all.
 - **Prose only supports.** The report says which evidence answers which
   criterion; it cannot stand in for the evidence. At most 20 items are
   attached: failures first, then the most recent. Run the decisive checks last.
+- **Cost is stamped for you.** The same hook writes `data.usage` on the run —
+  model, tokens and tool calls since your claim, from your own transcript — so
+  a plan can be costed with `graph_query`. Do not pass it yourself.
 
 Write the report as a numbered list in the card's `criteria` order. Mark each
 line **MET** or **NOT MET** and name the command or file id that shows it.
@@ -155,6 +162,14 @@ review is NOT MET: report `failed` with the PR URL in `pr`. On the node before
 a merge node, open the PR, pass `pr` and report. Do not merge it unless your
 own node says to.
 
+To merge, queue it: `gh pr merge <n> --squash --auto`. When the base branch
+requires branches to be up to date, GitHub merges only once the PR is current
+and green; if it falls behind, `gh pr update-branch <n>` (or rebase, re-verify,
+push) and it stays queued. Do not poll `gh pr view` in a loop or re-run the full
+verify on a branch nothing changed. The merge evidence is the end state, not
+the steps: `gh pr view <n> --json state,mergeCommit` showing MERGED, and
+`git merge-base --is-ancestor <mergeCommit> origin/<base>` exiting 0.
+
 ## Coordinating subagents
 
 If you fan the plan out, you coordinate and the workers claim. Fan-out is your
@@ -171,6 +186,17 @@ whole job.
    frontier. Never call `graph_report` for a worker, never re-report or re-judge
    its node, and never heartbeat its run. If a worker's verdict is rejected, a
    new attempt by a worker fixes it. A better summary from you does not.
+4. **Contested resources are not parallel work.** Two frontier nodes with no
+   edge between them can still collide on one shared thing: a migration number,
+   a reservation file, a lockfile, one generated file. The graph only serializes
+   what an edge says. Before fanning out, assign each worker its value (claim
+   the migration number in the repo's reservation file yourself, in its own PR,
+   and put it in the worker's prompt), or add a `requires` edge so the second
+   waits for the first. Never let two workers each discover "the next free one".
+5. **Merge nodes are mechanical; batch them.** Fan out the build work in
+   parallel; land the merges through one worker per repo, in order, each queued
+   with `--auto`. N parallel merge workers on one repo each rebase onto a base
+   the others keep moving, and every move is a full verify for nothing.
 
 ## Inputs and outputs
 
