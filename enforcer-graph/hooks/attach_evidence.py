@@ -81,6 +81,14 @@ def check_pr(url):
             "label": f"pull request {d.get('state', '?').lower()}: {(d.get('title') or '')[:120]}",
             "output": f"gh pr view {num} -R {owner}/{repo} -> state={d.get('state')} merged={d.get('mergedAt') or 'no'}"}
 
+def with_usage(args, usage):
+    """The report's arguments with data.usage set, keeping any data the model passed."""
+    args = dict(args) if isinstance(args, dict) else {}
+    data = args.get("data")
+    args["data"] = {**(data if isinstance(data, dict) else {}), "usage": usage}
+    return args
+
+
 def main():
     inp = lib.read_stdin()
     tool = (inp.get("tool_name") or "")
@@ -90,11 +98,20 @@ def main():
         return
     sid = lib.actor_key(inp)
     records = lib.load_evidence(sid)
+    # What the run cost, read from this agent's own transcript since its claim,
+    # so a plan can be queried by model and tokens (graph_query agg
+    # sum:data.usage.total_tokens) without the worker knowing its own usage.
+    usage = None
+    if is_report:
+        run = lib.load_run(sid) or {}
+        usage = lib.transcript_usage(lib.actor_transcript(inp), run.get("claimed_at"))
     if not records:
         # Nothing captured - a run with no Bash and no edit, or a data dir we
         # could not write. Fail open: say nothing rather than strip whatever the
         # model supplied. A report with no evidence is the server's call, not a
-        # hook's.
+        # hook's. Usage alone is still stamped.
+        if usage and MODE != "context":
+            print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "updatedInput": with_usage(inp.get("tool_input"), usage)}}))
         return
     if is_remember:
         # A FACT is not a run. Everything captured during the run supports the
@@ -139,7 +156,7 @@ def main():
     if MODE == "context":
         out["additionalContext"] = HANDOFF.format(js=json.dumps(evidence, indent=None))
     else:
-        args = inp.get("tool_input")
+        args = with_usage(inp.get("tool_input"), usage) if usage else inp.get("tool_input")
         args = dict(args) if isinstance(args, dict) else {}
         args["evidence"] = evidence          # replaces anything the model wrote there
         out["updatedInput"] = args

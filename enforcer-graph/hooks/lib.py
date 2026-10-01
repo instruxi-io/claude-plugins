@@ -521,6 +521,57 @@ def tool_payload(tool_response):
     return r if isinstance(r, dict) else {}
 
 
+def actor_transcript(inp):
+    """The transcript of the agent that fired the hook. Hooks for a subagent's
+    calls carry the PARENT's transcript_path; the subagent's own lives beside it
+    at <session>/subagents/agent-<agent_id>.jsonl."""
+    inp = inp or {}
+    tp, aid, sid = inp.get("transcript_path"), inp.get("agent_id"), inp.get("session_id")
+    if tp and aid and sid:
+        sub = os.path.join(os.path.dirname(tp), sid, "subagents", f"agent-{aid}.jsonl")
+        if os.path.exists(sub):
+            return sub
+    return tp
+
+
+def transcript_usage(transcript_path, since=None):
+    """Token usage, model and tool calls in a transcript since an ISO time.
+
+    One assistant message is written once per content block with the same
+    usage, so messages are counted once by id. None when nothing is found, so a
+    caller stamps nothing rather than zeros it cannot vouch for.
+    """
+    seen, tools = set(), set()
+    tot = {"input_tokens": 0, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0, "output_tokens": 0}
+    model = None
+    try:
+        with open(transcript_path) as f:
+            for line in f:
+                try:
+                    rec = json.loads(line)
+                except Exception:
+                    continue
+                if rec.get("type") != "assistant" or (since and (rec.get("timestamp") or "") < since):
+                    continue
+                msg = rec.get("message") or {}
+                for b in msg.get("content") or []:
+                    if isinstance(b, dict) and b.get("type") == "tool_use" and b.get("id"):
+                        tools.add(b["id"])
+                mid, u = msg.get("id"), msg.get("usage")
+                if not mid or mid in seen or not isinstance(u, dict):
+                    continue
+                seen.add(mid)
+                model = msg.get("model") or model
+                for k in tot:
+                    tot[k] += int(u.get(k) or 0)
+    except Exception:
+        return None
+    if not seen:
+        return None
+    return {"model": model, "messages": len(seen), "tool_uses": len(tools),
+            "total_tokens": sum(tot.values()), **tot}
+
+
 def last_assistant_text(transcript_path, limit=1500):
     last = ""
     try:
