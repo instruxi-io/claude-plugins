@@ -1,6 +1,6 @@
 ---
 name: graph
-description: Work a plan held in enforcer-graph — claim the next runnable node, do it, keep the lease alive, report against its acceptance criteria. Use when a project has .claude/graph.json, when asked to "work the plan", "take the next node", "claim from the frontier", or when the enforcer-graph MCP tools (graph_next_work, graph_report, graph_heartbeat, graph_plan_status, graph_remember) are available.
+description: Work a plan held in enforcer-graph — claim the next runnable node yourself, do it, keep the lease alive, report it against its acceptance criteria with captured command output as evidence. Use when a project has .claude/graph.json, when asked to "work the plan", "take the next node", "claim from the frontier", when a coordinator hands you a graph node to work as a subagent, when fanning a plan out to subagents, or when the enforcer-graph MCP tools (graph_next_work, graph_report, graph_heartbeat, graph_plan_status, graph_remember) are available.
 ---
 
 # Working a graph
@@ -9,9 +9,30 @@ enforcer-graph holds a plan as a DAG. Nodes are tasks; each carries
 `data.acceptance`, the list of lines your report will be judged against. You
 never decide what to do next: the graph does, from the edges.
 
+## The worker rule: whoever does the work claims and reports it
+
+The plugin's hooks capture evidence **per agent**. A subagent's commands go
+into that subagent's capture, and are attached only to a run **that same
+agent** claimed with `graph_next_work`. A run claimed by anyone else gets none
+of them. Measured: a coordinator claimed and reported 18 nodes on behalf of its
+subagents, relaying their summaries as evidence, and all 18 were judged
+`rejected / unsupported_by_evidence`.
+
+- **Claim your own node with `graph_next_work`**, from the agent that will run
+  the commands. If you were told to work a particular node, treat that as a
+  hint: when the card hands you a different node, a sibling already took yours.
+  Work the node you hold and say which one it is.
+- **Never claim by id.** Do not claim through `enforcer_api_write` or
+  `take_task`. The hooks only follow `graph_next_work`, so a run claimed any
+  other way gets no heartbeat and no captured evidence.
+- **Report before you return.** The Stop guard does not run for subagents, so
+  nothing reminds you. A run left open when you hand back is a lease that
+  lapses with nothing to show for it.
+- **Never report a node you did not claim.** Never re-report or re-judge one.
+
 ## The loop
 
-1. **`graph_next_work`** — claims one runnable node under a row lock and returns
+1. **`graph_next_work`** (`graph`, optional `for`, `runner`) — claims one runnable node under a row lock and returns
    one card: the node, its `criteria` (its own acceptance lines, the graph and
    tenant mandates marked `[mandate: …]`, and `[check]` rows the server
    evaluates in code), its `inputs` (values upstream nodes produced), attached
@@ -30,9 +51,9 @@ never decide what to do next: the graph does, from the edges.
      nodes are runnable; assignment is advisory, so take one only if a human
      says to.
 2. **Work the node** in its own worktree or branch named after `node.key`.
-3. **`graph_heartbeat`** — you hold a lease, not the node. The plugin's hook
-   heartbeats every ten tool calls for you; call it yourself before any long
-   silent step. The response `state` is an instruction:
+3. **`graph_heartbeat`** (`graph`, `node_id`, `run_id`) — you hold a lease, not the node. The plugin's hook
+   heartbeats every ten tool calls for you. Call it yourself before any long
+   silent step, such as a build, a long test run or a wait on CI. The response `state` is an instruction:
    - `ok` — keep working.
    - `cancel_requested` — stop, `graph_remember` what is worth keeping, then
      `graph_report` with `status: cancelled`.
@@ -42,7 +63,7 @@ never decide what to do next: the graph does, from the edges.
    - `finished` — the run already ended. Nothing to report; `graph_next_work`.
      A graph **reset** also ends every open run this way: stop, re-read the
      plan (`graph_plan_status`), and never report the old run.
-4. **`graph_report`** — `status: succeeded | failed | cancelled` plus a `report`.
+4. **`graph_report`** (`graph`, `node_id`, `run_id`, `status`, `report`, optional `pr`, `error`, `outputs`) — `status` is `succeeded`, `failed` or `cancelled`.
    The response carries `verification` (when judgment is enabled on the tenant),
    an `outputs` block when the node declares outputs, a `checks` block when its
    criteria hold `[check]` rows, and `frontier_after`, the nodes runnable after
@@ -51,13 +72,105 @@ never decide what to do next: the graph does, from the edges.
      verdict is pending (a re-judge, or a person's approval). Its dependents
      are held until the verdict. It is not yours to poll and not yours to
      retry: move on with `graph_next_work`.
-5. **`graph_remember`** — write a fact about a node at any time: a decision, a
+5. **`graph_remember`** (`graph`, `node_id`, `body`, optional `source`) — write a fact about a node at any time: a decision, a
    measurement, something the next run must know. The server dedupes and can
    flag a contradiction with an earlier observation; read `judgment` in the
    response.
 
 `graph_plan_status` is the whole plan on one card: counts, frontier, running,
 verifying, waiting (with `not_before`), failed, unverified runs. Call it when asked how the plan stands, not every turn.
+
+## Evidence: the verdict is what the evidence shows
+
+The judge never sees the repository. It asks whether the **evidence** shows
+each criterion met. Your report is the claim, and a claim is not evidence: a
+well-written report with nothing behind it scores like no report at all.
+
+- **Evidence is captured, not written.** The plugin records every `Bash`
+  command you run, with its exit code and output, and every `Edit`/`Write`,
+  with its path. It attaches the record to `graph_report` for you and replaces
+  anything you put in `evidence`. Reads, greps and globs are not captured. Do
+  not hand-write `evidence`, and do not paste output into the report as proof.
+- **Prove each line with a command that runs in your own session.** If you
+  claim a test passes, run it. If you claim a file changed, show
+  `git diff --stat`. If you claim a PR is merged, run
+  `gh pr view <n> --json state,mergedAt`. The exit code is part of the record.
+  A failing command is evidence too, and is kept first.
+- **Long output goes to enforcer-files, whole.** Each output is clipped to
+  4000 characters, keeping both ends. If `files_base_url` is set in
+  `.claude/graph.json`, the attach hook uploads any longer output to the user's
+  enforcer-files and the evidence item carries its `file` id; you do nothing.
+  Without that setting, upload the log yourself through Bash, so that the
+  upload is captured too (this is the `enforcer-files:upload` skill run as a
+  command):
+  `node "$(ls -d ~/.claude/plugins/cache/*/enforcer-files/*/bin/files.mjs | tail -1)" upload <log> --dir graph-evidence`.
+  Then cite the file id it prints in the report line the log supports.
+- **Prose only supports.** The report says which evidence answers which
+  criterion; it cannot stand in for the evidence. At most 20 items are
+  attached: failures first, then the most recent. Run the decisive checks last.
+
+Write the report as a numbered list in the card's `criteria` order. Mark each
+line **MET** or **NOT MET** and name the command or file id that shows it.
+Report `succeeded` only when every line is met. Otherwise report `failed`, with
+`error` saying what the next attempt needs. "Not met, because X" scores
+honestly.
+
+### Worked example
+
+```
+# graph_next_work -> node fix-lease-race, run r-81
+#   criteria: 1. lease race test passes under -race   2. PR merged to main
+$ go test -race -count=20 ./internal/runs/        # captured: exit 0, output
+$ gh pr create --fill                             # captured: the PR URL
+$ gh pr checks 212 --watch && gh pr merge 212 --squash
+$ gh pr view 212 --json state,mergedAt            # captured: MERGED
+graph_report status=succeeded pr=https://github.com/o/r/pull/212 report=
+  1. Race test — MET. `go test -race -count=20 ./internal/runs/` exit 0,
+     "ok enforcer-graph/internal/runs".
+  2. PR merged — MET. `gh pr view 212`: state MERGED, mergedAt 2026-09-30T02:11Z.
+```
+
+Compare a coordinator writing "The subagent reports the race is fixed and the
+tests pass." That is prose, and it is judged `unsupported_by_evidence` however
+true it is.
+
+## When the work departs from the plan
+
+Acceptance lines go stale: a file moves, an approach fails, an upstream
+decision changes. Never do something else quietly and report it as met.
+
+1. `graph_remember` on the node: what the line says, what you did instead,
+   and why.
+2. In the report, mark that line **NOT MET — STALE: <why>**. Report `failed`
+   unless every line that still applies is met and a person has said the stale
+   one may go. Do not edit the node's acceptance to fit your work; that is the
+   plan author's call.
+
+## Done means merged
+
+When the plan has merge nodes (nodes whose acceptance says a PR is merged), an
+open PR is not done. On a merge node, `succeeded` needs `gh pr view` showing
+`state` MERGED in your evidence. A PR that is open, failing CI or waiting for
+review is NOT MET: report `failed` with the PR URL in `pr`. On the node before
+a merge node, open the PR, pass `pr` and report. Do not merge it unless your
+own node says to.
+
+## Coordinating subagents
+
+If you fan the plan out, you coordinate and the workers claim. Fan-out is your
+whole job.
+
+1. Read the frontier with `graph_plan_status`. Spawn at most one worker per
+   frontier node, each in its own worktree. Do not claim anything yourself.
+2. Give each worker the graph id, the node key and id you expect it to get, its
+   acceptance lines, and this instruction: *"Load the `enforcer-graph:graph`
+   skill. Claim with `graph_next_work`, work the node you are handed, heartbeat
+   through long steps, and `graph_report` it yourself before you return. Tell
+   me the node key, run id, status and verdict."*
+3. When workers return, read `graph_plan_status` again and fan out the new
+   frontier. Never call `graph_report` for a worker, never re-report or re-judge
+   its node, and never heartbeat its run. If a worker's verdict is rejected, a
+   new attempt by a worker fixes it. A better summary from you does not.
 
 ## Inputs and outputs
 
@@ -80,7 +193,6 @@ verifying, waiting (with `not_before`), failed, unverified runs. Call it when as
   (a worker re-judge, or a person approving it in `graph_review`). Do not
   heartbeat it, re-report it or call `graph_plan_status` in a loop waiting for
   it; take other work, or stop.
-
 - **A reset is a human's call.** `graph_reset` starts a new epoch and can
   cancel running work. Never reset a graph to get unstuck, to retry, or because
   a loop looks due (the server's loop worker does that). Only reset when a
@@ -96,44 +208,8 @@ verifying, waiting (with `not_before`), failed, unverified runs. Call it when as
   attempt N+1 on the same node. On a dag-mode graph an edge that would close a
   cycle is refused with `409 edge_would_create_cycle`.
 
-## Writing a report the server can judge
-
-The report is judged line by line against the card's `criteria` (the node's
-own lines, then the mandates; `[check]` rows are decided in code, not by your
-prose). Write it as a numbered list in the same order, each answered with
-**evidence** (paths, commands run, test output, PR URL, measured numbers) and
-marked **met** or **not met**. State plainly what was not done and why. A
-report that asserts success without evidence scores low; a report that says
-"not met, because X" scores honestly and lets a human decide.
-
-```
-PR: https://github.com/org/repo/pull/12 (branch plan/<key>, not merged)
-1. <acceptance line 1> — MET. <what exists, how it was checked>
-2. <acceptance line 2> — NOT MET. <what is missing and why>
-```
-
-## Evidence is captured, not written
-
-You do not write the `evidence` argument of `graph_report`. The plugin's
-PostToolUse hook records it while you work — every `Bash` command with its exit
-code and output, every `Edit`/`Write` with the path and what it wrote — and its
-PreToolUse hook on `graph_report` attaches the capture to the call. Reads,
-greps and globs are not captured: reading is not evidence of doing.
-
-- **Do not hand-write evidence.** Anything you put in `evidence` is replaced by
-  the capture. The point is that the proof is not yours to author.
-- **A report with no captured evidence is `unsupported`**, not verified. If you
-  claim a test passes, run it — the run is what the judge reads.
-- Prose still matters: the report says which acceptance line each piece of
-  evidence answers. The evidence says it happened.
-- The cap is 20 items, failing commands first. A long run keeps its failures
-  and its most recent work, not its beginning.
-
-`status: succeeded` is for a report where every line is met. Use `failed` when
-one is not; the node stays claimable for another attempt with your report as
-its history.
-
 ## Before stopping
 
-Report the run or say explicitly that you are leaving it open. The plugin's
-Stop hook sends you back once if a run is open and unreported.
+Report the run, or say explicitly that you are leaving it open. In a top-level
+session the plugin's Stop hook sends you back once if a run is open and
+unreported. A subagent gets no such reminder.
