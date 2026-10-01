@@ -114,7 +114,17 @@ well-written report with nothing behind it scores like no report at all.
   attached: failures first, then the most recent. Run the decisive checks last.
 - **Cost is stamped for you.** The same hook writes `data.usage` on the run —
   model, tokens and tool calls since your claim, from your own transcript — so
-  a plan can be costed with `graph_query`. Do not pass it yourself.
+  a plan can be costed with `graph_query`. Do not pass it yourself. Output
+  tokens there are an estimate; input and cache counts are exact.
+- **Keep tool output small; it is re-read every turn.** Each result stays in
+  your context for the rest of the run, so a 7k-token log at turn 10 of 60 is
+  paid for 50 times. Measured: workers spent 96–98% of their input re-reading
+  old tool output. Send long commands to a file and read the end and the
+  failures: `bash scripts/verify.sh > /tmp/v.log 2>&1; echo EXIT=$?; tail -40
+  /tmp/v.log`, `go test ./... 2>&1 | grep -E '^(FAIL|ok|panic)|--- FAIL' | head
+  -50`. Read a file's range (`sed -n`, `grep -n`, or Read with offset), never
+  `cat` a whole file. Batch independent commands in one call. Do not re-run a
+  gate on a tree nothing changed.
 
 Write the report as a numbered list in the card's `criteria` order. Mark each
 line **MET** or **NOT MET** and name the command or file id that shows it.
@@ -200,6 +210,16 @@ whole job.
    parallel; land the merges through one worker per repo, in order, each queued
    with `--auto`. N parallel merge workers on one repo each rebase onto a base
    the others keep moving, and every move is a full verify for nothing.
+6. **Launch each worker at its node's tier.** A node's `data.tier` says how
+   much model it needs: `mechanical` → a script (`land-pr.sh`, the release
+   make targets) or Haiku; `standard` → Sonnet; `deep` → Opus. `tier_source`
+   says who decided — `user` beats `planner` beats `rule` beats `jev`, so a
+   tier the user set through MCP is never second-guessed by you. A node with no
+   tier is `standard`, except merge/release/chore (`mechanical`) and a gate or
+   anything touching authz, tokens or a hot-table migration (`deep`). A node on
+   its second attempt goes up one tier. A node marked `detail: thin` has only a
+   pointer for a description: its tier is a rule's guess, so give its worker
+   the design section to read and say the tier is provisional.
 
 ## Inputs and outputs
 

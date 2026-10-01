@@ -45,9 +45,22 @@ class UsageTest(unittest.TestCase):
         self.assertEqual(u["tool_uses"], 3)
         self.assertEqual(u["input_tokens"], 5)
         self.assertEqual(u["cache_read_input_tokens"], 500)
-        self.assertEqual(u["output_tokens"], 30)
+        self.assertEqual(u["output_tokens_recorded"], 30)
+        self.assertEqual(u["output_tokens_est"], 30)
         self.assertEqual(u["total_tokens"], 5 + 100 + 500 + 30)
         self.assertEqual(u["model"], "claude-sonnet-5")
+
+    def test_output_estimate_beats_the_start_of_stream_count(self):
+        # The transcript records usage when a message STARTS streaming.
+        p = os.path.join(self.dir, "long.jsonl")
+        with open(p, "w") as f:
+            rec = msg("L1", "2026-10-01T11:00:00.000Z", U(1, 0, 0, 2))
+            rec["message"]["content"] = [{"type": "text", "text": "x" * 8000}]
+            f.write(json.dumps(rec) + "\n")
+        u = lib.transcript_usage(p)
+        self.assertEqual(u["output_tokens_recorded"], 2)
+        self.assertEqual(u["output_tokens_est"], 2000)
+        self.assertEqual(u["total_tokens"], 1 + 2000)
 
     def test_nothing_found_is_none_not_zeros(self):
         self.assertIsNone(lib.transcript_usage(self.sub, "2027-01-01T00:00:00.000Z"))

@@ -540,9 +540,17 @@ def transcript_usage(transcript_path, since=None):
     One assistant message is written once per content block with the same
     usage, so messages are counted once by id. None when nothing is found, so a
     caller stamps nothing rather than zeros it cannot vouch for.
+
+    The transcript stores usage as of the START of each streamed message, so
+    its output_tokens is a few tokens per message, not what was generated
+    (measured 2026-10-01: a ~1,900-token message recorded 2). It is kept as
+    output_tokens_recorded, a lower bound, beside output_tokens_est from the
+    generated text and tool input at ~4 characters a token. Input and cache
+    counts are known before streaming starts and are exact.
     """
     seen, tools = set(), set()
     tot = {"input_tokens": 0, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0, "output_tokens": 0}
+    out_chars = 0
     model = None
     try:
         with open(transcript_path) as f:
@@ -555,8 +563,14 @@ def transcript_usage(transcript_path, since=None):
                     continue
                 msg = rec.get("message") or {}
                 for b in msg.get("content") or []:
-                    if isinstance(b, dict) and b.get("type") == "tool_use" and b.get("id"):
+                    if not isinstance(b, dict):
+                        continue
+                    if b.get("type") == "tool_use" and b.get("id"):
+                        if b["id"] not in tools:
+                            out_chars += len(json.dumps(b.get("input") or {}))
                         tools.add(b["id"])
+                    elif b.get("type") in ("text", "thinking"):
+                        out_chars += len(b.get("text") or b.get("thinking") or "")
                 mid, u = msg.get("id"), msg.get("usage")
                 if not mid or mid in seen or not isinstance(u, dict):
                     continue
@@ -568,8 +582,11 @@ def transcript_usage(transcript_path, since=None):
         return None
     if not seen:
         return None
-    return {"model": model, "messages": len(seen), "tool_uses": len(tools),
-            "total_tokens": sum(tot.values()), **tot}
+    recorded = tot.pop("output_tokens")
+    est = max(recorded, out_chars // 4)
+    return {"model": model, "messages": len(seen), "tool_uses": len(tools), **tot,
+            "output_tokens_recorded": recorded, "output_tokens_est": est,
+            "total_tokens": sum(tot.values()) + est}
 
 
 def last_assistant_text(transcript_path, limit=1500):
