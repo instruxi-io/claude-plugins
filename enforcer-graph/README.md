@@ -315,6 +315,8 @@ the reason a session stalls.
 
 ## Files
 
+Working on this plugin (agents and humans): start from [docs/WORKER_BRIEF.md](docs/WORKER_BRIEF.md).
+
 ```
 enforcer-graph/
   .claude-plugin/plugin.json
