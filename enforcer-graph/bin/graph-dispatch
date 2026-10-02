@@ -21,7 +21,9 @@ else the tier; else sonnet.
 Never two of our workers, or ours and a live run elsewhere, on one
 data.resources value. A touch of the stop file (default <state>/STOP) drains:
 no new launches, running workers finish, then exit. Per-worker logs in
-<state>/logs. Exit codes: 0 done or drained, 1 API/auth error, 5 usage.
+<state>/logs. Exit codes: 0 done or drained, 1 API/auth error, 2 drained
+because a worker was denied a graph tool (see README "Headless workers"),
+5 usage.
 
 Auth: GRAPH_AUTH_HELPER (a command printing JSON headers, e.g.
 `node ~/.claude/plugins/cache/instruxi/enforcer/<v>/bin/enforcer-headers.mjs`;
@@ -53,6 +55,7 @@ BASE_TOOLS = ["Bash", "Read", "Edit", "Write", "Grep", "Glob", "ToolSearch"]
 DEFAULT_TYPES = "task,bug,chore,merge"
 TIER_MODEL = {"mechanical": "sonnet", "standard": "sonnet", "deep": "opus"}
 CLIP = 4000
+GRAPH_TOOL_RE = re.compile(r"__graph_(next_work|heartbeat|report|remember|plan_status)$")
 
 
 # ---------------------------------------------------------------- pure rules
@@ -317,6 +320,8 @@ class Dispatcher:
         self.logs = os.path.join(self.state, "logs")
         self.types = None if args.types == "all" else set(args.types.split(","))
         self.peak = 0
+        self.blocked = False
+        self.mcp_down = 0
 
     def say(self, msg):
         line = "%s %s" % (utcnow().strftime("%H:%M:%S"), msg)
@@ -338,6 +343,8 @@ class Dispatcher:
         for n in front:
             if n.get("work_state") not in (None, "looking_for_work"):
                 continue
+            if lapsed(n):  # the server lists a lapsed run's node as looking_for_work
+                n = dict(n, _lapsed=True)
             out.append(n)
             seen.add(n["id"])
         for n in nodes:
@@ -381,9 +388,9 @@ class Dispatcher:
         for n, why in skipped:
             if why != "no free worker slot" or self.args.dry_run:
                 self.say("skip %s: %s" % (n["key"], why))
-        if self.stopping():
+        if self.stopping() or self.blocked:
             if chosen:
-                self.say("stop file present: not launching %s" % ", ".join(n["key"] for n in chosen))
+                self.say(("blocked" if self.blocked else "stop file present") + ": not launching %s" % ", ".join(n["key"] for n in chosen))
             return nodes, []
         for n in chosen:
             self.launch(n)
@@ -476,6 +483,28 @@ class Dispatcher:
                             s["reported"], s["cost"]))
                 if s["run_id"] and not s["reported"]:
                     self.fail_orphan(w, s)
+                down = {k: v for k, v in s["mcp"].items() if k.startswith("plugin:enforcer") and v != "connected"}
+                if down and not s["run_id"]:
+                    # never reached the graph: the MCP server was not connected
+                    # (a needs-auth flake). Not the node's fault, so it does not
+                    # spend an attempt, but three in a row is a real outage.
+                    self.attempts[key] -= 1
+                    self.mcp_down += 1
+                    self.say("mcp %s for %s; retrying later (%d in a row)"
+                             % (",".join("%s=%s" % kv for kv in down.items()), key, self.mcp_down))
+                    if self.mcp_down >= 3 and not self.blocked:
+                        self.blocked = True
+                        self.say("BLOCKED: the enforcer MCP server was not connected for 3 workers in a row; "
+                                 "run /enforcer:login, then restart. Launching no more workers (drain).")
+                elif s["mcp"]:
+                    self.mcp_down = 0
+                graph_denied = [t for t in s["denied_tools"] if GRAPH_TOOL_RE.search(t)]
+                if graph_denied and not self.blocked:
+                    self.blocked = True
+                    self.say("BLOCKED: %s denied in a headless worker. The MCP server marks the graph work-loop "
+                             "tools requiresUserInteraction, which claude -p refuses whatever --allowedTools says; "
+                             "launching no more workers (drain). See README 'Headless workers'."
+                             % ", ".join(graph_denied))
                 del self.workers[key]
 
     def finish_merge(self, w):
@@ -528,10 +557,13 @@ class Dispatcher:
                     return 1
                 time.sleep(a.interval)
                 continue
-            if self.stopping() and not self.workers:
+            if (self.stopping() or self.blocked) and not self.workers:
+                if self.blocked:
+                    self.say("drained after BLOCKED; exiting 2 (peak %d)" % self.peak)
+                    return 2
                 self.say("drained: stop file present and no worker running; exiting (peak %d)" % self.peak)
                 return 0
-            busy = any(n.get("status") == "running" for n in nodes)
+            busy = any(n.get("status") == "running" and not lapsed(n) for n in nodes)
             if not self.workers and not launched and not busy:
                 idle += 1
                 if idle >= 2:
@@ -550,9 +582,13 @@ def _events(path):
         with open(path) as f:
             for line in f:
                 try:
-                    yield json.loads(line)
+                    e = json.loads(line)
                 except ValueError:
                     continue
+                if isinstance(e, dict):
+                    if not isinstance(e.get("message"), dict):
+                        e["message"] = {}
+                    yield e
     except OSError:
         return
 
@@ -564,7 +600,8 @@ def count_turns(path):
 def summarize(path):
     """turns, result subtype, permission denials, cost, the run id the worker
     claimed (from its graph_next_work tool result) and whether it reported."""
-    s = {"turns": 0, "result": None, "denials": 0, "run_id": None, "reported": False, "cost": None}
+    s = {"turns": 0, "result": None, "denials": 0, "denied_tools": [], "run_id": None, "reported": False,
+         "cost": None, "mcp": {}}
     claims = set()
     for e in _events(path):
         t = e.get("type")
@@ -584,9 +621,13 @@ def summarize(path):
                     m = re.search(r'"run_id"\s*:\s*"([0-9a-f-]{36})"', tool_text(c.get("content")))
                     if m:
                         s["run_id"] = m.group(1)
+        elif t == "system" and e.get("subtype") == "init":
+            s["mcp"] = {m.get("name"): m.get("status") for m in e.get("mcp_servers") or [] if isinstance(m, dict)}
         elif t == "result":
             s["result"] = e.get("subtype")
-            s["denials"] = len(e.get("permission_denials") or [])
+            denied = e.get("permission_denials") or []
+            s["denials"] = len(denied)
+            s["denied_tools"] = sorted({str(d.get("tool_name")) for d in denied if isinstance(d, dict)})
             s["cost"] = e.get("total_cost_usd")
     return s
 

@@ -203,6 +203,22 @@ class DryRunAndDrain(unittest.TestCase):
         self.assertIn("done a exit=0", text)
         self.assertIn("drained", text)
 
+    def test_denied_graph_tool_blocks_and_drains(self):
+        nodes = [node("a"), node("b"), node("c")]
+        api, out = FakeAPI(nodes), io.StringIO()
+        state = os.path.join(self.tmp, "s")
+        os.makedirs(os.path.join(state, "logs"))
+        p = os.path.join(self.tmp, "claude-denied")
+        with open(p, "w") as f:
+            f.write("#!/bin/sh\necho '{\"type\":\"result\",\"subtype\":\"success\",\"permission_denials\":"
+                    "[{\"tool_name\":\"mcp__plugin_enforcer_enforcer__graph_next_work\"}]}'\n")
+        os.chmod(p, 0o755)
+        a = args(workers=1, state_dir=state, stop_file=os.path.join(state, "STOP"), interval=0.2, claude=p)
+        self.assertEqual(gd.Dispatcher(api, a, out).run(), 2)
+        text = out.getvalue()
+        self.assertIn("BLOCKED: mcp__plugin_enforcer_enforcer__graph_next_work denied", text)
+        self.assertEqual(text.count("launch "), 1)
+
     def test_merge_landed_by_script(self):
         nodes = [node("m", type="merge", repo="r", pr="5")]
         api, out = FakeAPI(nodes), io.StringIO()
