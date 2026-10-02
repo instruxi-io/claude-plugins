@@ -137,6 +137,73 @@ plugin agents (the output is marked partial when the cap is hit). Plugin agents
 ignore `hooks`, `mcpServers` and `permissionMode`, so none are set: the hooks
 come from the plugin's `hooks/hooks.json`.
 
+## bin/graph-dispatch: keep N workers busy, with no model in the loop
+
+```bash
+GRAPH_AUTH_HELPER='node ~/.claude/plugins/cache/instruxi/enforcer/0.4.0/bin/enforcer-headers.mjs' \
+  enforcer-graph/bin/graph-dispatch --graph <id> [--workers 3] [--repo-root ~/apps] [--dry-run]
+```
+
+A python loop (stdlib only) that reads the frontier every `--interval` seconds
+and, for each ready node, up to `--workers` at once:
+
+- **Agent nodes** (`--types`, default `task,bug,chore,merge`; `release`, `gate`
+  and `milestone` stay with a person): a git worktree of `data.repo` at
+  `<repo-root>/<repo>-<key>` on `graph/<key>` (off `data.base` or origin's
+  default branch; reused on a re-claim; a scratch dir when the node has no
+  repo), then `claude -p` with `--agent enforcer-graph:graph-worker`, `--model`,
+  `--plugin-dir` for this plugin AND the cached `enforcer` plugin (so the hooks
+  and the MCP server load whatever `enabledPlugins` says; an inline plugin
+  replaces an installed copy of the same name), `--allowedTools` naming the five
+  graph tools under all three prefixes, `--permission-prompts none` (anything
+  that would prompt is denied, so a worker never hangs), `--output-format
+  stream-json --verbose` to `<state>/logs/<key>.<attempt>.jsonl`, and
+  `GRAPH_ID` in its environment. The worker claims, heartbeats and reports
+  itself, so its own hooks capture its evidence.
+- **Model**: `data.model` (or the claim card's `model`) wins; a tier set by a
+  person (`tier_source: user`) beats `--model`; otherwise `--model` caps it;
+  otherwise `mechanical`/`standard` -> sonnet, `deep` -> opus, default sonnet.
+- **Turn cap**: `claude` has no turn flag, so the dispatcher counts assistant
+  turns in the stream and stops a worker past `--max-turns` (150, as the
+  agent's `maxTurns`); `--max-budget-usd` is passed through. A worker that
+  claimed and exited without reporting has its run failed with the log path,
+  so the node is claimable at once rather than after its lease.
+- **Merge nodes** naming a PR (`data.pr`: a number, URL or `owner/repo#N`; or
+  `data.branch`) get no agent and no slot: the dispatcher claims the run, runs
+  `bin/land-pr.sh`, heartbeats while it waits, and completes the run with
+  land-pr's verbatim output as `{kind: command, cmd, exit, output}` evidence:
+  exit 0 succeeded, 2/3/4/5 failed with that output. One land per repo at a time.
+- **Contested resources**: never two workers, ours or a live run elsewhere, on
+  one `data.resources` value. A lapsed lease frees its resources and its node
+  is re-dispatched (the server lists it as `looking_for_work`).
+- **Drain**: `touch <state>/STOP` (default state `~/.cache/graph-dispatch/<graph>`):
+  no new launches, running workers finish, exit 0. `--max-attempts` (2) bounds
+  launches per node per session.
+- **Auth**: `GRAPH_AUTH_HELPER` (any command printing JSON headers; default the
+  newest cached `enforcer-headers.mjs`) or `GRAPH_API_KEY`; base
+  `GRAPH_BASE_URL`. Exit 0 done or drained, 1 auth/API, 2 blocked (below), 5 usage.
+
+### Headless workers: the graph tools are refused in `claude -p` (2026-10-02)
+
+The hosted MCP server marks every write tool, the work loop included,
+`_meta["anthropic/requiresUserInteraction"]` (enforcer-v3-mcp `src/tools.ts`,
+`toolDefs`). Claude Code 2.1.287 refuses such a tool in `claude -p` **whatever
+the allowlist says**: `--allowedTools`, `permissions.allow` in `--settings`,
+`--permission-mode dontAsk` and `bypassPermissions` all end in
+`MCPTool requires permission.`, and a `--permission-prompt-tool` is refused
+with `MCP tool requires user interaction; not supported via
+--permission-prompt-tool`. An MCP write tool WITHOUT that flag runs headless
+when it is in `--allowedTools`, and is denied when it is not. So headless
+workers need the server to drop the flag for `graph_next_work`,
+`graph_heartbeat`, `graph_report` and `graph_remember` (the allowlist then
+gates them as it does any MCP tool). Until it does, the dispatcher sees the
+first denied graph tool, says `BLOCKED`, launches nothing more and exits 2
+once the running workers finish. Merge nodes are unaffected (no MCP).
+
+The MCP server can also come up `needs-auth` in a fresh `claude -p` (seen
+intermittently on 2026-10-02). Such a worker never reaches the graph; it does
+not spend an attempt, and three in a row stop the dispatcher.
+
 ## The plugin must be ENABLED, and the allowlist must name the tools as they load
 
 Both failed together on the agents-platform build, so no hook ran at all:
@@ -220,8 +287,12 @@ enforcer-graph/
   hooks/hooks.json  hooks/lib.py
   hooks/{session_start,track_run,heartbeat,remember_on_compact,open_run_guard}.py
   hooks/{capture_evidence,attach_evidence}.py
+  bin/land-pr.sh  bin/graph-dispatch   # land one PR; keep N headless workers busy
+  bin/land-pr.sh  bin/graph-dispatch   # land one PR; keep N headless workers busy
   settings.example.json
   test/run.sh  test/stub_graph.py     # every hook against a local stub of the API
+  test/test_dispatch.py               # graph-dispatch against a fake API and a fake claude
+  test/test_dispatch.py               # graph-dispatch against a fake API and a fake claude
 ```
 
 ```bash
