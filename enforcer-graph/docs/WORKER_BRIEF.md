@@ -5,7 +5,7 @@ Scope here: the `enforcer-graph/` plugin (skill, hooks, agent, bin, tests).
 
 ## 1. Layout (where things live)
 
-- `.claude-plugin/plugin.json`: name, `version` (currently 0.18.0). Only version source.
+- `.claude-plugin/plugin.json`: name, `version` (currently 0.19.0). Only version source.
 - `skills/graph/SKILL.md` (22 KB): the loop; "Writing a plan" (~line 263) is the node/brief format.
 - `agents/graph-worker.md` (7 KB): one-node worker, maxTurns 80, reads CLAUDE.md + this brief.
 - `hooks/hooks.json`: wiring. Scripts in `hooks/*.py`, shared code in `hooks/lib.py` (28 KB).
@@ -19,7 +19,7 @@ Scope here: the `enforcer-graph/` plugin (skill, hooks, agent, bin, tests).
 | Event | Matcher | Script |
 |---|---|---|
 | SessionStart | `startup\|resume\|compact` | session_start.py (prints frontier/running/failed; silent without `.claude/graph.json` or on 401) |
-| PreToolUse | `mcp__(plugin_enforcer_enforcer\|enforcer\|enforcer-graph)__graph_(next_work\|report\|remember\|heartbeat)` | attach_evidence.py (replaces report evidence with captured records) |
+| PreToolUse | `mcp__(plugin_enforcer_enforcer\|enforcer\|enforcer-graph)__graph_(next_work\|report\|remember\|heartbeat)` | attach_evidence.py (merges captured records with the worker's own) |
 | PostToolUse | same prefixes, `graph_(next_work\|report\|heartbeat)` | track_run.py (writes the run file) |
 | PostToolUse | `.*` | capture_evidence.py (records your tool results), heartbeat.py (lease keepalive) |
 | PreCompact | `manual\|auto` | remember_on_compact.py |
@@ -45,7 +45,7 @@ Bump `.claude-plugin/plugin.json` version for any change to hooks, skill, agent 
 - **Hooks fire only on `graph_*` tools.** Evidence capture, heartbeat and run tracking see `graph_next_work/report/heartbeat`. Anything routed through `enforcer_api_write` is invisible to them and waits for a human to confirm; never heartbeat or report that way.
 - **Plugin must be enabled.** `claude plugin enable enforcer-graph@instruxi`. A disabled plugin = no hooks, and `graph_*` answers carry a `hooks_inactive` warning (no `X-Graph-Client`).
 - **Headless (`claude -p`).** Hosted MCP write tools are marked `requiresUserInteraction` and are refused whatever `--allowedTools` says: `MCPTool requires permission.` graph-dispatch then says BLOCKED and exits 2. For headless pushes under the jev-hooks plugin set `JEV_HOOKS_HEADLESS` (that variable lives in jev-hooks, not this repo; it appears nowhere in these files).
-- **Evidence is replaced by the hook.** Whatever you write in `graph_report` `evidence` is overwritten by captured tool results; run the evidence commands as the LAST commands before reporting.
+- **Evidence is merged by the hook.** Captured tool results of THIS run (after its claim) come first, then your own verbatim command/file/artifact records that are not duplicates (cmd+exit); prose `note` records are dropped. Run the evidence commands as the LAST commands before reporting.
 - **Hooks fail open.** Python hooks swallow errors and print nothing; a test that expects output must assert it, silence is not a pass.
 - `hooks/hooks.json` is JSON: a trailing comma disables every hook with no error. `README.md` "Files" has duplicated lines; do not copy that pattern.
 

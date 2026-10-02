@@ -18,6 +18,7 @@ def main():
             node = out.get("node") or {}
             run = out.get("run") or {}
             if node.get("node_id") and run.get("run_id"):
+                lib.clear_evidence(sid)   # a new claim starts a clean capture: nothing before it is this run's
                 lib.save_run(sid, {"graph_id": out.get("graph_id"), "node_id": node["node_id"], "run_id": run["run_id"],
                                    "key": node.get("key"), "title": node.get("title"), "lease_expires_at": run.get("lease_expires_at"),
                                    "claimed_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"})

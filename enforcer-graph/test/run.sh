@@ -165,10 +165,12 @@ check "attach: an outputs argument survives the rewrite unchanged" 'echo "$out" 
 import json,sys
 u=json.load(sys.stdin)[\"hookSpecificOutput\"][\"updatedInput\"]
 sys.exit(0 if u.get(\"outputs\")=={\"variance\":0.004,\"chosen\":\"ENG-7\"} and u[\"evidence\"] and u[\"report\"]==\"1. done\" else 1)"'
-check "attach: evidence the model wrote itself is replaced, not merged" 'echo "$(hook attach_evidence.py "{\"session_id\":\"$SID\",\"tool_name\":\"mcp__enforcer-graph__graph_report\",\"tool_input\":{\"report\":\"x\",\"evidence\":[{\"kind\":\"note\",\"text\":\"trust me\"}]}}")" | python3 -c "
+# CHANGED in 0.19.0 (was "evidence the model wrote itself is replaced, not merged"): the worker's
+# verbatim command records are now MERGED with the capture; only prose notes are still dropped.
+check "attach: a worker's verbatim command record is merged, a prose note is not" 'echo "$(hook attach_evidence.py "{\"session_id\":\"$SID\",\"tool_name\":\"mcp__enforcer-graph__graph_report\",\"tool_input\":{\"report\":\"x\",\"evidence\":[{\"kind\":\"note\",\"text\":\"trust me\"},{\"kind\":\"command\",\"cmd\":\"worker-cmd\",\"exit\":0,\"output\":\"theirs\"}]}}")" | python3 -c "
 import json,sys
 u=json.load(sys.stdin)[\"hookSpecificOutput\"][\"updatedInput\"]
-sys.exit(0 if not any(e.get(\"text\")==\"trust me\" for e in u[\"evidence\"]) else 1)"'
+sys.exit(0 if not any(e.get(\"text\")==\"trust me\" for e in u[\"evidence\"]) and any(e.get(\"cmd\")==\"worker-cmd\" and e.get(\"output\")==\"theirs\" for e in u[\"evidence\"]) and any(\"go vet\" in str(e.get(\"cmd\")) for e in u[\"evidence\"]) else 1)"'
 check "attach: context mode hands the capture over verbatim instead" 'GRAPH_EVIDENCE_MODE=context hook attach_evidence.py "{\"session_id\":\"$SID\",\"tool_name\":\"mcp__enforcer-graph__graph_report\",\"tool_input\":{\"report\":\"x\"}}" | python3 -c "
 import json,sys
 o=json.load(sys.stdin)[\"hookSpecificOutput\"]
@@ -445,5 +447,62 @@ printf '{"version":2,"plugins":{"enforcer-graph@instruxi":[{"version":"9.1.0","a
 rm -f "$CLAUDE_PLUGIN_DATA/notices.json"; out=$(ss)
 check "session_start: up to date and installed together, nothing to say" '[ -z "$out" ]'
 rm -rf "$CLAUDE_CONFIG_DIR/plugins"
+
+
+# --- evidence merge and run scoping (0.19.0)
+MS=mrg
+mrun() { printf '%s' "$1" > "$CLAUDE_PLUGIN_DATA/runs/$MS.json"; }
+mbash() { python3 -c 'import json,sys;print(json.dumps({"session_id":sys.argv[1],"tool_name":"Bash","tool_input":{"command":sys.argv[2]},"tool_response":{"stdout":sys.argv[3],"stderr":"","interrupted":False}}))' "$MS" "$1" "$2"; }
+mrep() { printf '%s' "$1" | python3 -c 'import json,sys;print(json.dumps({"session_id":sys.argv[1],"tool_name":"mcp__enforcer-graph__graph_report","tool_input":{"report":"x","evidence":json.loads(sys.stdin.read())}}))' "$MS" | python3 hooks/attach_evidence.py; }
+rm -f "$CLAUDE_PLUGIN_DATA/evidence/$MS.jsonl"
+mrun '{"graph_id":"g","node_id":"n","run_id":"rA","key":"a"}'
+cap "$(mbash 'echo cap-one' 'cap-one')"; cap "$(mbash 'echo cap-two' 'cap-two')"
+eight=$(python3 -c 'import json;print(json.dumps([{"kind":"command","cmd":"worker-%d"%i,"exit":0,"output":"passed %d"%i} for i in range(8)]))')
+out=$(mrep "$eight")
+check "merge: 8 passed records plus 2 captured leave 10, none with output dropped" 'echo "$out" | python3 -c "
+import json,sys
+e=json.load(sys.stdin)[\"hookSpecificOutput\"][\"updatedInput\"][\"evidence\"]
+w=[x for x in e if x.get(\"cmd\",\"\").startswith(\"worker-\")]
+sys.exit(0 if len(e)==10 and len(w)==8 and all(x[\"output\"] for x in w) and e[0][\"cmd\"]==\"echo cap-one\" else 1)"'
+dup=$(python3 -c 'import json;print(json.dumps([{"kind":"command","cmd":"echo cap-one","exit":0,"output":"cap-one"},{"kind":"command","cmd":"w","exit":0,"output":"o"}]))')
+out=$(mrep "$dup")
+check "merge: a passed record duplicating a captured cmd+exit is deduped" 'echo "$out" | python3 -c "
+import json,sys
+e=json.load(sys.stdin)[\"hookSpecificOutput\"][\"updatedInput\"][\"evidence\"]
+sys.exit(0 if len(e)==3 and sum(1 for x in e if x.get(\"cmd\")==\"echo cap-one\")==1 else 1)"'
+check "capture: Bash results are {kind:command, cmd, exit, output} and carry no run tag after attach" 'echo "$out" | python3 -c "
+import json,sys
+e=json.load(sys.stdin)[\"hookSpecificOutput\"][\"updatedInput\"][\"evidence\"][0]
+sys.exit(0 if e[\"kind\"]==\"command\" and e[\"exit\"]==0 and e[\"output\"]==\"cap-one\" and \"_run\" not in e else 1)"'
+# gates survive the bound
+rm -f "$CLAUDE_PLUGIN_DATA/evidence/$MS.jsonl"
+cap "$(mbash 'bash scripts/verify.sh' 'VERIFY OK')"
+for i in $(seq 1 30); do cap "$(mbash "ls dir-$i" "x")"; done
+out=$(mrep '[]')
+check "capture: under the cap the oldest deciding gate (verify.sh) is kept" 'echo "$out" | python3 -c "
+import json,sys
+e=json.load(sys.stdin)[\"hookSpecificOutput\"][\"updatedInput\"][\"evidence\"]
+sys.exit(0 if len(e)==20 and any(x.get(\"cmd\")==\"bash scripts/verify.sh\" for x in e) else 1)"'
+# a PR URL in a tool result
+rm -f "$CLAUDE_PLUGIN_DATA/evidence/$MS.jsonl"
+cap "$(mbash 'gh pr create' 'https://github.com/instruxi-io/claude-plugins/pull/31')"
+out=$(mrep '[]')
+check "capture: a PR URL in a tool result is attached as an artifact record" 'echo "$out" | python3 -c "
+import json,sys
+e=json.load(sys.stdin)[\"hookSpecificOutput\"][\"updatedInput\"][\"evidence\"]
+sys.exit(0 if any(x.get(\"kind\")==\"artifact\" and x.get(\"url\")==\"https://github.com/instruxi-io/claude-plugins/pull/31\" for x in e) else 1)"'
+# scoping: a claim starts a clean capture, and another run's records are never attached
+cap "$(mbash 'echo other-nodes-work' 'x')"
+printf '%s' '{"session_id":"mrg","tool_name":"mcp__enforcer-graph__graph_next_work","tool_input":{"graph":"g"},"tool_response":{"state":"claimed","graph_id":"g","node":{"node_id":"nB","key":"b"},"run":{"run_id":"rB","lease_expires_at":"2099-01-01T00:00:00Z"}}}' | python3 hooks/track_run.py
+cap "$(mbash 'echo mine-only' 'mine')"
+out=$(mrep '[]')
+check "scope: results from before this run's claim are not attached" 'echo "$out" | python3 -c "
+import json,sys
+e=json.load(sys.stdin)[\"hookSpecificOutput\"][\"updatedInput\"][\"evidence\"]
+sys.exit(0 if [x[\"cmd\"] for x in e]==[\"echo mine-only\"] else 1)"'
+mrun '{"graph_id":"g","node_id":"nB","run_id":"rB","key":"b"}'
+printf '%s\n' '{"kind":"command","cmd":"stale-from-rA","exit":0,"output":"z","_run":"rA"}' >> "$CLAUDE_PLUGIN_DATA/evidence/$MS.jsonl"
+out=$(mrep '[]')
+check "scope: a record tagged with another run is never attached" 'echo "$out" | grep -qv stale-from-rA && echo "$out" | grep -q mine-only'
 
 echo; echo "$pass passed, $fail failed"; [ "$fail" -eq 0 ]
