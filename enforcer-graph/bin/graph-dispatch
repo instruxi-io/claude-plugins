@@ -1,0 +1,659 @@
+#!/usr/bin/env python3
+"""graph-dispatch --graph <id> [--workers N] [--repo-root DIR] [--dry-run]
+
+Keeps N graph workers busy on one enforcer-graph plan, with no model in the
+loop. Each pass it reads the frontier (and nodes whose lease lapsed), and for
+each ready node, up to N at once:
+
+  * a merge node that names a PR (data.pr, or data.branch) is landed by
+    bin/land-pr.sh with NO agent; the dispatcher claims the run, heartbeats it
+    while land-pr waits, and completes it with land-pr's verbatim output as
+    evidence (exit 0 succeeded; 2/3/4/5 failed with that output);
+  * any other node gets a git worktree of data.repo under --repo-root on
+    branch graph/<key>, and a headless `claude -p` running the plugin's
+    graph-worker agent, which claims, heartbeats and reports the node itself
+    (so the plugin's hooks capture its evidence).
+
+Model: data.model if set; else data.tier (mechanical/standard -> sonnet,
+deep -> opus) when tier_source is "user"; else --model if given (a cap);
+else the tier; else sonnet.
+
+Never two of our workers, or ours and a live run elsewhere, on one
+data.resources value. A touch of the stop file (default <state>/STOP) drains:
+no new launches, running workers finish, then exit. Per-worker logs in
+<state>/logs. Exit codes: 0 done or drained, 1 API/auth error, 5 usage.
+
+Auth: GRAPH_AUTH_HELPER (a command printing JSON headers, e.g.
+`node ~/.claude/plugins/cache/instruxi/enforcer/<v>/bin/enforcer-headers.mjs`;
+default: the newest such file in the plugin cache), else GRAPH_API_KEY.
+Base: GRAPH_BASE_URL (default https://api.instruxi.dev/api/v1/graph).
+"""
+import argparse
+import datetime as dt
+import glob
+import json
+import os
+import re
+import shlex
+import signal
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.request
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+PLUGIN_DIR = os.path.dirname(HERE)
+LAND_PR = os.path.join(HERE, "land-pr.sh")
+UA = "graph-dispatch/0.14 (enforcer-graph plugin)"
+AGENT = "enforcer-graph:graph-worker"
+GRAPH_TOOLS = ["graph_next_work", "graph_heartbeat", "graph_report", "graph_remember", "graph_plan_status"]
+PREFIXES = ["mcp__plugin_enforcer_enforcer__", "mcp__enforcer__", "mcp__enforcer-graph__"]
+BASE_TOOLS = ["Bash", "Read", "Edit", "Write", "Grep", "Glob", "ToolSearch"]
+DEFAULT_TYPES = "task,bug,chore,merge"
+TIER_MODEL = {"mechanical": "sonnet", "standard": "sonnet", "deep": "opus"}
+CLIP = 4000
+
+
+# ---------------------------------------------------------------- pure rules
+
+def model_for(node, override=None):
+    """The model a node's worker runs on. Explicit data.model (or the claim
+    card's model) wins; a user-set tier beats the dispatcher's --model cap;
+    otherwise the cap, then the tier, then sonnet."""
+    data = node.get("data") or {}
+    explicit = data.get("model") or node.get("model")
+    if explicit:
+        return explicit
+    tier = (data.get("tier") or node.get("tier") or "").lower()
+    if data.get("tier_source") == "user" and tier in TIER_MODEL:
+        return TIER_MODEL[tier]
+    if override:
+        return override
+    return TIER_MODEL.get(tier, "sonnet")
+
+
+def resources_of(node):
+    r = (node.get("data") or {}).get("resources") or []
+    if isinstance(r, str):
+        r = [r]
+    out = {str(x) for x in r if x}
+    mt = merge_target(node)
+    if mt:  # one land-pr per repo at a time: each would rebase onto a base the other moves
+        out.add("land:" + str((node.get("data") or {}).get("repo") or mt[1] or "?"))
+    return out
+
+
+def lapsed(node, now=None):
+    if node.get("status") != "running":
+        return False
+    exp = parse_ts(node.get("lease_expires_at"))
+    return exp is not None and exp < (now or utcnow())
+
+
+def select(candidates, held, slots, busy_keys=()):
+    """Pick up to `slots` candidates in order, never two on one resource value:
+    `held` is every resource already held (our workers and live runs
+    elsewhere). Returns (chosen, skipped) with skipped as (node, reason)."""
+    held = set(held)
+    chosen, skipped = [], []
+    for n in candidates:
+        if n.get("key") in busy_keys:
+            continue
+        r = resources_of(n)
+        clash = sorted(r & held)
+        if clash:
+            skipped.append((n, "resource held: " + ", ".join(clash)))
+            continue
+        if len(chosen) >= slots:
+            skipped.append((n, "no free worker slot"))
+            continue
+        chosen.append(n)
+        held |= r
+    return chosen, skipped
+
+
+def merge_target(node):
+    """(pr, repo_slug) for a merge node that names a PR, else None.
+    data.pr may be a number, a URL, or owner/repo#N; data.branch is resolved
+    by land-pr (gh accepts a branch name) inside the repo checkout."""
+    if node.get("type") != "merge":
+        return None
+    data = node.get("data") or {}
+    pr = data.get("pr") or data.get("pr_url") or data.get("branch")
+    if not pr:
+        return None
+    pr = str(pr)
+    m = re.match(r"https://github\.com/([^/]+/[^/]+)/pull/(\d+)", pr)
+    if m:
+        return m.group(2), m.group(1)
+    m = re.match(r"([\w.-]+/[\w.-]+)#(\d+)$", pr)
+    if m:
+        return m.group(2), m.group(1)
+    return pr, None
+
+
+def allowed_tools():
+    return BASE_TOOLS + [p + t for p in PREFIXES for t in GRAPH_TOOLS]
+
+
+def clip(s, n=CLIP):
+    if len(s) <= n:
+        return s
+    half = n // 2 - 20
+    return s[:half] + "\n…[clipped %d chars]…\n" % (len(s) - 2 * half) + s[-half:]
+
+
+def utcnow():
+    return dt.datetime.now(dt.timezone.utc)
+
+
+def parse_ts(s):
+    if not s:
+        return None
+    try:
+        s = re.sub(r"(\.\d{6})\d+", r"\1", s.replace("Z", "+00:00"))
+        return dt.datetime.fromisoformat(s)
+    except ValueError:
+        return None
+
+
+# ---------------------------------------------------------------- API
+
+class APIError(Exception):
+    def __init__(self, status, body):
+        super().__init__("HTTP %s: %s" % (status, body[:300]))
+        self.status, self.body = status, body
+
+
+def default_helper():
+    found = sorted(glob.glob(os.path.expanduser(
+        "~/.claude/plugins/cache/*/enforcer/*/bin/enforcer-headers.mjs")),
+        key=lambda p: [int(x) if x.isdigit() else x for x in re.split(r"[./]", p)])
+    return "node " + shlex.quote(found[-1]) if found else None
+
+
+class API:
+    def __init__(self, base, helper=None, key=None):
+        self.base = base.rstrip("/")
+        self.helper, self.key = helper, key
+
+    def headers(self):
+        h = {"User-Agent": UA, "Content-Type": "application/json"}
+        if self.helper:
+            out = subprocess.run(self.helper, shell=True, capture_output=True, text=True, timeout=30)
+            if out.returncode != 0:
+                raise APIError("auth", "GRAPH_AUTH_HELPER failed: " + out.stderr.strip()[:300])
+            h.update(json.loads(out.stdout))
+        elif self.key:
+            h["X-API-Key"] = self.key
+        return h
+
+    def call(self, method, path, body=None):
+        req = urllib.request.Request(self.base + path, method=method, headers=self.headers(),
+                                     data=json.dumps(body).encode() if body is not None else None)
+        try:
+            with urllib.request.urlopen(req, timeout=60) as r:
+                return json.loads(r.read() or b"{}")
+        except urllib.error.HTTPError as e:
+            raise APIError(e.code, e.read().decode(errors="replace"))
+
+    def frontier(self, g):
+        return self.call("GET", "/graphs/%s/frontier" % g).get("data") or []
+
+    def nodes(self, g):
+        out, off = [], 0
+        while True:
+            d = self.call("GET", "/graphs/%s/nodes?limit=200&offset=%d" % (g, off))
+            out += d.get("data") or []
+            total = (d.get("meta") or {}).get("total", len(out))
+            off += 200
+            if off >= total or not d.get("data"):
+                return out
+
+    def claim(self, g, n, runner):
+        d = self.call("POST", "/graphs/%s/nodes/%s/claim" % (g, n), {"runner": runner}).get("data")
+        return d[0] if isinstance(d, list) else d
+
+    def heartbeat(self, g, n, r):
+        return self.call("POST", "/graphs/%s/nodes/%s/runs/%s/heartbeat" % (g, n, r), {})
+
+    def complete(self, g, n, r, body):
+        return self.call("POST", "/graphs/%s/nodes/%s/runs/%s/complete" % (g, n, r), body)
+
+
+# ---------------------------------------------------------------- workers
+
+class Worker:
+    kind = "agent"
+
+    def __init__(self, node, log_path):
+        self.node, self.key, self.log_path = node, node["key"], log_path
+        self.proc, self.started = None, time.time()
+        self.resources = resources_of(node)
+
+    def alive(self):
+        return self.proc is not None and self.proc.poll() is None
+
+
+def git(args, cwd):
+    return subprocess.run(["git"] + args, cwd=cwd, capture_output=True, text=True)
+
+
+def worktree_for(node, repo_root, state_dir, dry=False):
+    """(path, branch, note). A node with a data.repo checkout under repo_root
+    gets <repo_root>/<repo>-<key> on graph/<key>, off data.base or origin's
+    default branch; a re-claimed node reuses its worktree. A node with no repo
+    works in a plain scratch directory."""
+    key = node["key"]
+    data = node.get("data") or {}
+    repo = data.get("repo")
+    branch = "graph/" + key
+    if not repo or not repo_root or not os.path.isdir(os.path.join(repo_root, repo, ".git")) and \
+            not os.path.isfile(os.path.join(repo_root, repo, ".git")):
+        path = os.path.join(state_dir, "work", key)
+        if not dry:
+            os.makedirs(path, exist_ok=True)
+        why = "no data.repo" if not repo else "no checkout of %s under %s" % (repo, repo_root)
+        return path, None, "scratch dir (%s)" % why
+    src = os.path.join(repo_root, repo)
+    path = os.path.join(repo_root, "%s-%s" % (repo, key))
+    if os.path.isdir(path):
+        return path, branch, "reused"
+    base = data.get("base")
+    if not base:
+        h = git(["symbolic-ref", "--short", "refs/remotes/origin/HEAD"], src).stdout.strip()
+        base = h or "origin/main"
+    elif not base.startswith("origin/"):
+        base = "origin/" + base
+    if dry:
+        return path, branch, "would add off " + base
+    git(["fetch", "-q", "origin"], src)
+    r = git(["worktree", "add", path, "-b", branch, base], src)
+    if r.returncode != 0:  # the branch exists from an earlier attempt
+        r = git(["worktree", "add", path, branch], src)
+    if r.returncode != 0:
+        raise RuntimeError("worktree add failed: " + (r.stderr or r.stdout).strip()[:300])
+    return path, branch, "added off " + base
+
+
+def worker_prompt(graph, node, path, branch):
+    data = node.get("data") or {}
+    lines = ["Graph %s, node %s (key `%s`): %s." % (graph, node["id"], node["key"], node.get("title", "")),
+             "Claim it with graph_next_work {graph, node: \"%s\", runner: \"%s\"} and work it per your instructions."
+             % (node["id"], node["key"])]
+    if branch:
+        lines.append("Your git worktree is %s on branch %s (already created; work only there)." % (path, branch))
+    else:
+        lines.append("Your working directory is %s." % path)
+    if data.get("brief"):
+        lines.append("Brief: " + str(data["brief"]))
+    return "\n".join(lines)
+
+
+def claude_cmd(prompt, model, args, key):
+    cmd = [args.claude, "-p", prompt,
+           "--agent", AGENT,
+           "--model", model,
+           "--plugin-dir", PLUGIN_DIR]
+    for d in args.plugin_dir:
+        cmd += ["--plugin-dir", d]
+    cmd += ["--allowedTools", ",".join(allowed_tools()),
+            "--permission-prompts", "none",
+            "--output-format", "stream-json", "--verbose",
+            "--name", "graph:" + key]
+    if args.max_budget_usd:
+        cmd += ["--max-budget-usd", str(args.max_budget_usd)]
+    return cmd
+
+
+class Dispatcher:
+    def __init__(self, api, args, out=sys.stdout):
+        self.api, self.args, self.out = api, args, out
+        self.g = args.graph
+        self.workers = {}
+        self.attempts = {}
+        self.state = args.state_dir
+        self.logs = os.path.join(self.state, "logs")
+        self.types = None if args.types == "all" else set(args.types.split(","))
+        self.peak = 0
+
+    def say(self, msg):
+        line = "%s %s" % (utcnow().strftime("%H:%M:%S"), msg)
+        print(line, file=self.out, flush=True)
+        if not self.args.dry_run:
+            with open(os.path.join(self.state, "dispatcher.log"), "a") as f:
+                f.write(line + "\n")
+
+    def stopping(self):
+        return os.path.exists(self.args.stop_file)
+
+    # --- reading the plan
+    def candidates(self, nodes):
+        """Frontier nodes looking for work, then nodes whose lease lapsed,
+        in that order, filtered to the dispatchable types and attempt cap."""
+        front = self.api.frontier(self.g)
+        ours = set(self.workers)
+        out, seen = [], set()
+        for n in front:
+            if n.get("work_state") not in (None, "looking_for_work"):
+                continue
+            out.append(n)
+            seen.add(n["id"])
+        for n in nodes:
+            if n["id"] not in seen and n.get("key") not in ours and lapsed(n):
+                n = dict(n, _lapsed=True)
+                out.append(n)
+        keep = []
+        for n in out:
+            if self.types is not None and n.get("type") not in self.types:
+                continue
+            if self.attempts.get(n["key"], 0) >= self.args.max_attempts:
+                continue
+            keep.append(n)
+        return keep
+
+    def held_elsewhere(self, nodes):
+        held = set()
+        ours = set(self.workers)
+        for n in nodes:
+            if n.get("status") == "running" and n.get("key") not in ours and not lapsed(n):
+                held |= resources_of(n)
+        for w in self.workers.values():
+            held |= w.resources
+        return held
+
+    # --- one pass
+    def tick(self):
+        nodes = self.api.nodes(self.g)
+        cands = self.candidates(nodes)
+        # Agents fill the N worker slots; a merge costs no model, so it takes
+        # no slot, but holds land:<repo> so one repo lands one PR at a time.
+        slots = self.args.workers - sum(1 for w in self.workers.values() if w.kind == "agent")
+        held = self.held_elsewhere(nodes)
+        agents = [n for n in cands if not merge_target(n)]
+        merges = [n for n in cands if merge_target(n)]
+        chosen, skipped = select(agents, held, max(slots, 0), self.workers)
+        for n in chosen:
+            held |= resources_of(n)
+        m_chosen, m_skipped = select(merges, held, len(merges), self.workers)
+        chosen, skipped = chosen + m_chosen, skipped + m_skipped
+        for n, why in skipped:
+            if why != "no free worker slot" or self.args.dry_run:
+                self.say("skip %s: %s" % (n["key"], why))
+        if self.stopping():
+            if chosen:
+                self.say("stop file present: not launching %s" % ", ".join(n["key"] for n in chosen))
+            return nodes, []
+        for n in chosen:
+            self.launch(n)
+        return nodes, chosen
+
+    def launch(self, n):
+        a = self.args
+        mt = merge_target(n)
+        tag = " (lease lapsed; re-claim)" if n.get("_lapsed") else ""
+        if mt:
+            pr, slug = mt
+            cwd = os.path.join(a.repo_root, (n.get("data") or {}).get("repo", "")) if a.repo_root else None
+            if not cwd or not os.path.isdir(cwd):
+                cwd = os.getcwd()
+            cmd = [LAND_PR, pr] + (["-R", slug] if slug else []) + ["--timeout", str(a.land_timeout)]
+            if a.dry_run:
+                self.say("would land %s [merge, no agent]%s: %s (cwd %s)" % (n["key"], tag, " ".join(cmd), cwd))
+                return
+            self.launch_merge(n, cmd, cwd)
+            return
+        model = model_for(n, a.model)
+        path, branch, note = worktree_for(n, a.repo_root, self.state, dry=a.dry_run)
+        prompt = worker_prompt(self.g, n, path, branch)
+        cmd = claude_cmd(prompt, model, a, n["key"])
+        res = ",".join(sorted(resources_of(n))) or "-"
+        if a.dry_run:
+            self.say("would launch %s [%s, tier %s] model=%s worktree=%s branch=%s (%s) resources=%s%s"
+                     % (n["key"], n.get("type"), (n.get("data") or {}).get("tier", "-"), model, path,
+                        branch or "-", note, res, tag))
+            if not getattr(self, "_shown_cmd", False):
+                self._shown_cmd = True
+                self.say("  cmd: " + " ".join(shlex.quote(c) for c in cmd[:2]) + " <prompt> "
+                         + " ".join(shlex.quote(c) for c in cmd[3:]))
+            return
+        self.attempts[n["key"]] = self.attempts.get(n["key"], 0) + 1
+        log = os.path.join(self.logs, "%s.%d.jsonl" % (n["key"], self.attempts[n["key"]]))
+        w = Worker(n, log)
+        env = dict(os.environ, GRAPH_ID=self.g)
+        with open(log, "w") as f:
+            w.proc = subprocess.Popen(cmd, cwd=path, stdin=subprocess.DEVNULL, stdout=f,
+                                      stderr=subprocess.STDOUT, env=env, start_new_session=True)
+        w.model, w.turns = model, 0
+        self.workers[n["key"]] = w
+        self.peak = max(self.peak, len(self.workers))
+        self.say("launch %s pid=%d model=%s cwd=%s (%s) log=%s%s"
+                 % (n["key"], w.proc.pid, model, path, note, log, tag))
+
+    def launch_merge(self, n, cmd, cwd):
+        self.attempts[n["key"]] = self.attempts.get(n["key"], 0) + 1
+        try:
+            card = self.api.claim(self.g, n["id"], "graph-dispatch")
+        except APIError as e:
+            self.say("claim %s refused: %s" % (n["key"], e))
+            return
+        log = os.path.join(self.logs, "%s.%d.log" % (n["key"], self.attempts[n["key"]]))
+        w = Worker(n, log)
+        w.kind, w.run_id, w.cmd, w.last_hb = "merge", card["run_id"], cmd, time.time()
+        with open(log, "w") as f:
+            w.proc = subprocess.Popen(cmd, cwd=cwd, stdin=subprocess.DEVNULL, stdout=f,
+                                      stderr=subprocess.STDOUT, start_new_session=True)
+        self.workers[n["key"]] = w
+        self.peak = max(self.peak, len(self.workers))
+        self.say("land %s pid=%d run=%s: %s log=%s" % (n["key"], w.proc.pid, w.run_id, " ".join(cmd), log))
+
+    # --- supervision
+    def reap(self):
+        for key, w in list(self.workers.items()):
+            if w.kind == "merge":
+                if w.alive() and time.time() - w.last_hb > self.args.heartbeat:
+                    try:
+                        st = self.api.heartbeat(self.g, w.node["id"], w.run_id).get("state")
+                        w.last_hb = time.time()
+                        if st and st != "ok":
+                            self.say("heartbeat %s: %s" % (key, st))
+                    except APIError as e:
+                        self.say("heartbeat %s failed: %s" % (key, e))
+                if not w.alive():
+                    self.finish_merge(w)
+                    del self.workers[key]
+                continue
+            w.turns = count_turns(w.log_path)
+            if w.alive() and w.turns > self.args.max_turns:
+                self.say("turn cap: %s at %d turns > %d, stopping it" % (key, w.turns, self.args.max_turns))
+                os.killpg(w.proc.pid, signal.SIGTERM)
+                w.proc.wait(timeout=30)
+            if not w.alive():
+                s = summarize(w.log_path)
+                self.say("done %s exit=%s turns=%s result=%s denials=%d run=%s reported=%s cost=%s"
+                         % (key, w.proc.returncode, s["turns"], s["result"], s["denials"], s["run_id"] or "-",
+                            s["reported"], s["cost"]))
+                if s["run_id"] and not s["reported"]:
+                    self.fail_orphan(w, s)
+                del self.workers[key]
+
+    def finish_merge(self, w):
+        rc = w.proc.returncode
+        with open(w.log_path, errors="replace") as f:
+            out = f.read()
+        ev = {"kind": "command", "cmd": " ".join(w.cmd), "exit": rc, "output": clip(out)}
+        ok = rc == 0
+        body = {"status": "succeeded" if ok else "failed", "evidence": [ev],
+                "data": {"report": "1. %s: land-pr.sh exited %d (%s). Landed by graph-dispatch with no agent."
+                         % ("MET" if ok else "NOT MET", rc, LAND_CODES.get(rc, "unknown")),
+                         "runner": "graph-dispatch"}}
+        if not ok:
+            body["error"] = "land-pr.sh exit %d (%s): %s" % (rc, LAND_CODES.get(rc, "unknown"), out.strip()[-500:])
+        try:
+            self.api.complete(self.g, w.node["id"], w.run_id, body)
+            self.say("land %s exit=%d -> run %s %s" % (w.key, rc, w.run_id, body["status"]))
+        except APIError as e:
+            self.say("complete %s failed: %s" % (w.key, e))
+
+    def fail_orphan(self, w, s):
+        """A worker that claimed and exited without reporting (crash, turn cap)
+        would hold the node until its lease lapses; fail the run so it is
+        claimable now and the next attempt knows why."""
+        body = {"status": "failed", "error": "graph-dispatch: worker exited (code %s, %s turns) without reporting; "
+                "log %s" % (w.proc.returncode, s["turns"], w.log_path),
+                "data": {"runner": "graph-dispatch"}}
+        try:
+            self.api.complete(self.g, w.node["id"], s["run_id"], body)
+            self.say("failed orphan run %s of %s" % (s["run_id"], w.key))
+        except APIError as e:
+            self.say("could not fail orphan run of %s: %s" % (w.key, e))
+
+    def run(self):
+        a = self.args
+        if a.dry_run:
+            self.say("dry run on graph %s, %d worker slot(s); nothing is launched" % (self.g, a.workers))
+            self.tick()
+            return 0
+        os.makedirs(self.logs, exist_ok=True)
+        self.say("dispatching graph %s with %d workers; stop file %s" % (self.g, a.workers, a.stop_file))
+        idle = 0
+        while True:
+            self.reap()
+            try:
+                nodes, launched = self.tick()
+            except APIError as e:
+                self.say("API error: %s" % e)
+                if e.status in (401, 403, "auth"):
+                    return 1
+                time.sleep(a.interval)
+                continue
+            if self.stopping() and not self.workers:
+                self.say("drained: stop file present and no worker running; exiting (peak %d)" % self.peak)
+                return 0
+            busy = any(n.get("status") == "running" for n in nodes)
+            if not self.workers and not launched and not busy:
+                idle += 1
+                if idle >= 2:
+                    self.say("nothing runnable or running; exiting (peak %d concurrent)" % self.peak)
+                    return 0
+            else:
+                idle = 0
+            time.sleep(a.interval)
+
+
+LAND_CODES = {0: "merged", 2: "CI failed", 3: "conflict with the base", 4: "timed out", 5: "usage or gh error"}
+
+
+def _events(path):
+    try:
+        with open(path) as f:
+            for line in f:
+                try:
+                    yield json.loads(line)
+                except ValueError:
+                    continue
+    except OSError:
+        return
+
+
+def count_turns(path):
+    return sum(1 for e in _events(path) if e.get("type") == "assistant")
+
+
+def summarize(path):
+    """turns, result subtype, permission denials, cost, the run id the worker
+    claimed (from its graph_next_work tool result) and whether it reported."""
+    s = {"turns": 0, "result": None, "denials": 0, "run_id": None, "reported": False, "cost": None}
+    claims = set()
+    for e in _events(path):
+        t = e.get("type")
+        content = (e.get("message") or {}).get("content")
+        content = content if isinstance(content, list) else []
+        if t == "assistant":
+            s["turns"] += 1
+            for c in content:
+                name = str(c.get("name", "")) if c.get("type") == "tool_use" else ""
+                if name.endswith("graph_report"):
+                    s["reported"] = True
+                elif name.endswith("graph_next_work"):
+                    claims.add(c.get("id"))
+        elif t == "user":
+            for c in content:
+                if c.get("type") == "tool_result" and c.get("tool_use_id") in claims:
+                    m = re.search(r'"run_id"\s*:\s*"([0-9a-f-]{36})"', tool_text(c.get("content")))
+                    if m:
+                        s["run_id"] = m.group(1)
+        elif t == "result":
+            s["result"] = e.get("subtype")
+            s["denials"] = len(e.get("permission_denials") or [])
+            s["cost"] = e.get("total_cost_usd")
+    return s
+
+
+def tool_text(content):
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "".join(c.get("text", "") for c in content if isinstance(c, dict))
+    return ""
+
+
+def parse_args(argv):
+    p = argparse.ArgumentParser(prog="graph-dispatch", description=__doc__.split("\n")[0])
+    p.add_argument("--graph", required=True, help="graph id")
+    p.add_argument("--workers", type=int, default=3)
+    p.add_argument("--repo-root", default=os.path.expanduser("~/apps"),
+                   help="directory holding each data.repo checkout (default ~/apps)")
+    p.add_argument("--dry-run", action="store_true", help="print what would launch; launch nothing")
+    p.add_argument("--model", help="cap for nodes without an explicit model or user tier (e.g. sonnet)")
+    p.add_argument("--max-turns", type=int, default=150, help="stop a worker past this many turns")
+    p.add_argument("--max-budget-usd", type=float, help="passed to claude --max-budget-usd")
+    p.add_argument("--max-attempts", type=int, default=2, help="launches per node per dispatcher session")
+    p.add_argument("--types", default=DEFAULT_TYPES, help="node types to dispatch, or 'all'")
+    p.add_argument("--interval", type=float, default=30, help="seconds between passes")
+    p.add_argument("--heartbeat", type=float, default=120, help="seconds between merge-run heartbeats")
+    p.add_argument("--land-timeout", type=int, default=3000)
+    p.add_argument("--state-dir", help="logs and stop file (default ~/.cache/graph-dispatch/<graph>)")
+    p.add_argument("--stop-file", help="touch it to drain (default <state-dir>/STOP)")
+    p.add_argument("--plugin-dir", action="append", default=[],
+                   help="extra plugin dirs (default: the newest cached enforcer plugin, for the MCP server)")
+    p.add_argument("--claude", default=os.environ.get("CLAUDE_BIN", "claude"))
+    a = p.parse_args(argv)
+    if a.workers < 1:
+        p.error("--workers must be >= 1")
+    a.state_dir = a.state_dir or os.path.expanduser("~/.cache/graph-dispatch/" + a.graph)
+    a.stop_file = a.stop_file or os.path.join(a.state_dir, "STOP")
+    if not a.plugin_dir:
+        found = sorted(glob.glob(os.path.expanduser("~/.claude/plugins/cache/*/enforcer/*/.claude-plugin")),
+                       key=lambda q: [int(x) if x.isdigit() else x for x in re.split(r"[./]", q)])
+        a.plugin_dir = [os.path.dirname(found[-1])] if found else []
+    return a
+
+
+def main(argv=None):
+    try:
+        a = parse_args(argv if argv is not None else sys.argv[1:])
+    except SystemExit as e:
+        return 5 if e.code else 0
+    helper = os.environ.get("GRAPH_AUTH_HELPER") or (None if os.environ.get("GRAPH_API_KEY") else default_helper())
+    key = os.environ.get("GRAPH_API_KEY")
+    if not helper and not key:
+        print("graph-dispatch: no credential: set GRAPH_AUTH_HELPER or GRAPH_API_KEY", file=sys.stderr)
+        return 1
+    if helper:
+        helper = os.path.expanduser(helper)
+    api = API(os.environ.get("GRAPH_BASE_URL", "https://api.instruxi.dev/api/v1/graph"), helper, key)
+    if not a.dry_run:
+        os.makedirs(a.state_dir, exist_ok=True)
+    try:
+        return Dispatcher(api, a).run()
+    except APIError as e:
+        print("graph-dispatch: %s" % e, file=sys.stderr)
+        return 1
+    except KeyboardInterrupt:
+        return 130
+
+
+if __name__ == "__main__":
+    sys.exit(main())
