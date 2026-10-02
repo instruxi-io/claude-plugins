@@ -63,8 +63,12 @@ while :; do
       echo "land-pr: #$pr conflicts with its base; rebase, resolve by reading both sides, re-verify, push, then run this again" >&2
       exit 3 ;;
     BEHIND)
-      gh pr update-branch "$pr" "${repo[@]}" >/dev/null 2>&1 || {
-        echo "land-pr: #$pr is behind and could not be updated cleanly (conflict); rebase by hand" >&2; exit 3; } ;;
+      if ! gh pr update-branch "$pr" "${repo[@]}" >/dev/null 2>&1; then
+        # A queued --auto merge can land between our read and the update; that
+        # is success, not a conflict.
+        [ "$(view state .state)" = "MERGED" ] && break
+        echo "land-pr: #$pr is behind and could not be updated cleanly (conflict); rebase by hand" >&2; exit 3
+      fi ;;
   esac
   failed=$(view statusCheckRollup "$ROLLUP | map(select(.bad) | .n) | join(\", \")")
   if [ -n "$failed" ]; then
