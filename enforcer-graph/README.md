@@ -12,16 +12,48 @@ tenant's opt-in, and reaches this plugin only as fields in the tool results.
 
 ## Install
 
-From the Instruxi marketplace, with the `enforcer` plugin that carries the MCP
-server and the sign-in:
+One install. The `enforcer` plugin (the MCP server and the sign-in) depends on
+this one, so installing it installs and enables these hooks too:
 
 ```bash
 claude plugin marketplace add instruxi-io/claude-plugins
-claude plugin install enforcer@instruxi
-claude plugin install enforcer-graph@instruxi
+claude plugin install enforcer@instruxi    # ✔ ... (+ 1 dependency: enforcer-graph)
 ```
 
-Then sign in once, in Claude Code: `/enforcer:login`. That one OAuth sign-in
+Then, in Claude Code: `/enforcer:login`, then `/enforcer:setup` (shows the
+allow rules for the worker loop and the plugin commands, applies only on your
+yes).
+
+**Existing installs** keep working: an `enforcer-graph` you installed yourself
+satisfies the dependency as it is. Update both with
+`claude plugin update enforcer@instruxi` (and `enforcer-graph@instruxi`), then
+`/reload-plugins`; session start says so once when an installed copy is older
+than the marketplace's, and says `claude plugin install enforcer@instruxi`
+when enforcer-graph is installed without it. If enforcer-graph is DISABLED,
+`enforcer` now fails to load (`Dependency "enforcer-graph@instruxi" is
+disabled`) instead of serving the graph tools with no hooks behind them; fix
+with `claude plugin enable enforcer-graph@instruxi`. A Claude Code too old for
+plugin dependencies installs the two separately, as before.
+
+### The client attestation
+
+Every `graph_next_work`, `graph_heartbeat` and `graph_report` the model makes
+is rewritten by the PreToolUse hook to carry
+`client: "enforcer-graph-plugin/<version>; hooks=on"` (the version is read from
+this plugin's manifest), and the hooks' own HTTP heartbeat sends the same string
+as `X-Graph-Client`. The MCP server forwards the argument as that header and
+the graph records it on the run; a run without it gets the `hooks_inactive`
+warning. A `client` the model wrote is replaced, never trusted. In
+`GRAPH_EVIDENCE_MODE=context` (a surface that does not apply rewrites) nothing
+is stamped.
+
+### The allowlist is checked against the server
+
+`settings.example.json`, the graph-worker agent's `tools:`, `/enforcer:setup`'s
+`allowed-tools` and the hook matchers are checked in CI against the MCP
+server's published tool manifest (`node test/check-allowlist.mjs` at the repo
+root), so a renamed tool fails the build instead of silently turning every
+allow rule into a prompt. That one OAuth sign-in
 is what the MCP server and these hooks both use (`~/.enforcer/credentials.json`,
 refreshed by whichever reads it when the token is close to expiry). It grants the
 work loop (claim, heartbeat, report, remember) and plan authoring (import,

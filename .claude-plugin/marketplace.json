@@ -8,7 +8,7 @@
   "plugins": [
     {
       "name": "enforcer",
-      "description": "Connects Claude Code to your Enforcer workspace: the enforcer MCP server, one sign-in (/enforcer:login) that every Instruxi plugin shares, and a short skill on how Enforcer is organised.",
+      "description": "Connects Claude Code to your Enforcer workspace: the enforcer MCP server, one sign-in (/enforcer:login) that every Instruxi plugin shares, /enforcer:setup, and a short skill on how Enforcer is organised. Brings enforcer-graph's hooks with it as a dependency.",
       "category": "platform",
       "source": "./enforcer"
     },
@@ -33,7 +33,7 @@
     },
     {
       "name": "enforcer-graph",
-      "description": "Work a plan held in enforcer-graph: claim the next runnable node, keep its lease alive, and report against its acceptance criteria.",
+      "description": "Work a plan held in enforcer-graph: claim the next runnable node, keep its lease alive, and report against its acceptance criteria. Installed automatically with enforcer.",
       "category": "planning",
       "source": "./enforcer-graph"
     },

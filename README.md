@@ -30,8 +30,7 @@ plugin to drift out of date.
 
 ```sh
 claude plugin marketplace add instruxi-io/claude-plugins
-claude plugin install enforcer@instruxi
-claude plugin install enforcer-graph@instruxi        # optional: work and write plans
+claude plugin install enforcer@instruxi             # brings enforcer-graph (its hooks) with it
 claude plugin install enforcer-files@instruxi        # optional: workspace files, upload and download
 claude plugin install enforcer-governor@instruxi     # optional: govern agent actions
 ```
@@ -48,11 +47,27 @@ gh release download -R instruxi-io/jev-hooks \
 claude-loadout setup          # --dry-run first, if you want to see the plan
 ```
 
-Then, in Claude Code, sign in once:
+Then, in Claude Code, sign in once and let setup show you the rest:
 
 ```
 /enforcer:login
+/enforcer:setup
 ```
+
+That is the whole customer setup: **one install, then `/enforcer:setup`**.
+`enforcer` declares `enforcer-graph` as a [plugin dependency](https://code.claude.com/docs/en/plugins/dependencies),
+so the install pulls in the graph hooks (`+ 1 dependency: enforcer-graph`) and
+Claude Code refuses to disable them while `enforcer` is on - you cannot end up
+with the MCP's graph tools but no hooks behind them. `/enforcer:setup` asks the
+server for the plan (the permission allow rules for the graph worker loop, the
+plugin commands, and the first policy rules for this repo's routes), shows it,
+and applies only what you confirm.
+
+**Already installed?** `claude plugin update enforcer@instruxi`, then
+`/reload-plugins`. If you had turned `enforcer-graph` off, `claude plugin list`
+now shows `enforcer` as `failed to load: Dependency "enforcer-graph@instruxi" is
+disabled`: run `claude plugin enable enforcer-graph@instruxi`. An older install
+says so once at session start, with the update command.
 
 If your admin gave you a workspace code, add it (`/enforcer:login ACME-1234-ABCD`)
 and the sign-in page goes straight to your workspace's email step. A team can

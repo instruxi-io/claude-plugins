@@ -6,12 +6,12 @@
     {
       "id": "enforcer@instruxi",
       "default": true,
-      "summary": "The enforcer MCP server and the shared Enforcer sign-in. Run /enforcer:login once after install"
+      "summary": "The enforcer MCP server, the shared Enforcer sign-in, and (as a dependency) enforcer-graph's hooks. Run /enforcer:login, then /enforcer:setup"
     },
     {
       "id": "enforcer-graph@instruxi",
       "default": true,
-      "summary": "Work and write plans held in enforcer-graph. Uses the enforcer plugin's sign-in; no key"
+      "summary": "Work and write plans held in enforcer-graph. Installed with enforcer as its dependency; listed for Claude Code versions without plugin dependencies"
     },
     {
       "id": "enforcer-files@instruxi",
