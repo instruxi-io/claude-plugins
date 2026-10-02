@@ -14,7 +14,7 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "mcp__(plugin_enforcer_enforcer|enforcer|enforcer-graph)__graph_(report|remember|heartbeat)",
+        "matcher": "mcp__(plugin_enforcer_enforcer|enforcer|enforcer-graph)__graph_(next_work|report|remember|heartbeat)",
         "hooks": [
           {
             "type": "command",

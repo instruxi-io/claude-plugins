@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""PreToolUse on graph_report. Attaches the evidence capture_evidence.py
+"""PreToolUse on graph_next_work, graph_heartbeat, graph_report and
+graph_remember. Stamps `client` (lib.CLIENT, "enforcer-graph-plugin/<version>;
+hooks=on") on the first three, so the graph records that this run was worked
+with the hooks live. On graph_report it also attaches the evidence capture_evidence.py
 recorded while the run was open, so the server judges what ran rather than what
 the model says ran.
 
@@ -96,14 +99,14 @@ def with_usage(args, usage, legacy=True):
     return args
 
 
-def main():
-    inp = lib.read_stdin()
+def decide(inp):
+    """The hookSpecificOutput for this call, or None to let it through as written."""
     tool = (inp.get("tool_name") or "")
     is_report = tool.endswith("graph_report")
     is_remember = tool.endswith("graph_remember")
     is_heartbeat = tool.endswith("graph_heartbeat")
     if not (is_report or is_remember or is_heartbeat):
-        return
+        return None
     sid = lib.actor_key(inp)
     records = lib.load_evidence(sid)
     # What the run cost, read from this agent's own transcript since its claim,
@@ -115,8 +118,8 @@ def main():
         run = lib.load_run(sid) or {}
         usage = lib.transcript_usage(lib.actor_transcript(inp), run.get("claimed_at"))
         if usage and MODE != "context":
-            print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "updatedInput": with_usage(inp.get("tool_input"), usage, legacy=False)}}))
-        return
+            return {"hookEventName": "PreToolUse", "updatedInput": with_usage(inp.get("tool_input"), usage, legacy=False)}
+        return None
     if is_report:
         run = lib.load_run(sid) or {}
         usage = lib.transcript_usage(lib.actor_transcript(inp), run.get("claimed_at"))
@@ -126,8 +129,8 @@ def main():
         # model supplied. A report with no evidence is the server's call, not a
         # hook's. Usage alone is still stamped.
         if usage and MODE != "context":
-            print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "updatedInput": with_usage(inp.get("tool_input"), usage)}}))
-        return
+            return {"hookEventName": "PreToolUse", "updatedInput": with_usage(inp.get("tool_input"), usage)}
+        return None
     if is_remember:
         # A FACT is not a run. Everything captured during the run supports the
         # report; only what just happened plausibly supports "the lease is 300
@@ -176,7 +179,24 @@ def main():
         args["evidence"] = evidence          # replaces anything the model wrote there
         out["updatedInput"] = args
         out["additionalContext"] = NOTE.format(n=len(evidence))
-    print(json.dumps({"hookSpecificOutput": out}))
+    return out
+
+
+def main():
+    inp = lib.read_stdin()
+    tool = inp.get("tool_name") or ""
+    try:
+        out = decide(inp)
+    except Exception:
+        out = None  # evidence failed; the client stamp below still goes on
+    # Every claim, heartbeat and report says which harness made it. In context
+    # mode a rewrite is not applied (it becomes a permission prompt), so there
+    # is nothing to stamp onto and the call goes through unattested.
+    if lib.stamps_client(tool) and MODE != "context":
+        out = out or {"hookEventName": "PreToolUse"}
+        out["updatedInput"] = lib.with_client(out.get("updatedInput", inp.get("tool_input")))
+    if out:
+        print(json.dumps({"hookSpecificOutput": out}))
 
 
 if __name__ == "__main__":

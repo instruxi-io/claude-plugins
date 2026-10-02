@@ -77,7 +77,7 @@ class H(BaseHTTPRequestHandler):
                                         "scope": "enforcer:read enforcer:graph-runs.write"})
             return self._send(400, {"error": "invalid_grant"})
         body = json.loads(self.rfile.read(n) or b"{}") if n else {}
-        log({"method": "POST", "path": self.path, "body": body})
+        log({"method": "POST", "path": self.path, "body": body, "client": self.headers.get("X-Graph-Client")})
         if not self._auth():
             return
         if self.path.endswith("/heartbeat"):
