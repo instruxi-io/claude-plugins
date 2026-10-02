@@ -243,9 +243,10 @@ whole job.
    the migration number in the repo's reservation file yourself, in its own PR,
    and put it in the worker's prompt), or add a `requires` edge so the second
    waits for the first. Never let two workers each discover "the next free one".
-5. **Merge nodes are mechanical; batch them.** Fan out the build work in
-   parallel; land the merges through one worker per repo, in order, each queued
-   with `--auto`. N parallel merge workers on one repo each rebase onto a base
+5. **Plans written for the `graph-worker` agent have no merge nodes** (see
+   "Writing a plan"): the worker lands its own PR. For an older plan that still
+   has merge nodes, fan out the build work in parallel; land the merges through
+   one worker per repo, in order, each queued with `--auto`. N parallel merge workers on one repo each rebase onto a base
    the others keep moving, and every move is a full verify for nothing.
 6. **Launch each worker at its node's tier.** The card's `model` (when the
    server sends one) and the node's `data.tier` say how much model it needs;
@@ -258,6 +259,29 @@ whole job.
    its second attempt goes up one tier. A node marked `detail: thin` has only a
    pointer for a description: its tier is a rule's guess, so give its worker
    the design section to read and say the tier is provisional.
+
+## Writing a plan
+
+When you author nodes (import, templates, `addNode`), write them so a
+`graph-worker` agent (this plugin's `agents/graph-worker.md`) can take one
+cold:
+
+- **A code task's acceptance includes "landed".** The worker opens the PR and
+  lands it with `land-pr.sh` inside its own node, so one of the acceptance lines
+  reads like "PR merged to the base branch (merge commit on origin/main)". Do
+  not add a separate merge node per code task: it costs a claim, a rebase and
+  a full verify for nothing, and the hooks capture the merge evidence on the
+  node that did the work. A merge node is only for something no code task owns
+  (a release, a cross-repo cutover).
+- **`data.tier` is required** on every node: `mechanical`, `standard` or
+  `deep` (see "Coordinating subagents" for what each launches). Add
+  `data.tier_reason` in one line.
+- **`data.repo` names the repository** (and the base branch, when it is not
+  the default) the node's code lands in.
+- **`data.brief` is optional**: the few paths or doc sections the worker should
+  read first. A worker reads what the node names, never a whole doc set.
+- Contested resources (a migration number, a reservation file) go in the node
+  description, assigned by you, never discovered by the worker.
 
 ## Inputs and outputs
 

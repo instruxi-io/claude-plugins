@@ -83,10 +83,31 @@ def upload(s):
     assert re.search(r"upload <path> .*\[--dir <directory>\]", cli), "files.mjs no longer takes upload --dir"
 
 
+def agent(_s):
+    t = open(os.path.join(os.path.dirname(SKILL), "..", "..", "agents", "graph-worker.md")).read()
+    m = re.match(r"---\n(.*?)\n---\n", t, re.S)
+    assert m, "no frontmatter"
+    fm = m.group(1)
+    assert re.search(r"^name: graph-worker$", fm, re.M), "name"
+    assert re.search(r"^description: .{20,}", fm, re.M), "description"
+    assert re.search(r"^model: sonnet$", fm, re.M), "model"
+    tl = re.search(r"^tools: (.+)$", fm, re.M)
+    assert tl, "tools allowlist"
+    names = [x.strip() for x in tl.group(1).split(",")]
+    for tool in ("graph_next_work", "graph_heartbeat", "graph_report"):
+        for pre in ("plugin_enforcer_enforcer", "enforcer", "enforcer-graph"):
+            assert "mcp__%s__%s" % (pre, tool) in names, "missing %s %s" % (pre, tool)
+    assert not [n for n in names if "api_write" in n], "agent must not be allowed enforcer_api_write"
+    body = t[m.end():]
+    for line in body.splitlines():
+        if "api_write" in line:
+            assert re.search(r"[Nn]ever|bypass|not ", line), "api_write mentioned without a prohibition: " + line
+
+
 if __name__ == "__main__":
     text = open(SKILL).read()
     try:
-        {"frontmatter": frontmatter, "tools": tools, "rules": rules, "upload": upload}[sys.argv[1]](text)
+        {"frontmatter": frontmatter, "tools": tools, "rules": rules, "upload": upload, "agent": agent}[sys.argv[1]](text)
     except AssertionError as e:
         print(e)
         sys.exit(1)

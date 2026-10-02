@@ -119,6 +119,43 @@ hook already records.
 Bounded and fails open: no `gh`, no network, a private repo or a timeout all
 leave the report exactly as the model wrote it.
 
+## The graph-worker agent
+
+`agents/graph-worker.md` is the worker protocol as a plugin subagent
+(`enforcer-graph:graph-worker`). Hand it a graph id, a node id or key, and
+optionally a brief in its prompt; it claims that node with `graph_next_work`
+(`node` parameter, MCP 0.9.5+), heartbeats, does the work, lands its own PR with
+`bin/land-pr.sh` and reports with captured evidence. It never claims, heartbeats
+or reports through `enforcer_api_write`, which bypasses every hook and asks a
+human to confirm each call. On a server without the `node` parameter it falls
+back to a plain `graph_next_work` and works whatever node it gets.
+
+Frontmatter: `model: sonnet` (a coordinator overrides it per node tier through
+the Agent tool's `model`), a `tools` allowlist naming the graph tools under all
+three server prefixes, and `maxTurns: 150`. Claude Code supports `maxTurns` for
+plugin agents (the output is marked partial when the cap is hit). Plugin agents
+ignore `hooks`, `mcpServers` and `permissionMode`, so none are set: the hooks
+come from the plugin's `hooks/hooks.json`.
+
+## The plugin must be ENABLED, and the allowlist must name the tools as they load
+
+Both failed together on the agents-platform build, so no hook ran at all:
+
+- `"enforcer-graph@instruxi": false` was set in `~/.claude/settings.json` for the
+  whole build. A disabled plugin contributes no hooks: no lease keepalive, no
+  evidence capture, no usage stamp, no Stop guard. Check with
+  `claude plugin list`; fix with `claude plugin enable enforcer-graph@instruxi`.
+- The permission allowlist named `mcp__enforcer-graph__graph_*`, but the tools
+  load as `mcp__plugin_enforcer_enforcer__graph_*` (the server is declared by the
+  `enforcer` plugin; a session's tool list shows
+  `mcp__plugin_enforcer_enforcer__graph_heartbeat`, `...__graph_report`,
+  `...__graph_next_work`). Unmatched, every call prompts the human, and workers
+  routed around the prompts through `enforcer_api_write`.
+
+`settings.example.json` now lists all three forms: `mcp__plugin_enforcer_enforcer__`
+(the plugin's server), `mcp__enforcer__` and `mcp__enforcer-graph__` (a
+standalone server added with `claude mcp add`). Keep the one your session shows.
+
 ## Hooks
 
 | Event | Script | What it does |
@@ -179,6 +216,7 @@ the reason a session stalls.
 enforcer-graph/
   .claude-plugin/plugin.json
   skills/graph/SKILL.md
+  agents/graph-worker.md
   hooks/hooks.json  hooks/lib.py
   hooks/{session_start,track_run,heartbeat,remember_on_compact,open_run_guard}.py
   hooks/{capture_evidence,attach_evidence}.py

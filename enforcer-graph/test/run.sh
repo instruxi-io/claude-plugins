@@ -378,5 +378,6 @@ check "skill: frontmatter names the skill, description within 1024 chars" 'pytho
 check "skill: names only real graph tools, with their real params" 'python3 test/check_skill.py tools'
 check "skill: keeps the worker rule, evidence, stale-acceptance, merge and coordinator rules" 'python3 test/check_skill.py rules'
 check "skill: the enforcer-files upload command it gives exists and takes --dir" 'python3 test/check_skill.py upload'
+check "agent: graph-worker has name, sonnet, tool allowlist for all three server prefixes, no api_write" 'python3 test/check_skill.py agent'
 
 echo; echo "$pass passed, $fail failed"; [ "$fail" -eq 0 ]
