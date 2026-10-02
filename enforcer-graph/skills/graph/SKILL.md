@@ -278,8 +278,29 @@ cold:
   `data.tier_reason` in one line.
 - **`data.repo` names the repository** (and the base branch, when it is not
   the default) the node's code lands in.
-- **`data.brief` is optional**: the few paths or doc sections the worker should
-  read first. A worker reads what the node names, never a whole doc set.
+- **A node's description IS its spec.** A worker must be able to start from the
+  description, the acceptance lines and `data.brief` alone. Write the facts in:
+  the files, the numbers, the decisions. Never "see plan section X", "per the
+  plan" or "as in the contract": on one 80-worker graph a 153 KB plan document
+  was re-read by 16 workers and a 189 KB contract by 15, and every later turn
+  paid for them again (orientation was 27% of all tokens; the median first edit
+  came at turn 39.5). Copy the paragraph the node needs into the node.
+- **`data.brief` limits: at most 5 files and 30 KB in total.** It names the
+  files the worker reads before editing, nothing else. A pointer to a document
+  over 30 KB is banned, even as one of the five: extract the part the node needs
+  into the description, or point at a per-repo `docs/WORKER_BRIEF.md` instead.
+  The plugin's `test/check_skill.py plan` rejects a sample plan that breaks these.
+- **`scout` nodes write the repo brief.** For a repo that has no
+  `docs/WORKER_BRIEF.md`, add one node of `type: scout` (with `data.repo`)
+  before the repo's code nodes, and make them depend on it. Its job is to write
+  and land `docs/WORKER_BRIEF.md` for that repo, at most 8 KB, with these
+  sections: layout (where things live), verify loop (the exact commands), traps
+  (each with its real error message), where to look for X, and docs never to
+  read whole (name them and their size). Its acceptance: the file exists, is
+  <= 8 KB, has those five sections, and is merged. Workers read `CLAUDE.md` and
+  `docs/WORKER_BRIEF.md` first, so the brief replaces their exploration.
+- **`data.max_turns` is optional.** Workers have an 80-turn cap; a deep node may
+  raise it, and the dispatcher passes it on.
 - Contested resources (a migration number, a reservation file) go in the node
   description, assigned by you, never discovered by the worker.
 
