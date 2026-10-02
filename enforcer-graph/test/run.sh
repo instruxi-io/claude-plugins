@@ -380,4 +380,14 @@ check "skill: keeps the worker rule, evidence, stale-acceptance, merge and coord
 check "skill: the enforcer-files upload command it gives exists and takes --dir" 'python3 test/check_skill.py upload'
 check "agent: graph-worker has name, sonnet, tool allowlist for all three server prefixes, no api_write" 'python3 test/check_skill.py agent'
 
+# --- bin/graph-dispatch: tier -> model, contested resources, dry run, drain, merge by script
+dispatch_out=$(env -u GRAPH_API_KEY -u GRAPH_AUTH_HELPER python3 -m unittest discover -s test -p "test_dispatch.py" -v 2>&1)
+check "dispatch: tier -> model (mechanical/standard sonnet, deep opus, user tier beats the cap, explicit model wins)" \
+  'echo "$dispatch_out" | grep -E "^test_(tiers|cap_applies_to_planner_tier|user_tier_wins_over_cap|explicit_model_wins) .* ok$" | wc -l | grep -qx 4'
+check "dispatch: never two workers on one data.resources value; one land-pr per repo" \
+  'echo "$dispatch_out" | grep -E "^test_(never_two_on_one_value|held_elsewhere_blocks|one_land_per_repo|held_elsewhere_counts_live_runs_not_lapsed) .* ok$" | wc -l | grep -qx 4'
+check "dispatch: dry run launches nothing; stop file drains; a denied graph tool drains; merge landed by script" \
+  'echo "$dispatch_out" | grep -E "^test_(dry_run_launches_nothing|stop_file_drains|denied_graph_tool_blocks_and_drains|merge_landed_by_script) .* ok$" | wc -l | grep -qx 4'
+check "dispatch: --help works and names the flags" './bin/graph-dispatch --help | grep -q -- "--workers"'
+
 echo; echo "$pass passed, $fail failed"; [ "$fail" -eq 0 ]

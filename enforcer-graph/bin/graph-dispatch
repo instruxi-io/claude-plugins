@@ -322,6 +322,10 @@ class Dispatcher:
         self.peak = 0
         self.blocked = False
         self.mcp_down = 0
+        self.last_skip = {}
+        self.drain_said = False
+        self.last_skip = {}
+        self.drain_said = False
 
     def say(self, msg):
         line = "%s %s" % (utcnow().strftime("%H:%M:%S"), msg)
@@ -386,8 +390,13 @@ class Dispatcher:
         m_chosen, m_skipped = select(merges, held, len(merges), self.workers)
         chosen, skipped = chosen + m_chosen, skipped + m_skipped
         for n, why in skipped:
-            if why != "no free worker slot" or self.args.dry_run:
+            if (why != "no free worker slot" or self.args.dry_run) and self.last_skip.get(n["key"]) != why:
                 self.say("skip %s: %s" % (n["key"], why))
+            self.last_skip[n["key"]] = why
+        if self.stopping() and not self.drain_said:
+            self.drain_said = True
+            self.say("stop file present: draining; %d worker(s) running (%s), no new launches"
+                     % (len(self.workers), ", ".join(self.workers) or "-"))
         if self.stopping() or self.blocked:
             if chosen:
                 self.say(("blocked" if self.blocked else "stop file present") + ": not launching %s" % ", ".join(n["key"] for n in chosen))
@@ -514,7 +523,7 @@ class Dispatcher:
         ev = {"kind": "command", "cmd": " ".join(w.cmd), "exit": rc, "output": clip(out)}
         ok = rc == 0
         body = {"status": "succeeded" if ok else "failed", "evidence": [ev],
-                "data": {"report": "1. %s: land-pr.sh exited %d (%s). Landed by graph-dispatch with no agent."
+                "data": {"report": "1. %s: land-pr.sh exited %d (%s). Run by graph-dispatch with no agent."
                          % ("MET" if ok else "NOT MET", rc, LAND_CODES.get(rc, "unknown")),
                          "runner": "graph-dispatch"}}
         if not ok:
@@ -558,7 +567,7 @@ class Dispatcher:
                 time.sleep(a.interval)
                 continue
             if (self.stopping() or self.blocked) and not self.workers:
-                if self.blocked:
+                if self.blocked and not self.stopping():
                     self.say("drained after BLOCKED; exiting 2 (peak %d)" % self.peak)
                     return 2
                 self.say("drained: stop file present and no worker running; exiting (peak %d)" % self.peak)

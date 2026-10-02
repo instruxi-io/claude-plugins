@@ -199,7 +199,7 @@ class DryRunAndDrain(unittest.TestCase):
         text = out.getvalue()
         self.assertEqual(text.count("launch a "), 1)
         self.assertNotIn("launch b ", text)
-        self.assertIn("stop file present: not launching", text)
+        self.assertIn("stop file present: draining; 1 worker(s) running (a), no new launches", text)
         self.assertIn("done a exit=0", text)
         self.assertIn("drained", text)
 
