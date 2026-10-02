@@ -28,6 +28,11 @@ a cold start, logged, with no attempt spent. A session is retired after
 it off. data.max_turns is passed as --max-turns. The done line carries the
 result's cache_read / cache_creation / output tokens.
 
+A worker whose result names a permission denial (a denied push, PR or tool,
+or denial text in its result) is logged DENIED with its worktree path and is not
+relaunched this session: the same wall would meet it again. Every worker runs
+with JEV_HOOKS_HEADLESS=1.
+
 Never two of our workers, or ours and a live run elsewhere, on one
 data.resources value. A touch of the stop file (default <state>/STOP) drains:
 no new launches, running workers finish, then exit. Per-worker logs in
@@ -66,6 +71,11 @@ BASE_TOOLS = ["Bash", "Read", "Edit", "Write", "Grep", "Glob", "ToolSearch"]
 DEFAULT_TYPES = "task,bug,chore,merge"
 TIER_MODEL = {"mechanical": "sonnet", "standard": "sonnet", "deep": "opus"}
 CLIP = 4000
+# A permission denial is the environment's answer, not the work's: relaunching
+# the same worker meets the same wall and (server side) bumps the node's tier.
+DENIAL_TEXT_RE = re.compile(r"permission denied|was denied|were denied|denied by|requires? (permission|approval)|"
+                            r"not (allowed|permitted) to|no approval|needs? approval|auto mode (classifier )?(denied|blocked)",
+                            re.I)
 GRAPH_TOOL_RE = re.compile(r"__graph_(next_work|heartbeat|report|remember|plan_status)$")
 
 
@@ -408,6 +418,7 @@ class Dispatcher:
         self.types = None if args.types == "all" else set(args.types.split(","))
         self.peak = 0
         self.blocked = False
+        self.denied = {}  # node key -> worktree path: denied by the environment, not relaunched this session
         self.mcp_down = 0
         self.last_skip = {}
         self.drain_said = False
@@ -446,6 +457,8 @@ class Dispatcher:
             if self.types is not None and n.get("type") not in self.types:
                 continue
             if self.attempts.get(n["key"], 0) >= self.args.max_attempts:
+                continue
+            if n["key"] in self.denied:
                 continue
             keep.append(n)
         return keep
@@ -557,7 +570,10 @@ class Dispatcher:
         self.attempts[n["key"]] = self.attempts.get(n["key"], 0) + 1
         log = os.path.join(self.logs, "%s.%d.jsonl" % (n["key"], self.attempts[n["key"]]))
         w = Worker(n, log)
-        env = dict(os.environ, GRAPH_ID=self.g)
+        # JEV_HOOKS_HEADLESS tells jev-hooks the launcher is headless, so it allows the
+        # graph/<key> push; set for the worker only, never for the dispatcher itself.
+        env = dict(os.environ, GRAPH_ID=self.g, JEV_HOOKS_HEADLESS="1")
+        w.path = path
         with open(log, "w") as f:
             w.proc = subprocess.Popen(cmd, cwd=path, stdin=subprocess.DEVNULL, stdout=f,
                                       stderr=subprocess.STDOUT, env=env, start_new_session=True)
@@ -677,6 +693,13 @@ class Dispatcher:
                              "tools requiresUserInteraction, which claude -p refuses whatever --allowedTools says; "
                              "launching no more workers (drain). See README 'Headless workers'."
                              % ", ".join(graph_denied))
+                other = [t for t in s["denied_tools"] if t not in graph_denied]
+                if (other or DENIAL_TEXT_RE.search(s["result_text"] or "")) and not graph_denied \
+                        and key not in self.denied:
+                    self.denied[key] = getattr(w, "path", None) or "-"
+                    self.say("DENIED %s: %s; not relaunching it this session. Worktree: %s "
+                             "(a person can land it)"
+                             % (key, ", ".join(other) or clip(s["result_text"], 120), self.denied[key]))
                 del self.workers[key]
 
     def finish_merge(self, w):
@@ -773,7 +796,8 @@ def summarize(path):
     """turns, result subtype, permission denials, cost, the run id the worker
     claimed (from its graph_next_work tool result) and whether it reported."""
     s = {"turns": 0, "result": None, "denials": 0, "denied_tools": [], "run_id": None, "reported": False,
-         "cost": None, "mcp": {}, "started": False, "session_id": None, "usage": {}, "error_text": None}
+         "cost": None, "mcp": {}, "started": False, "session_id": None, "usage": {}, "error_text": None,
+         "result_text": None}
     claims = set()
     try:  # the first non-JSON line, e.g. claude's "No conversation found with session ID: ..."
         with open(path, errors="replace") as f:
@@ -808,6 +832,7 @@ def summarize(path):
             s["mcp"] = {m.get("name"): m.get("status") for m in e.get("mcp_servers") or [] if isinstance(m, dict)}
         elif t == "result":
             s["result"] = e.get("subtype")
+            s["result_text"] = e.get("result") if isinstance(e.get("result"), str) else None
             s["usage"] = e.get("usage") if isinstance(e.get("usage"), dict) else {}
             if (e.get("num_turns") or 0) > 0 or s["turns"] > 0:
                 s["started"] = True

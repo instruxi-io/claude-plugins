@@ -219,6 +219,55 @@ class DryRunAndDrain(unittest.TestCase):
         self.assertIn("BLOCKED: mcp__plugin_enforcer_enforcer__graph_next_work denied", text)
         self.assertEqual(text.count("launch "), 1)
 
+    def _run_denied(self, body, nodes):
+        api, out = FakeAPI(nodes), io.StringIO()
+        state = os.path.join(self.tmp, "s")
+        os.makedirs(os.path.join(state, "logs"))
+        p = os.path.join(self.tmp, "claude-denied")
+        with open(p, "w") as f:
+            f.write("#!/bin/sh\nprintf '%%s\\n' '%s'\necho \"$JEV_HOOKS_HEADLESS\" >> %s/headless\n"
+                    % (body, self.tmp))
+        os.chmod(p, 0o755)
+        a = args(workers=1, state_dir=state, stop_file=os.path.join(state, "STOP"), interval=0.2,
+                 claude=p, max_attempts=2)
+        d = gd.Dispatcher(api, a, out)
+        stopper = threading.Timer(2.5, lambda: open(a.stop_file, "w").close())
+        stopper.start()
+        try:
+            d.run()
+        finally:
+            stopper.cancel()
+        return d, out.getvalue()
+
+    def test_denied_push_is_logged_not_relaunched(self):
+        body = ('{"type":"result","subtype":"success","permission_denials":'
+                '[{"tool_name":"Bash","tool_input":{"command":"git push -u origin graph/a"}}]}')
+        d, text = self._run_denied(body, [node("a")])
+        self.assertEqual(text.count("launch a "), 1, text)
+        self.assertIn("DENIED a: Bash; not relaunching it this session. Worktree: ", text)
+        self.assertIn(d.denied["a"], text)
+        self.assertEqual(d.attempts["a"], 1)
+
+    def test_denial_named_in_result_text_is_not_relaunched(self):
+        body = '{"type":"result","subtype":"success","permission_denials":[],"result":"git push was denied by the classifier"}'
+        d, text = self._run_denied(body, [node("a")])
+        self.assertEqual(text.count("launch a "), 1, text)
+        self.assertIn("DENIED a:", text)
+
+    def test_ordinary_failure_is_still_relaunched(self):
+        body = '{"type":"result","subtype":"error_max_turns","permission_denials":[],"result":"ran out of turns"}'
+        d, text = self._run_denied(body, [node("a")])
+        self.assertEqual(text.count("launch a "), 2, text)
+        self.assertNotIn("DENIED", text)
+
+    def test_worker_env_has_jev_hooks_headless_and_dispatcher_does_not(self):
+        os.environ.pop("JEV_HOOKS_HEADLESS", None)
+        body = '{"type":"result","subtype":"success","permission_denials":[]}'
+        self._run_denied(body, [node("a")])
+        with open(os.path.join(self.tmp, "headless")) as f:
+            self.assertEqual(f.read().split()[0], "1")
+        self.assertNotIn("JEV_HOOKS_HEADLESS", os.environ)
+
     def test_merge_landed_by_script(self):
         nodes = [node("m", type="merge", repo="r", pr="5")]
         api, out = FakeAPI(nodes), io.StringIO()
