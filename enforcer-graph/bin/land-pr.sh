@@ -39,8 +39,9 @@ manual=1
 if [ "$state" = "OPEN" ]; then
   nwo=$(gh repo view "${repo[@]:1}" --json nameWithOwner --jq .nameWithOwner 2>/dev/null)
   base=$(view baseRefName .baseRefName)
-  required=$(gh api "repos/$nwo/branches/$base/protection" --jq '.required_status_checks.checks | length' 2>/dev/null || echo 0)
-  if [ "${required:-0}" -gt 0 ] && gh pr merge "$pr" "${repo[@]}" --squash --auto --delete-branch >/dev/null 2>&1; then
+  required=$(gh api "repos/$nwo/branches/$base/protection" --jq '.required_status_checks.checks | length' 2>/dev/null)
+  case "$required" in ''|*[!0-9]*) required=0 ;; esac  # 404 = unprotected; its body is not a count
+  if [ "$required" -gt 0 ] && gh pr merge "$pr" "${repo[@]}" --squash --auto --delete-branch >/dev/null 2>&1; then
     manual=0
   fi
 elif [ "$state" != "MERGED" ]; then
