@@ -84,6 +84,50 @@ class UsageTest(unittest.TestCase):
         self.assertEqual(out["data"]["usage"]["total_tokens"], 635)
         self.assertEqual(out["report"], "done")
 
+    def _hook(self, tool, tool_input, script="attach_evidence.py", with_run=True):
+        env = dict(os.environ, CLAUDE_PLUGIN_DATA=os.path.join(self.dir, "data"))
+        env.pop("GRAPH_API_KEY", None)
+        os.makedirs(os.path.join(env["CLAUDE_PLUGIN_DATA"], "runs"), exist_ok=True)
+        inp = {"session_id": self.sid, "agent_id": "ag1", "transcript_path": self.parent,
+               "tool_name": tool, "tool_input": tool_input}
+        key = subprocess.run([sys.executable, "-c", f"import sys; sys.path.insert(0, {HOOKS!r}); import lib; print(lib.actor_key({json.dumps(inp)}))"],
+                             capture_output=True, text=True, env=env).stdout.strip()
+        if with_run:
+            subprocess.run([sys.executable, "-c", f"import sys; sys.path.insert(0, {HOOKS!r}); import lib; lib.save_run({key!r}, {{'claimed_at': '2026-10-01T10:00:00.000Z'}})"],
+                           check=True, env=env)
+        r = subprocess.run([sys.executable, os.path.join(HOOKS, script)], input=json.dumps(inp),
+                           capture_output=True, text=True, env=env, timeout=20)
+        return json.loads(r.stdout)["hookSpecificOutput"]["updatedInput"] if r.stdout.strip() else None
+
+    def test_report_carries_typed_usage_from_fixture_transcript(self):
+        out = self._hook("mcp__plugin_enforcer_enforcer__graph_report",
+                         {"node_id": "n", "run_id": "r", "status": "succeeded", "report": "done"})
+        self.assertEqual(out["usage"], {"input_tokens": 5, "cache_creation_input_tokens": 100,
+                                        "cache_read_input_tokens": 500, "output_tokens": 30,
+                                        "model": "claude-sonnet-5", "source": "reported"})
+
+    def test_heartbeat_carries_running_total_and_no_data_arg(self):
+        out = self._hook("mcp__plugin_enforcer_enforcer__graph_heartbeat",
+                         {"graph": "g", "node_id": "n", "run_id": "r"})
+        self.assertEqual(out["usage"]["input_tokens"], 5)
+        self.assertNotIn("data", out)
+
+    def test_no_transcript_means_no_usage(self):
+        env = dict(os.environ, CLAUDE_PLUGIN_DATA=os.path.join(self.dir, "data2"))
+        os.makedirs(os.path.join(env["CLAUDE_PLUGIN_DATA"], "runs"), exist_ok=True)
+        for tool in ("graph_report", "graph_heartbeat"):
+            inp = {"session_id": "none", "transcript_path": os.path.join(self.dir, "missing.jsonl"),
+                   "tool_name": "mcp__plugin_enforcer_enforcer__" + tool, "tool_input": {"run_id": "r"}}
+            r = subprocess.run([sys.executable, os.path.join(HOOKS, "attach_evidence.py")], input=json.dumps(inp),
+                               capture_output=True, text=True, env=env, timeout=20)
+            self.assertNotIn("usage", r.stdout)
+        self.assertIsNone(lib.typed_usage(None))
+
+    def test_typed_usage_shape_for_the_heartbeat_body(self):
+        u = lib.typed_usage(lib.transcript_usage(self.sub, "2026-10-01T10:00:00.000Z"))
+        self.assertEqual(u["output_tokens"], 30)
+        self.assertEqual(u["cache_read_input_tokens"], 500)
+
 
 if __name__ == "__main__":
     unittest.main()

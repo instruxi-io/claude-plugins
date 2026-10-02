@@ -81,11 +81,18 @@ def check_pr(url):
             "label": f"pull request {d.get('state', '?').lower()}: {(d.get('title') or '')[:120]}",
             "output": f"gh pr view {num} -R {owner}/{repo} -> state={d.get('state')} merged={d.get('mergedAt') or 'no'}"}
 
-def with_usage(args, usage):
+def with_usage(args, usage, legacy=True):
     """The report's arguments with data.usage set, keeping any data the model passed."""
     args = dict(args) if isinstance(args, dict) else {}
     data = args.get("data")
-    args["data"] = {**(data if isinstance(data, dict) else {}), "usage": usage}
+    if legacy:  # graph_heartbeat has no `data` argument
+        args["data"] = {**(data if isinstance(data, dict) else {}), "usage": usage}
+    # The typed field (enforcer-graph 088): the first-class run and node totals.
+    # data.usage stays for a server that predates it. A usage the model passed
+    # itself is its own and is kept.
+    typed = lib.typed_usage(usage)
+    if typed and not isinstance(args.get("usage"), dict):
+        args["usage"] = typed
     return args
 
 
@@ -94,7 +101,8 @@ def main():
     tool = (inp.get("tool_name") or "")
     is_report = tool.endswith("graph_report")
     is_remember = tool.endswith("graph_remember")
-    if not (is_report or is_remember):
+    is_heartbeat = tool.endswith("graph_heartbeat")
+    if not (is_report or is_remember or is_heartbeat):
         return
     sid = lib.actor_key(inp)
     records = lib.load_evidence(sid)
@@ -102,6 +110,13 @@ def main():
     # so a plan can be queried by model and tokens (graph_query agg
     # sum:data.usage.total_tokens) without the worker knowing its own usage.
     usage = None
+    if is_heartbeat:
+        # A running total, overwritten by each heartbeat; no evidence on a heartbeat.
+        run = lib.load_run(sid) or {}
+        usage = lib.transcript_usage(lib.actor_transcript(inp), run.get("claimed_at"))
+        if usage and MODE != "context":
+            print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "updatedInput": with_usage(inp.get("tool_input"), usage, legacy=False)}}))
+        return
     if is_report:
         run = lib.load_run(sid) or {}
         usage = lib.transcript_usage(lib.actor_transcript(inp), run.get("claimed_at"))
