@@ -13,6 +13,8 @@ export CLAUDE_PLUGIN_DATA="$WORK/data"
 mkdir -p "$WORK/proj/.claude"
 printf '{"graph_id":"g1","base_url":"http://127.0.0.1:%s","api_key_env":"GRAPH_API_KEY"}\n' "$PORT" > "$WORK/proj/.claude/graph.json"
 export GRAPH_API_KEY=stub-key
+# Claude Code's own plugin bookkeeping, for session_start's notices: never the real one.
+export CLAUDE_CONFIG_DIR="$WORK/cc"; mkdir -p "$CLAUDE_CONFIG_DIR"
 SID=s1
 pass=0; fail=0
 check() { if eval "$2"; then echo "PASS  $1"; pass=$((pass+1)); else echo "FAIL  $1"; fail=$((fail+1)); fi; }
@@ -102,7 +104,9 @@ rm -f "$runfile" "$evfile"
 cap "$(bash_in 'go test ./...' '{"stdout":"ok enforcer-graph/internal/nodes","stderr":"","interrupted":false}')"
 check "capture: no run open, nothing captured" '[ ! -e "$evfile" ]'
 out=$(hook attach_evidence.py "{\"session_id\":\"$SID\",\"tool_name\":\"mcp__enforcer-graph__graph_report\",\"tool_input\":{\"node_id\":\"n1\",\"report\":\"done\"}}")
-check "attach: no capture file, the report goes through untouched" '[ -z "$out" ]'
+check "attach: no capture file, the report goes through untouched but for the client stamp" 'echo "$out" | python3 -c "
+import json,sys; u=json.load(sys.stdin)[\"hookSpecificOutput\"][\"updatedInput\"]
+sys.exit(0 if u=={\"node_id\":\"n1\",\"report\":\"done\",\"client\":u[\"client\"]} and \"evidence\" not in u else 1)"'
 
 claim_in=$(python3 -c 'import json,sys;print(json.dumps({"session_id":sys.argv[1],"tool_name":"mcp__enforcer-graph__graph_next_work","tool_input":{},"tool_response":sys.argv[2]}))' "$SID" "$card")
 hook track_run.py "$claim_in"                 # run open again
@@ -214,7 +218,8 @@ check "attach_evidence: garbage stdin is silent and exit 0" '[ -z "$out" ] && [ 
 out=$(CLAUDE_PLUGIN_DATA=/proc/nonexistent/data hook capture_evidence.py "$(bash_in 'ls' '{"stdout":"a","stderr":"","interrupted":false}')"); rc=$?
 check "capture_evidence: an unwritable data dir is silent and exit 0" '[ -z "$out" ] && [ "$rc" -eq 0 ]'
 out=$(CLAUDE_PLUGIN_DATA=/proc/nonexistent/data hook attach_evidence.py "{\"session_id\":\"$SID\",\"tool_name\":\"mcp__enforcer-graph__graph_report\",\"tool_input\":{\"report\":\"x\"}}"); rc=$?
-check "attach_evidence: an unwritable data dir is silent and exit 0" '[ -z "$out" ] && [ "$rc" -eq 0 ]'
+check "attach_evidence: an unwritable data dir still only stamps the client, exit 0" '[ "$rc" -eq 0 ] && echo "$out" | python3 -c "
+import json,sys; u=json.load(sys.stdin)[\"hookSpecificOutput\"][\"updatedInput\"]; sys.exit(0 if set(u)=={\"report\",\"client\"} else 1)"'
 start=$(date +%s%N)
 cap "$(bash_in 'echo hi' '{"stdout":"hi","stderr":"","interrupted":false}')" >/dev/null
 ms=$(( ($(date +%s%N) - start) / 1000000 ))
@@ -389,5 +394,53 @@ check "dispatch: never two workers on one data.resources value; one land-pr per 
 check "dispatch: dry run launches nothing; stop file drains; a denied graph tool drains; merge landed by script" \
   'echo "$dispatch_out" | grep -E "^test_(dry_run_launches_nothing|stop_file_drains|denied_graph_tool_blocks_and_drains|merge_landed_by_script) .* ok$" | wc -l | grep -qx 4'
 check "dispatch: --help works and names the flags" './bin/graph-dispatch --help | grep -q -- "--workers"'
+
+# --- client attestation: every claim, heartbeat and report says hooks=on (X-Graph-Client, enforcer-graph 089)
+ver=$(python3 -c 'import json;print(json.load(open(".claude-plugin/plugin.json"))["version"])')
+want="enforcer-graph-plugin/$ver; hooks=on"
+for t in next_work heartbeat report; do
+  for pre in mcp__plugin_enforcer_enforcer__ mcp__enforcer__ mcp__enforcer-graph__; do
+    out=$(hook attach_evidence.py "{\"session_id\":\"client-$t\",\"tool_name\":\"${pre}graph_$t\",\"tool_input\":{\"graph\":\"g1\",\"client\":\"made-up\"}}")
+    check "client: stamped on ${pre}graph_$t" 'echo "$out" | W="$want" python3 -c "
+import json,os,sys; u=json.load(sys.stdin)[\"hookSpecificOutput\"][\"updatedInput\"]
+sys.exit(0 if u.get(\"client\")==os.environ[\"W\"] and u.get(\"graph\")==\"g1\" else 1)"'
+  done
+done
+out=$(hook attach_evidence.py "{\"session_id\":\"client-r\",\"tool_name\":\"mcp__plugin_enforcer_enforcer__graph_remember\",\"tool_input\":{\"graph\":\"g1\"}}")
+check "client: not stamped on graph_remember (it takes no client)" '! echo "$out" | grep -q "hooks=on"'
+out=$(hook attach_evidence.py "{\"session_id\":\"client-p\",\"tool_name\":\"mcp__plugin_enforcer_enforcer__graph_plan_status\",\"tool_input\":{\"graph\":\"g1\"}}")
+check "client: other graph tools are left alone" '[ -z "$out" ]'
+out=$(GRAPH_EVIDENCE_MODE=context hook attach_evidence.py "{\"session_id\":\"client-c\",\"tool_name\":\"mcp__plugin_enforcer_enforcer__graph_next_work\",\"tool_input\":{\"graph\":\"g1\"}}")
+check "client: context mode (rewrites not applied) does not pretend to stamp" '! echo "$out" | grep -q updatedInput'
+check "client: hooks.json routes next_work, heartbeat and report through the stamping hook" 'python3 -c "
+import json,re; m=[h[\"matcher\"] for h in json.load(open(\"hooks/hooks.json\"))[\"hooks\"][\"PreToolUse\"] if any(\"attach_evidence\" in x[\"command\"] for x in h[\"hooks\"])][0]
+import sys; sys.exit(0 if all(re.fullmatch(m, p+\"graph_\"+t) for p in (\"mcp__plugin_enforcer_enforcer__\",\"mcp__enforcer__\",\"mcp__enforcer-graph__\") for t in (\"next_work\",\"heartbeat\",\"report\")) else 1)"'
+SID2=client-hb; rf2="$CLAUDE_PLUGIN_DATA/runs/$SID2.json"
+in=$(python3 -c 'import json,sys;print(json.dumps({"session_id":sys.argv[1],"tool_name":"mcp__enforcer-graph__graph_next_work","tool_input":{},"tool_response":sys.argv[2]}))' "$SID2" "$card")
+hook track_run.py "$in"; : > "$STUB_LOG"; rm -f "$STUB_LOG.hb"
+for i in 1 2 3 4 5 6 7 8 9 10; do hook heartbeat.py "{\"session_id\":\"$SID2\",\"cwd\":\"$WORK/proj\",\"tool_name\":\"Bash\",\"tool_input\":{}}" >/dev/null; done
+check "client: the hook's own HTTP heartbeat sends X-Graph-Client" 'W="$want" python3 -c "
+import json,os,sys; r=[json.loads(l) for l in open(sys.argv[1]) if \"/heartbeat\" in l]
+sys.exit(0 if r and all(x.get(\"client\")==os.environ[\"W\"] for x in r) else 1)" "$STUB_LOG"'
+rm -f "$rf2"
+
+# --- session_start notices: an outdated install, enforcer-graph without enforcer; each said once
+MK="$WORK/mkt"; mkdir -p "$MK/.claude-plugin" "$MK/enforcer-graph/.claude-plugin" "$MK/enforcer/.claude-plugin" "$CLAUDE_CONFIG_DIR/plugins"
+printf '{"name":"instruxi","plugins":[{"name":"enforcer","source":"./enforcer"},{"name":"enforcer-graph","source":"./enforcer-graph"},{"name":"gov","source":{"source":"github","repo":"x/y"}}]}' > "$MK/.claude-plugin/marketplace.json"
+printf '{"name":"enforcer-graph","version":"9.1.0"}' > "$MK/enforcer-graph/.claude-plugin/plugin.json"
+printf '{"name":"enforcer","version":"0.5.0"}' > "$MK/enforcer/.claude-plugin/plugin.json"
+printf '{"instruxi":{"installLocation":"%s"}}' "$MK" > "$CLAUDE_CONFIG_DIR/plugins/known_marketplaces.json"
+printf '{"version":2,"plugins":{"enforcer-graph@instruxi":[{"scope":"user","version":"0.15.0"}]}}' > "$CLAUDE_CONFIG_DIR/plugins/installed_plugins.json"
+ss() { hook session_start.py "{\"session_id\":\"$SID\",\"cwd\":\"/\",\"hook_event_name\":\"SessionStart\",\"source\":\"startup\"}"; }
+out=$(ss)
+check "session_start: an install older than the marketplace says so, with the update command" 'echo "$out" | grep -q "enforcer-graph@instruxi 0.15.0 is installed; the marketplace has 9.1.0" && echo "$out" | grep -q "claude plugin update enforcer-graph@instruxi"'
+check "session_start: enforcer-graph without enforcer is told exactly what to install" 'echo "$out" | grep -q "claude plugin install enforcer@instruxi"'
+check "session_start: notices reach the person (systemMessage)" 'echo "$out" | python3 -c "import json,sys; sys.exit(0 if \"9.1.0\" in json.load(sys.stdin)[\"systemMessage\"] else 1)"'
+out=$(ss)
+check "session_start: each notice is said once" '[ -z "$out" ]'
+printf '{"version":2,"plugins":{"enforcer-graph@instruxi":[{"version":"9.1.0","auto":true}],"enforcer@instruxi":[{"version":"0.5.0"}]}}' > "$CLAUDE_CONFIG_DIR/plugins/installed_plugins.json"
+rm -f "$CLAUDE_PLUGIN_DATA/notices.json"; out=$(ss)
+check "session_start: up to date and installed together, nothing to say" '[ -z "$out" ]'
+rm -rf "$CLAUDE_CONFIG_DIR/plugins"
 
 echo; echo "$pass passed, $fail failed"; [ "$fail" -eq 0 ]

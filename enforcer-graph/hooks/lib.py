@@ -14,7 +14,39 @@ HTTP_TIMEOUT = float(os.environ.get("GRAPH_HOOK_TIMEOUT", "1.5"))
 # (a banned client signature) before the request reaches the API. Because every
 # hook fails open, that looked exactly like "no graph configured": verified
 # 2026-09-23, the same call was 403 with the default agent and 200 with this one.
-USER_AGENT = "enforcer-graph-plugin/0.7.0"
+def plugin_version():
+    """This plugin's own version, read from its manifest beside the hooks, so the
+    client string cannot drift from what is installed. "unknown" when unreadable."""
+    try:
+        here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        with open(os.path.join(here, ".claude-plugin", "plugin.json")) as f:
+            return str(json.load(f).get("version") or "unknown")
+    except Exception:
+        return "unknown"
+
+
+VERSION = plugin_version()
+USER_AGENT = f"enforcer-graph-plugin/{VERSION}"
+
+# The harness attestation (enforcer-graph 089 reads it as X-Graph-Client; the
+# MCP server forwards a `client` argument on graph_next_work, graph_heartbeat
+# and graph_report as that header). Only these hooks may say "hooks=on": a run
+# that records it was worked with the heartbeat, evidence and usage hooks live.
+CLIENT = f"enforcer-graph-plugin/{VERSION}; hooks=on"
+CLIENT_TOOLS = ("graph_next_work", "graph_heartbeat", "graph_report")
+
+
+def stamps_client(tool_name):
+    """True for a graph tool whose `client` argument the hooks stamp."""
+    return is_graph_tool(tool_name) and (tool_name or "").endswith(CLIENT_TOOLS)
+
+
+def with_client(args):
+    """The arguments with `client` set to this plugin's attestation. It REPLACES
+    whatever the model passed: the field is the hooks' word, not the model's."""
+    args = dict(args) if isinstance(args, dict) else {}
+    args["client"] = CLIENT
+    return args
 
 
 def read_stdin():
@@ -204,7 +236,8 @@ def http(cfg, method, path, body=None):
     if not auth:
         return None
     req = urllib.request.Request(url, data=data, method=method,
-                                 headers={**auth, "Content-Type": "application/json", "User-Agent": USER_AGENT})
+                                 headers={**auth, "Content-Type": "application/json", "User-Agent": USER_AGENT,
+                                          "X-Graph-Client": CLIENT})
     try:
         with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT) as r:
             out = json.loads(r.read() or b"null")

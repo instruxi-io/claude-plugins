@@ -37,9 +37,47 @@ jobs:
           ref=$(node -e 'const m=require("./.claude-plugin/marketplace.json");console.log(m.plugins.find(p=>p.name==="enforcer-governor").source.ref)')
           git clone -q --depth 1 --branch "$ref" https://github.com/instruxi-io/enforcer-governor.git /tmp/enforcer-governor
           GOVERNOR_DIR=/tmp/enforcer-governor node test/credential-format.test.mjs
+      # A renamed MCP tool must fail the build, not silently turn every allow
+      # rule into a prompt (and every headless worker into a denied one). The
+      # manifest is enforcer-v3-mcp's tool-names.json; that repo is private, so
+      # the vendored copy is always checked, and the live one too when the
+      # MCP_MANIFEST_TOKEN secret can read it (drift between the two fails).
+      - name: allow rules and hook matchers name tools the MCP server registers
+        run: node test/check-allowlist.mjs && node test/check-allowlist.test.mjs
+      - name: ...against the live MCP manifest
+        env:
+          GH_TOKEN: ${{ secrets.MCP_MANIFEST_TOKEN }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::warning::MCP_MANIFEST_TOKEN is not set: checked against the vendored manifest (test/fixtures/mcp-tool-names.json @ $(cat test/fixtures/mcp-tool-names.sha)) only"
+            exit 0
+          fi
+          gh api repos/instruxi-io/enforcer-v3-mcp/contents/tool-names.json -H "Accept: application/vnd.github.raw" > /tmp/live-tool-names.json
+          node test/check-allowlist.mjs --manifest /tmp/live-tool-names.json
+          node -e '
+            const n = (f) => JSON.stringify(JSON.parse(require("fs").readFileSync(f, "utf8")).tools.map((t) => t.name).sort());
+            if (n("/tmp/live-tool-names.json") !== n("test/fixtures/mcp-tool-names.json")) {
+              console.error("FAIL the vendored test/fixtures/mcp-tool-names.json is stale; copy the live tool-names.json over it and record its commit in mcp-tool-names.sha");
+              process.exit(1);
+            }
+            console.log("vendored manifest matches the live one");'
+      # Customers must not end up with the MCP tools but no graph hooks: the
+      # enforcer plugin (the MCP server) depends on enforcer-graph (the hooks),
+      # so one install brings both and Claude Code refuses to disable the hooks
+      # while enforcer is enabled.
+      - name: one install of enforcer brings the graph hooks
+        run: |
+          node -e '
+            const fs = require("fs");
+            const e = JSON.parse(fs.readFileSync("enforcer/.claude-plugin/plugin.json", "utf8"));
+            if (!(e.dependencies || []).some((d) => (typeof d === "string" ? d : d.name).split("@")[0] === "enforcer-graph")) {
+              console.error("FAIL enforcer/.claude-plugin/plugin.json must list enforcer-graph in dependencies"); process.exit(1);
+            }
+            if (!fs.existsSync("enforcer-graph/hooks/hooks.json")) { console.error("FAIL enforcer-graph has no hooks"); process.exit(1); }
+            console.log("enforcer -> enforcer-graph dependency ok");'
       - name: manifests are valid JSON
         run: |
-          for f in .claude-plugin/marketplace.json kit.json enforcer/.claude-plugin/plugin.json enforcer/.mcp.json enforcer-graph/.claude-plugin/plugin.json enforcer-graph/hooks/hooks.json enforcer-files/.claude-plugin/plugin.json; do
+          for f in .claude-plugin/marketplace.json kit.json enforcer/.claude-plugin/plugin.json enforcer/.mcp.json enforcer-graph/.claude-plugin/plugin.json enforcer-graph/hooks/hooks.json enforcer-graph/settings.example.json enforcer-files/.claude-plugin/plugin.json test/fixtures/mcp-tool-names.json; do
             node -e 'JSON.parse(require("fs").readFileSync(process.argv[1]))' "$f" && echo "$f ok"
           done
       # A local source that stops resolving breaks every new install while
