@@ -6,7 +6,7 @@ evidence capture depends on: whoever does the work claims and reports it. A
 coordinator that claimed and reported 18 nodes for its subagents had all 18
 judged `rejected / unsupported_by_evidence`.
 
-Usage: python3 test/check_skill.py <frontmatter|tools|rules|upload>
+Usage: python3 test/check_skill.py <frontmatter|tools|rules|upload|agent|plan>
 Exit 0 on pass; on failure, prints what is wrong and exits 1.
 """
 import os
@@ -104,10 +104,67 @@ def agent(_s):
             assert re.search(r"[Nn]ever|bypass|not ", line), "api_write mentioned without a prohibition: " + line
 
 
+MAX_BRIEF_FILES = 5
+MAX_BRIEF_BYTES = 30 * 1024
+# a node that defers to the plan instead of carrying its spec
+POINTER = re.compile(r"\b(see|per|as in|refer to|read)\b[^.\n]{0,30}\b(plan|contract)\b[^.\n]{0,20}\b(section|part|§|doc|document)", re.I)
+
+
+def plan_problems(nodes, root):
+    """Problems in a plan's nodes ({key, description, data:{brief}}). Briefs are
+    paths relative to `root`; a path that does not exist counts as 0 bytes."""
+    out = []
+    for n in nodes:
+        key = n.get("key", "?")
+        d = n.get("description", "")
+        if POINTER.search(d) or re.search(r"\bplan section\b|§\s*\d", d, re.I):
+            out.append("%s: description points at a plan section; the description is the spec" % key)
+        brief = (n.get("data") or {}).get("brief") or []
+        if len(brief) > MAX_BRIEF_FILES:
+            out.append("%s: brief names %d files (max %d)" % (key, len(brief), MAX_BRIEF_FILES))
+        total = 0
+        for b in brief:
+            path = os.path.join(root, b.split(" (")[0])
+            size = os.path.getsize(path) if os.path.isfile(path) else 0
+            if size > MAX_BRIEF_BYTES:
+                out.append("%s: %s is %d bytes, over the %d limit for one document" % (key, b, size, MAX_BRIEF_BYTES))
+            total += size
+        if total > MAX_BRIEF_BYTES:
+            out.append("%s: brief totals %d bytes (max %d)" % (key, total, MAX_BRIEF_BYTES))
+    return out
+
+
+def plan(_s):
+    import tempfile
+    good = [{"key": "a", "description": "Add X to Y. Bump Z to 3.", "data": {"brief": ["agents/graph-worker.md"]}}]
+    with tempfile.TemporaryDirectory() as tmp:
+        big = os.path.join(tmp, "big.md")
+        open(big, "w").write("x" * (MAX_BRIEF_BYTES + 1))
+        for i in range(6):
+            open(os.path.join(tmp, "f%d.md" % i), "w").write("y")
+        assert not plan_problems(good, os.path.dirname(ROOT)), "a clean node was rejected"
+        bad = {
+            "sees": {"key": "sees", "description": "Implement the lobby. See plan section 4.2 for details."},
+            "six": {"key": "six", "description": "ok", "data": {"brief": ["f%d.md" % i for i in range(6)]}},
+            "big": {"key": "big", "description": "ok", "data": {"brief": ["big.md"]}},
+            "sum": {"key": "sum", "description": "ok", "data": {"brief": ["big.md", "f1.md"]}},
+        }
+        for name, node in bad.items():
+            assert plan_problems([node], tmp), "sample node %r was not rejected" % name
+        assert not plan_problems([{"key": "five", "description": "ok", "data": {"brief": ["f%d.md" % i for i in range(5)]}}], tmp)
+    # the skill itself must state the limits the check enforces
+    s = open(SKILL).read()
+    for need in ("at most 5 files and 30 KB", "`scout`", "WORKER_BRIEF.md", "8 KB", "description IS its spec"):
+        assert need in s, "SKILL.md missing: " + need
+    w = open(os.path.join(ROOT, "agents", "graph-worker.md")).read()
+    for need in ("maxTurns: 80", "WORKER_BRIEF.md", "turn 12", "turn 20", "ONLY"):
+        assert need in w, "graph-worker.md missing: " + need
+
+
 if __name__ == "__main__":
     text = open(SKILL).read()
     try:
-        {"frontmatter": frontmatter, "tools": tools, "rules": rules, "upload": upload, "agent": agent}[sys.argv[1]](text)
+        {"frontmatter": frontmatter, "tools": tools, "rules": rules, "upload": upload, "agent": agent, "plan": plan}[sys.argv[1]](text)
     except AssertionError as e:
         print(e)
         sys.exit(1)

@@ -384,6 +384,7 @@ check "skill: names only real graph tools, with their real params" 'python3 test
 check "skill: keeps the worker rule, evidence, stale-acceptance, merge and coordinator rules" 'python3 test/check_skill.py rules'
 check "skill: the enforcer-files upload command it gives exists and takes --dir" 'python3 test/check_skill.py upload'
 check "agent: graph-worker has name, sonnet, tool allowlist for all three server prefixes, no api_write" 'python3 test/check_skill.py agent'
+check "plan: a node that says 'see plan section' or a brief over 5 files / 30 KB is rejected; skill and agent state the budget" 'python3 test/check_skill.py plan'
 
 # --- bin/graph-dispatch: tier -> model, contested resources, dry run, drain, merge by script
 dispatch_out=$(env -u GRAPH_API_KEY -u GRAPH_AUTH_HELPER python3 -m unittest discover -s test -p "test_dispatch.py" -v 2>&1)
