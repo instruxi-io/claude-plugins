@@ -199,11 +199,25 @@ and, for each ready node, up to `--workers` at once:
 - **Model**: `data.model` (or the claim card's `model`) wins; a tier set by a
   person (`tier_source: user`) beats `--model`; otherwise `--model` caps it;
   otherwise `mechanical`/`standard` -> sonnet, `deep` -> opus, default sonnet.
-- **Turn cap**: `claude` has no turn flag, so the dispatcher counts assistant
-  turns in the stream and stops a worker past `--max-turns` (150, as the
-  agent's `maxTurns`); `--max-budget-usd` is passed through. A worker that
+- **Turn cap**: `data.max_turns`, when set, is passed as `claude --max-turns`
+  (accepted and enforced by Claude Code 2.1.288 though not in `--help`; the run
+  ends `error_max_turns`). The dispatcher also counts assistant turns in the
+  stream and stops a worker past `--max-turns` (150) or `data.max_turns`,
+  whichever is larger; `--max-budget-usd` is passed through. A worker that
   claimed and exited without reporting has its run failed with the log path,
   so the node is claimable at once rather than after its lease.
+- **Warm workers**: every launch names its session (`--session-id`). A worker
+  that reports its node cleanly leaves its session warm for its
+  `(data.repo, model)`; the next node there resumes it (`--resume <id>`, which
+  finds the session from any cwd, so the new worktree is fine) with a "NEW
+  NODE" prompt, and such nodes are scheduled first. The launch line says
+  `mode=cold` or `mode=resume`; the done line carries `cache_read`,
+  `cache_creation` and `output` tokens from the result event. A resume that
+  does not start (no init event, e.g. `No conversation found with session ID`)
+  is logged and the node is started cold at once, spending no attempt. A
+  session is retired after `--warm-max-nodes` (5) nodes or `--warm-max-age`
+  (120) minutes from its first launch; `--no-warm` starts everything cold.
+  Each plugin directory is passed once (`--plugin-dir`, deduplicated by path).
 - **Merge nodes** naming a PR (`data.pr`: a number, URL or `owner/repo#N`; or
   `data.branch`) get no agent and no slot: the dispatcher claims the run, runs
   `bin/land-pr.sh`, heartbeats while it waits, and completes the run with

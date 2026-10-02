@@ -18,6 +18,16 @@ Model: data.model if set; else data.tier (mechanical/standard -> sonnet,
 deep -> opus) when tier_source is "user"; else --model if given (a cap);
 else the tier; else sonnet.
 
+Warm workers: each agent launch names its session (--session-id). When a
+worker reports its node cleanly, its session is kept warm for its
+(data.repo, model); the next node in that repo on that model resumes it
+(--resume, new worktree, new node prompt) instead of starting cold, and
+such nodes are scheduled first. A resume that fails to start falls back to
+a cold start, logged, with no attempt spent. A session is retired after
+--warm-max-nodes nodes (5) or --warm-max-age minutes (120); --no-warm turns
+it off. data.max_turns is passed as --max-turns. The done line carries the
+result's cache_read / cache_creation / output tokens.
+
 Never two of our workers, or ours and a live run elsewhere, on one
 data.resources value. A touch of the stop file (default <state>/STOP) drains:
 no new launches, running workers finish, then exit. Per-worker logs in
@@ -41,13 +51,14 @@ import signal
 import subprocess
 import sys
 import time
+import uuid
 import urllib.error
 import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PLUGIN_DIR = os.path.dirname(HERE)
 LAND_PR = os.path.join(HERE, "land-pr.sh")
-UA = "graph-dispatch/0.14 (enforcer-graph plugin)"
+UA = "graph-dispatch/0.18 (enforcer-graph plugin)"
 AGENT = "enforcer-graph:graph-worker"
 GRAPH_TOOLS = ["graph_next_work", "graph_heartbeat", "graph_report", "graph_remember", "graph_plan_status"]
 PREFIXES = ["mcp__plugin_enforcer_enforcer__", "mcp__enforcer__", "mcp__enforcer-graph__"]
@@ -134,6 +145,71 @@ def merge_target(node):
     if m:
         return m.group(2), m.group(1)
     return pr, None
+
+
+def repo_of(node):
+    return (node.get("data") or {}).get("repo") or None
+
+
+class Session:
+    """A claude session that finished a node cleanly and can be resumed for
+    the next node in the same repo on the same model. `nodes` counts the
+    nodes it has been launched for; `born` is its first launch."""
+
+    def __init__(self, sid, repo, model, born=None):
+        self.sid, self.repo, self.model = sid, repo, model
+        self.born = born if born is not None else time.time()
+        self.nodes = 0
+        self.last_key = None
+        self.cost = None  # the last total_cost_usd seen (cumulative across resumes)
+
+
+def session_usable(sess, max_nodes, max_age_s, now=None):
+    """(ok, why-not). A session is resumed for at most `max_nodes` nodes in
+    all and never past `max_age_s` seconds from its first launch, so the
+    context it carries (and its compaction debt) does not grow forever."""
+    now = time.time() if now is None else now
+    if sess.nodes >= max_nodes:
+        return False, "%d node(s), cap %d" % (sess.nodes, max_nodes)
+    age = now - sess.born
+    if age >= max_age_s:
+        return False, "%dm old, cap %dm" % (age // 60, max_age_s // 60)
+    return True, ""
+
+
+def affinity_order(candidates, warm, model_of):
+    """Stable reorder: a node whose (repo, model) has an idle warm session
+    goes first, as many per pair as there are sessions; the rest keep the
+    server's order. `warm` maps (repo, model) -> idle session count."""
+    left = dict(warm)
+    first, rest = [], []
+    for n in candidates:
+        k = (repo_of(n), model_of(n))
+        if k[0] and left.get(k, 0) > 0 and not merge_target(n):
+            left[k] -= 1
+            first.append(n)
+        else:
+            rest.append(n)
+    return first + rest
+
+
+def plugin_dirs(extra):
+    """This plugin, then each --plugin-dir, once per directory (by real path)."""
+    out, seen = [], set()
+    for d in [PLUGIN_DIR] + list(extra or []):
+        r = os.path.realpath(d)
+        if r not in seen:
+            seen.add(r)
+            out.append(d)
+    return out
+
+
+def node_max_turns(node):
+    try:
+        v = int((node.get("data") or {}).get("max_turns") or 0)
+    except (TypeError, ValueError):
+        return None
+    return v if v > 0 else None
 
 
 def allowed_tools():
@@ -280,9 +356,14 @@ def worktree_for(node, repo_root, state_dir, dry=False):
     return path, branch, "added off " + base
 
 
-def worker_prompt(graph, node, path, branch):
+def worker_prompt(graph, node, path, branch, previous=None):
     data = node.get("data") or {}
-    lines = ["Graph %s, node %s (key `%s`): %s." % (graph, node["id"], node["key"], node.get("title", "")),
+    lines = []
+    if previous:
+        lines.append("NEW NODE. Your previous node (`%s`) is finished and reported: its run is closed, do not "
+                     "touch its worktree or report it again. Keep what you learned about this repo, but take "
+                     "every fact about THIS node from its card." % previous)
+    lines += ["Graph %s, node %s (key `%s`): %s." % (graph, node["id"], node["key"], node.get("title", "")),
              "Claim it with graph_next_work {graph, node: \"%s\", runner: \"%s\"} and work it per your instructions."
              % (node["id"], node["key"])]
     if branch:
@@ -294,13 +375,19 @@ def worker_prompt(graph, node, path, branch):
     return "\n".join(lines)
 
 
-def claude_cmd(prompt, model, args, key):
+def claude_cmd(prompt, model, args, key, session=None, resume=False, max_turns=None):
+    """`session` is the session id: with resume, `--resume <id>` continues it
+    (same id; claude finds it from any cwd), else `--session-id <id>` names a
+    new one so it can be resumed later. `max_turns` is data.max_turns."""
     cmd = [args.claude, "-p", prompt,
            "--agent", AGENT,
-           "--model", model,
-           "--plugin-dir", PLUGIN_DIR]
-    for d in args.plugin_dir:
+           "--model", model]
+    for d in plugin_dirs(args.plugin_dir):
         cmd += ["--plugin-dir", d]
+    if session:
+        cmd += ["--resume" if resume else "--session-id", session]
+    if max_turns:
+        cmd += ["--max-turns", str(max_turns)]
     cmd += ["--allowedTools", ",".join(allowed_tools()),
             "--permission-prompts", "none",
             "--output-format", "stream-json", "--verbose",
@@ -324,8 +411,7 @@ class Dispatcher:
         self.mcp_down = 0
         self.last_skip = {}
         self.drain_said = False
-        self.last_skip = {}
-        self.drain_said = False
+        self.warm = {}  # (repo, model) -> [Session], idle and resumable
 
     def say(self, msg):
         line = "%s %s" % (utcnow().strftime("%H:%M:%S"), msg)
@@ -383,6 +469,9 @@ class Dispatcher:
         slots = self.args.workers - sum(1 for w in self.workers.values() if w.kind == "agent")
         held = self.held_elsewhere(nodes)
         agents = [n for n in cands if not merge_target(n)]
+        # repo affinity: a ready node whose repo has an idle warm session on
+        # its model goes first, so the session's repo knowledge is reused
+        agents = affinity_order(agents, self.warm_counts(), lambda n: model_for(n, self.args.model))
         merges = [n for n in cands if merge_target(n)]
         chosen, skipped = select(agents, held, max(slots, 0), self.workers)
         for n in chosen:
@@ -405,7 +494,30 @@ class Dispatcher:
             self.launch(n)
         return nodes, chosen
 
-    def launch(self, n):
+    # --- warm sessions
+    def warm_counts(self):
+        return {k: len(v) for k, v in self.warm.items() if v}
+
+    def take_warm(self, repo, model):
+        """The newest idle session for (repo, model) still inside its life
+        cap, or None. Sessions past the cap are retired here, with a line."""
+        pool = self.warm.get((repo, model)) or []
+        while pool:
+            sess = pool.pop()
+            ok, why = session_usable(sess, self.args.warm_max_nodes, self.args.warm_max_age * 60)
+            if ok:
+                return sess
+            self.say("retire session %s (%s): %s" % (sess.sid, repo, why))
+        return None
+
+    def keep_warm(self, sess):
+        ok, why = session_usable(sess, self.args.warm_max_nodes, self.args.warm_max_age * 60)
+        if not ok:
+            self.say("retire session %s (%s): %s" % (sess.sid, sess.repo, why))
+            return
+        self.warm.setdefault((sess.repo, sess.model), []).append(sess)
+
+    def launch(self, n, cold=False):
         a = self.args
         mt = merge_target(n)
         tag = " (lease lapsed; re-claim)" if n.get("_lapsed") else ""
@@ -421,14 +533,22 @@ class Dispatcher:
             self.launch_merge(n, cmd, cwd)
             return
         model = model_for(n, a.model)
+        repo = repo_of(n)
         path, branch, note = worktree_for(n, a.repo_root, self.state, dry=a.dry_run)
-        prompt = worker_prompt(self.g, n, path, branch)
-        cmd = claude_cmd(prompt, model, a, n["key"])
+        sess = None
+        if repo and not cold and not a.no_warm and not a.dry_run:
+            sess = self.take_warm(repo, model)
+        resumed = sess is not None
+        if not resumed:
+            sess = Session(str(uuid.uuid4()), repo, model)
+        turns_cap = node_max_turns(n)
+        prompt = worker_prompt(self.g, n, path, branch, previous=sess.last_key if resumed else None)
+        cmd = claude_cmd(prompt, model, a, n["key"], session=sess.sid, resume=resumed, max_turns=turns_cap)
         res = ",".join(sorted(resources_of(n))) or "-"
         if a.dry_run:
-            self.say("would launch %s [%s, tier %s] model=%s worktree=%s branch=%s (%s) resources=%s%s"
+            self.say("would launch %s [%s, tier %s] model=%s worktree=%s branch=%s (%s) resources=%s%s%s"
                      % (n["key"], n.get("type"), (n.get("data") or {}).get("tier", "-"), model, path,
-                        branch or "-", note, res, tag))
+                        branch or "-", note, res, " max_turns=%d" % turns_cap if turns_cap else "", tag))
             if not getattr(self, "_shown_cmd", False):
                 self._shown_cmd = True
                 self.say("  cmd: " + " ".join(shlex.quote(c) for c in cmd[:2]) + " <prompt> "
@@ -442,10 +562,21 @@ class Dispatcher:
             w.proc = subprocess.Popen(cmd, cwd=path, stdin=subprocess.DEVNULL, stdout=f,
                                       stderr=subprocess.STDOUT, env=env, start_new_session=True)
         w.model, w.turns = model, 0
+        w.session, w.resumed = sess, resumed
+        # claude enforces data.max_turns itself; the stream count is the backstop
+        w.max_turns = max(a.max_turns, turns_cap or 0)
+        prev = sess.last_key
+        sess.nodes += 1
+        sess.last_key = n["key"]
         self.workers[n["key"]] = w
         self.peak = max(self.peak, len(self.workers))
-        self.say("launch %s pid=%d model=%s cwd=%s (%s) log=%s%s"
-                 % (n["key"], w.proc.pid, model, path, note, log, tag))
+        if resumed:
+            mode = "mode=resume session=%s (node %d of max %d, %dm old, after %s)" % (
+                sess.sid, sess.nodes, a.warm_max_nodes, (time.time() - sess.born) // 60, prev)
+        else:
+            mode = "mode=cold session=%s" % sess.sid
+        self.say("launch %s pid=%d model=%s %s cwd=%s (%s) log=%s%s"
+                 % (n["key"], w.proc.pid, model, mode, path, note, log, tag))
 
     def launch_merge(self, n, cmd, cwd):
         self.attempts[n["key"]] = self.attempts.get(n["key"], 0) + 1
@@ -481,15 +612,47 @@ class Dispatcher:
                     del self.workers[key]
                 continue
             w.turns = count_turns(w.log_path)
-            if w.alive() and w.turns > self.args.max_turns:
-                self.say("turn cap: %s at %d turns > %d, stopping it" % (key, w.turns, self.args.max_turns))
+            cap = getattr(w, "max_turns", self.args.max_turns)
+            if w.alive() and w.turns > cap:
+                self.say("turn cap: %s at %d turns > %d, stopping it" % (key, w.turns, cap))
                 os.killpg(w.proc.pid, signal.SIGTERM)
                 w.proc.wait(timeout=30)
             if not w.alive():
                 s = summarize(w.log_path)
-                self.say("done %s exit=%s turns=%s result=%s denials=%d run=%s reported=%s cost=%s"
+                sess = getattr(w, "session", None)
+                if sess is not None and getattr(w, "resumed", False) and not s["started"]:
+                    # the resume never started (session gone, unreadable, ...):
+                    # not the node's fault, so no attempt is spent; drop the
+                    # session and start this node cold, now
+                    del self.workers[key]
+                    self.attempts[key] -= 1
+                    self.say("resume failed for %s (session %s): %s; falling back to a cold start"
+                             % (key, sess.sid, s["error_text"] or "result=%s exit=%s" % (s["result"], w.proc.returncode)))
+                    if not (self.stopping() or self.blocked):
+                        self.launch(w.node, cold=True)
+                    continue
+                u = s["usage"]
+                cost = s["cost"]
+                if sess is not None and isinstance(cost, (int, float)):
+                    # a resumed session's total_cost_usd is the session's running
+                    # total: log this node's share
+                    if getattr(w, "resumed", False) and isinstance(sess.cost, (int, float)):
+                        cost = round(cost - sess.cost, 6)
+                    sess.cost = s["cost"]
+                self.say("done %s exit=%s turns=%s result=%s denials=%d run=%s reported=%s cost=%s "
+                         "session=%s %s cache_read=%s cache_creation=%s output=%s"
                          % (key, w.proc.returncode, s["turns"], s["result"], s["denials"], s["run_id"] or "-",
-                            s["reported"], s["cost"]))
+                            s["reported"], cost, (sess.sid if sess else "-"),
+                            "resumed" if getattr(w, "resumed", False) else "cold",
+                            u.get("cache_read_input_tokens", "-"), u.get("cache_creation_input_tokens", "-"),
+                            u.get("output_tokens", "-")))
+                if sess is not None and sess.repo and not self.args.no_warm:
+                    if s["reported"] and s["result"] == "success" and w.proc.returncode == 0:
+                        if s["session_id"] and s["session_id"] != sess.sid:
+                            sess.sid = s["session_id"]  # claude said otherwise: trust the stream
+                        self.keep_warm(sess)
+                    else:
+                        self.say("session %s not kept warm: %s did not finish cleanly" % (sess.sid, key))
                 if s["run_id"] and not s["reported"]:
                     self.fail_orphan(w, s)
                 down = {k: v for k, v in s["mcp"].items() if k.startswith("plugin:enforcer") and v != "connected"}
@@ -610,8 +773,17 @@ def summarize(path):
     """turns, result subtype, permission denials, cost, the run id the worker
     claimed (from its graph_next_work tool result) and whether it reported."""
     s = {"turns": 0, "result": None, "denials": 0, "denied_tools": [], "run_id": None, "reported": False,
-         "cost": None, "mcp": {}}
+         "cost": None, "mcp": {}, "started": False, "session_id": None, "usage": {}, "error_text": None}
     claims = set()
+    try:  # the first non-JSON line, e.g. claude's "No conversation found with session ID: ..."
+        with open(path, errors="replace") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("{"):
+                    s["error_text"] = line[:300]
+                    break
+    except OSError:
+        pass
     for e in _events(path):
         t = e.get("type")
         content = (e.get("message") or {}).get("content")
@@ -631,13 +803,20 @@ def summarize(path):
                     if m:
                         s["run_id"] = m.group(1)
         elif t == "system" and e.get("subtype") == "init":
+            s["started"] = True
+            s["session_id"] = e.get("session_id") or s["session_id"]
             s["mcp"] = {m.get("name"): m.get("status") for m in e.get("mcp_servers") or [] if isinstance(m, dict)}
         elif t == "result":
             s["result"] = e.get("subtype")
+            s["usage"] = e.get("usage") if isinstance(e.get("usage"), dict) else {}
+            if (e.get("num_turns") or 0) > 0 or s["turns"] > 0:
+                s["started"] = True
+            s["session_id"] = s["session_id"] or e.get("session_id")
             denied = e.get("permission_denials") or []
             s["denials"] = len(denied)
             s["denied_tools"] = sorted({str(d.get("tool_name")) for d in denied if isinstance(d, dict)})
             s["cost"] = e.get("total_cost_usd")
+    s["started"] = s["started"] or s["turns"] > 0
     return s
 
 
@@ -668,6 +847,12 @@ def parse_args(argv):
     p.add_argument("--stop-file", help="touch it to drain (default <state-dir>/STOP)")
     p.add_argument("--plugin-dir", action="append", default=[],
                    help="extra plugin dirs (default: the newest cached enforcer plugin, for the MCP server)")
+    p.add_argument("--no-warm", action="store_true",
+                   help="start every worker cold (no session reuse across nodes)")
+    p.add_argument("--warm-max-nodes", type=int, default=5,
+                   help="nodes one resumed session may run in all before it is retired (default 5)")
+    p.add_argument("--warm-max-age", type=float, default=120,
+                   help="minutes from a session's first launch after which it is retired (default 120)")
     p.add_argument("--claude", default=os.environ.get("CLAUDE_BIN", "claude"))
     a = p.parse_args(argv)
     if a.workers < 1:

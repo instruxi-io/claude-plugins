@@ -5,7 +5,7 @@ Scope here: the `enforcer-graph/` plugin (skill, hooks, agent, bin, tests).
 
 ## 1. Layout (where things live)
 
-- `.claude-plugin/plugin.json`: name, `version` (currently 0.17.0). Only version source.
+- `.claude-plugin/plugin.json`: name, `version` (currently 0.18.0). Only version source.
 - `skills/graph/SKILL.md` (22 KB): the loop; "Writing a plan" (~line 263) is the node/brief format.
 - `agents/graph-worker.md` (7 KB): one-node worker, maxTurns 80, reads CLAUDE.md + this brief.
 - `hooks/hooks.json`: wiring. Scripts in `hooks/*.py`, shared code in `hooks/lib.py` (28 KB).

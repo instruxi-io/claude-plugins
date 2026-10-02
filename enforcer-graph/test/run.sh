@@ -394,6 +394,8 @@ check "dispatch: never two workers on one data.resources value; one land-pr per 
   'echo "$dispatch_out" | grep -E "^test_(never_two_on_one_value|held_elsewhere_blocks|one_land_per_repo|held_elsewhere_counts_live_runs_not_lapsed) .* ok$" | wc -l | grep -qx 4'
 check "dispatch: dry run launches nothing; stop file drains; a denied graph tool drains; merge landed by script" \
   'echo "$dispatch_out" | grep -E "^test_(dry_run_launches_nothing|stop_file_drains|denied_graph_tool_blocks_and_drains|merge_landed_by_script) .* ok$" | wc -l | grep -qx 4'
+check "dispatch: warm workers (resume in repo, life cap retires, failed resume falls back cold, affinity, one --plugin-dir each, max_turns)" \
+  'echo "$dispatch_out" | grep -E "^test_(next_node_in_repo_resumes_the_session|session_life_cap_retires|session_usable_caps|failed_resume_falls_back_to_cold|affinity_prefers_warm_repo|one_plugin_dir_each_and_max_turns) .* ok$" | wc -l | grep -qx 6'
 check "dispatch: --help works and names the flags" './bin/graph-dispatch --help | grep -q -- "--workers"'
 
 # --- client attestation: every claim, heartbeat and report says hooks=on (X-Graph-Client, enforcer-graph 089)

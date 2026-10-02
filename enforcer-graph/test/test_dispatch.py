@@ -244,5 +244,136 @@ class DryRunAndDrain(unittest.TestCase):
         self.assertIn("cannot read PR 5", ev["output"])
 
 
+FAKE_WARM_CLAUDE = r"""#!/usr/bin/env python3
+import json, os, sys
+argv = sys.argv[1:]
+def opt(name):
+    return argv[argv.index(name) + 1] if name in argv else None
+key = opt("--name").split(":", 1)[1]
+resume, sid = opt("--resume"), opt("--session-id")
+with open(os.environ["FAKE_CALLS"], "a") as f:
+    f.write(json.dumps({"key": key, "argv": argv}) + "\n")
+if resume and os.environ.get("FAKE_RESUME_FAILS"):
+    print("No conversation found with session ID: " + resume)
+    print(json.dumps({"type": "result", "subtype": "error_during_execution", "num_turns": 0,
+                      "session_id": resume, "usage": {}, "permission_denials": []}))
+    sys.exit(1)
+s = resume or sid
+print(json.dumps({"type": "system", "subtype": "init", "session_id": s, "mcp_servers": []}))
+print(json.dumps({"type": "assistant", "message": {"content": [
+    {"type": "tool_use", "id": "r1", "name": "mcp__plugin_enforcer_enforcer__graph_report"}]}}))
+print(json.dumps({"type": "result", "subtype": "success", "num_turns": 3, "session_id": s,
+                  "permission_denials": [], "total_cost_usd": 0.05 if resume else 0.01,
+                  "usage": {"cache_read_input_tokens": 900 if resume else 100,
+                            "cache_creation_input_tokens": 10 if resume else 500, "output_tokens": 7}}))
+open(os.path.join(os.environ["FAKE_DONE"], key), "w").close()
+"""
+
+
+class DoneAPI(FakeAPI):
+    """The fake worker marks its node done by touching <done>/<key>."""
+    def __init__(self, nodes, done):
+        super().__init__(nodes)
+        self.done = done
+
+    def frontier(self, g):
+        return [n for n in self._nodes if n["status"] == "active"
+                and not os.path.exists(os.path.join(self.done, n["key"]))]
+
+
+class WarmWorkers(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.state = os.path.join(self.tmp, "s")
+        os.makedirs(os.path.join(self.state, "logs"))
+        self.done = os.path.join(self.tmp, "done")
+        os.makedirs(self.done)
+        self.calls = os.path.join(self.tmp, "calls.jsonl")
+        self.claude = os.path.join(self.tmp, "claude-warm")
+        with open(self.claude, "w") as f:
+            f.write(FAKE_WARM_CLAUDE)
+        os.chmod(self.claude, 0o755)
+        os.environ["FAKE_CALLS"], os.environ["FAKE_DONE"] = self.calls, self.done
+        os.environ.pop("FAKE_RESUME_FAILS", None)
+
+    def tearDown(self):
+        os.environ.pop("FAKE_RESUME_FAILS", None)
+
+    def run_dispatch(self, nodes, **kw):
+        out = io.StringIO()
+        a = args(workers=1, state_dir=self.state, stop_file=os.path.join(self.state, "STOP"),
+                 interval=0.05, claude=self.claude, **kw)
+        rc = gd.Dispatcher(DoneAPI(nodes, self.done), a, out).run()
+        with open(self.calls) as f:
+            launches = [json.loads(l) for l in f]
+        return rc, out.getvalue(), launches
+
+    def test_next_node_in_repo_resumes_the_session(self):
+        rc, text, launches = self.run_dispatch([node(k, repo="r") for k in "abc"])
+        self.assertEqual(rc, 0)
+        a0 = launches[0]["argv"]
+        sid = a0[a0.index("--session-id") + 1]
+        self.assertNotIn("--resume", a0)
+        for l in launches[1:]:
+            self.assertEqual(l["argv"][l["argv"].index("--resume") + 1], sid)
+            self.assertIn("NEW NODE. Your previous node", l["argv"][l["argv"].index("-p") + 1])
+        self.assertIn("launch a pid=", text)
+        self.assertIn("mode=cold session=" + sid, text)
+        self.assertEqual(text.count("mode=resume session=" + sid), 2)
+        self.assertIn("cold cache_read=100 cache_creation=500 output=7", text)
+        self.assertIn("resumed cache_read=900 cache_creation=10 output=7", text)
+        self.assertIn("cost=0.04 session=", text)  # 0.05 session total - 0.01 before
+
+    def test_session_life_cap_retires(self):
+        rc, text, launches = self.run_dispatch([node(k, repo="r") for k in "abc"], warm_max_nodes=2)
+        modes = ["resume" if "--resume" in l["argv"] else "cold" for l in launches]
+        self.assertEqual(modes, ["cold", "resume", "cold"])
+        self.assertIn("retire session", text)
+        self.assertIn("2 node(s), cap 2", text)
+
+    def test_session_usable_caps(self):
+        s = gd.Session("sid", "r", "sonnet", born=1000.0)
+        self.assertEqual(gd.session_usable(s, 5, 7200, now=1001.0), (True, ""))
+        s.nodes = 5
+        self.assertFalse(gd.session_usable(s, 5, 7200, now=1001.0)[0])
+        s.nodes = 1
+        ok, why = gd.session_usable(s, 5, 7200, now=1000.0 + 7200)
+        self.assertFalse(ok)
+        self.assertIn("120m old", why)
+
+    def test_failed_resume_falls_back_to_cold(self):
+        os.environ["FAKE_RESUME_FAILS"] = "1"
+        # max_attempts=1: the fallback must not spend the node's one attempt
+        rc, text, launches = self.run_dispatch([node(k, repo="r") for k in "ab"], max_attempts=1)
+        self.assertEqual(rc, 0)
+        modes = [(l["key"], "resume" if "--resume" in l["argv"] else "cold") for l in launches]
+        self.assertEqual(modes, [("a", "cold"), ("b", "resume"), ("b", "cold")])
+        self.assertIn("resume failed for b (session ", text)
+        self.assertIn("No conversation found with session ID", text)
+        self.assertIn("falling back to a cold start", text)
+        self.assertTrue(os.path.exists(os.path.join(self.done, "b")))
+
+    def test_affinity_prefers_warm_repo(self):
+        cands = [node("x1", repo="x"), node("y1", repo="y"), node("y2", repo="y"), node("z")]
+        m = lambda n: "sonnet"
+        self.assertEqual([n["key"] for n in gd.affinity_order(cands, {("y", "sonnet"): 1}, m)],
+                         ["y1", "x1", "y2", "z"])
+        self.assertEqual([n["key"] for n in gd.affinity_order(cands, {("y", "opus"): 1}, m)],
+                         ["x1", "y1", "y2", "z"])
+        self.assertEqual([n["key"] for n in gd.affinity_order(cands, {}, m)], ["x1", "y1", "y2", "z"])
+
+    def test_one_plugin_dir_each_and_max_turns(self):
+        a = args(plugin_dir=[gd.PLUGIN_DIR, "/p", "/p/", "/q"])
+        cmd = gd.claude_cmd("hi", "sonnet", a, "k", session="s1", max_turns=40)
+        dirs = [cmd[i + 1] for i, c in enumerate(cmd) if c == "--plugin-dir"]
+        self.assertEqual(len(dirs), 3)
+        self.assertEqual(len({os.path.realpath(d) for d in dirs}), 3)
+        self.assertEqual(cmd[cmd.index("--max-turns") + 1], "40")
+        self.assertEqual(cmd[cmd.index("--session-id") + 1], "s1")
+        self.assertNotIn("--max-turns", gd.claude_cmd("hi", "sonnet", a, "k"))
+        self.assertEqual(gd.node_max_turns(node("n", max_turns="60")), 60)
+        self.assertIsNone(gd.node_max_turns(node("n")))
+
+
 if __name__ == "__main__":
     unittest.main()
