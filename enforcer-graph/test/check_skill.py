@@ -21,7 +21,7 @@ FILES_CLI = os.path.join(os.path.dirname(ROOT), "enforcer-files", "bin", "files.
 # graph-sharing.ts. Params are listed for the tools the loop documents; None
 # means the skill may name the tool but not document its params.
 TOOLS = {
-    "graph_next_work": {"graph", "runner", "for"},
+    "graph_next_work": {"graph", "runner", "for", "node", "upstream_depth"},
     "graph_heartbeat": {"graph", "node_id", "run_id"},
     "graph_report": {"graph", "node_id", "run_id", "status", "report", "error", "pr", "data", "outputs", "evidence"},
     "graph_remember": {"graph", "node_id", "body", "source", "data", "evidence"},
@@ -41,6 +41,11 @@ RULES = [
     "NOT MET — STALE",
     "## Done means merged",
     "## Coordinating subagents",
+    "## Following the route",
+    "override reason",
+    "`node` parameter",
+    "MCP 0.9.5",
+    "user` beats `planner` beats `rule` beats `jev`",
     "Load the `enforcer-graph:graph`",
     "Never call `graph_report` for a worker",
 ]

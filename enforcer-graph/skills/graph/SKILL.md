@@ -21,7 +21,11 @@ subagents, relaying their summaries as evidence, and all 18 were judged
 - **Claim your own node with `graph_next_work`**, from the agent that will run
   the commands. If you were told to work a particular node, treat that as a
   hint: when the card hands you a different node, a sibling already took yours.
-  Work the node you hold and say which one it is.
+  Work the node you hold and say which one it is. On MCP 0.9.5 or newer, a
+  coordinator can pin the claim: `graph_next_work` with `node` (key or id)
+  claims exactly that node when it is runnable, and answers `not_runnable` with
+  the reason when it is not. That is still `graph_next_work`, so the hooks
+  follow it.
 - **Never claim by id.** Do not claim through `enforcer_api_write` or
   `take_task`. The hooks only follow `graph_next_work`, so a run claimed any
   other way gets no heartbeat and no captured evidence.
@@ -36,13 +40,19 @@ subagents, relaying their summaries as evidence, and all 18 were judged
 
 ## The loop
 
-1. **`graph_next_work`** (`graph`, optional `for`, `runner`) — claims one runnable node under a row lock and returns
+1. **`graph_next_work`** (`graph`, optional `for`, `runner`, `node`, `upstream_depth`) — claims one runnable node under a row lock and returns
    one card: the node, its `criteria` (its own acceptance lines, the graph and
    tenant mandates marked `[mandate: …]`, and `[check]` rows the server
    evaluates in code), its `inputs` (values upstream nodes produced), attached
    `skills` (read them before starting), recent `observations` (facts earlier
    runs left), and the `run` you now hold (`run_id`, `lease_expires_at`). Two
    sessions can never receive the same node.
+   - **`upstream`** (MCP 0.9.5+): for each prerequisite, nearest first, the
+     run's report, observations, links and file ids, one `line` each to read
+     first. Read it before you start; do not re-derive what it already says.
+   - **`route`** (graph with routing on): the agent profile the router
+     recommends for this node, and why. Advisory. `route: null` means routing is
+     on and nothing is recommended. See "Following the route" below.
    - `state: wait` — nothing runnable, but something is running, verifying, or
      time-gated. When the card has `wait_until`, nothing can start before that
      instant: say so and stop. Do not poll in a tight loop.
@@ -83,6 +93,24 @@ subagents, relaying their summaries as evidence, and all 18 were judged
 
 `graph_plan_status` is the whole plan on one card: counts, frontier, running,
 verifying, waiting (with `not_before`), failed, unverified runs. Call it when asked how the plan stands, not every turn.
+
+## Following the route
+
+When the card's `route` names a profile with a `local_type`, that is the
+subagent type the router picked for this node. Start a subagent of that type
+(the Agent tool's `subagent_type`) and hand it the card's `upstream` bundle
+(the lines to read first), the node's acceptance and the graph and node ids.
+Because the worker rule holds, the node is claimed by whoever does the work:
+if you are the worker, you are that subagent's type already, or you run it in
+your own session; a coordinator never claims on the subagent's behalf. A route
+without a `local_type` (an `agent` or `a2a` profile) is not something to start
+locally: work the node yourself and say so.
+
+The route is advice, not an order. If you depart from it (a different subagent
+type, no subagent, or a different approach than the profile implies), write the
+**override reason** into the report: one line naming the route, what you did
+instead, and why. Departing silently is the failure; departing with a reason is
+fine, and the reason is what lets the router learn.
 
 ## Evidence: the verdict is what the evidence shows
 
@@ -192,9 +220,18 @@ whole job.
    frontier node, each in its own worktree. Do not claim anything yourself.
 2. Give each worker the graph id, the node key and id you expect it to get, its
    acceptance lines, and this instruction: *"Load the `enforcer-graph:graph`
-   skill. Claim with `graph_next_work`, work the node you are handed, heartbeat
-   through long steps, and `graph_report` it yourself before you return. Tell
-   me the node key, run id, status and verdict."*
+   skill. Claim with `graph_next_work` passing `node: <key>`, work the node you
+   are handed, heartbeat through long steps, and `graph_report` it yourself
+   before you return. Tell me the node key, run id, status and verdict."*
+   **Hand a worker a specific node with `graph_next_work`'s `node` parameter
+   (MCP 0.9.5 or newer), not by claiming by id.** Parallel workers each asking
+   for "the top of the frontier" race and may swap nodes; `node` removes the
+   race and keeps the claim a `graph_next_work` claim the hooks follow. On an
+   older server `node` is unknown: fall back to the guidance above (a plain
+   `graph_next_work`; if it hands back a different node, work that one and say
+   so). Never claim by id through `enforcer_api_write` as a workaround. Also
+   give the worker the card's `route` and `upstream` if you have them; the
+   worker's own claim returns them anyway.
 3. When workers return, read `graph_plan_status` again and fan out the new
    frontier. Never call `graph_report` for a worker, never re-report or re-judge
    its node, and never heartbeat its run. If a worker's verdict is rejected, a
@@ -210,8 +247,9 @@ whole job.
    parallel; land the merges through one worker per repo, in order, each queued
    with `--auto`. N parallel merge workers on one repo each rebase onto a base
    the others keep moving, and every move is a full verify for nothing.
-6. **Launch each worker at its node's tier.** A node's `data.tier` says how
-   much model it needs: `mechanical` → a script (`land-pr.sh`, the release
+6. **Launch each worker at its node's tier.** The card's `model` (when the
+   server sends one) and the node's `data.tier` say how much model it needs;
+   launch the worker at that model (the Agent tool's `model`). The tier maps: `mechanical` → a script (`land-pr.sh`, the release
    make targets) or Haiku; `standard` → Sonnet; `deep` → Opus. `tier_source`
    says who decided — `user` beats `planner` beats `rule` beats `jev`, so a
    tier the user set through MCP is never second-guessed by you. A node with no
