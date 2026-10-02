@@ -589,6 +589,22 @@ def transcript_usage(transcript_path, since=None):
             "total_tokens": sum(tot.values()) + est}
 
 
+def typed_usage(u):
+    """The server's first-class `usage` ({model, input_tokens, output_tokens,
+    cache_*, source}) from a transcript_usage result; None when there is none,
+    so a run with no transcript sends no field at all (never zeros).
+    output_tokens is the generated-text estimate, so the source is "estimated"
+    whenever that differs from what the transcript recorded."""
+    if not isinstance(u, dict):
+        return None
+    out = {k: int(u.get(k) or 0) for k in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens")}
+    out["output_tokens"] = int(u.get("output_tokens_est") or u.get("output_tokens_recorded") or 0)
+    if u.get("model"):
+        out["model"] = u["model"]
+    out["source"] = "estimated" if out["output_tokens"] != int(u.get("output_tokens_recorded") or 0) else "reported"
+    return out
+
+
 def last_assistant_text(transcript_path, limit=1500):
     last = ""
     try:

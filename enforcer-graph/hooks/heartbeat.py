@@ -39,7 +39,10 @@ def main():
     cfg = lib.find_config(inp.get("cwd"))
     if not cfg:
         return
-    r = lib.http(cfg, "POST", f"/graphs/{run['graph_id']}/nodes/{run['node_id']}/runs/{run['run_id']}/heartbeat", {})
+    # The running total so far; none when there is no transcript to read.
+    usage = lib.typed_usage(lib.transcript_usage(lib.actor_transcript(inp), run.get("claimed_at")))
+    r = lib.http(cfg, "POST", f"/graphs/{run['graph_id']}/nodes/{run['node_id']}/runs/{run['run_id']}/heartbeat",
+                 {"usage": usage} if usage else {})
     d = (r or {}).get("data") or {}
     state = d.get("state")
     if state == "ok" or not state:
