@@ -64,7 +64,10 @@ plugin commands, and the first policy rules for this repo's routes), shows it,
 and applies only what you confirm.
 
 **Already installed?** `claude plugin update enforcer@instruxi`, then
-`/reload-plugins`. If you had turned `enforcer-graph` off, `claude plugin list`
+`claude plugin install enforcer@instruxi` again (or `/reload-plugins`):
+`plugin update` alone does not install a dependency that is new, and until it is
+installed `claude plugin list` says `failed to load: Dependency
+"enforcer-graph@instruxi" is not installed` with the command to run. If you had turned `enforcer-graph` off, `claude plugin list`
 now shows `enforcer` as `failed to load: Dependency "enforcer-graph@instruxi" is
 disabled`: run `claude plugin enable enforcer-graph@instruxi`. An older install
 says so once at session start, with the update command.

@@ -25,9 +25,13 @@ allow rules for the worker loop and the plugin commands, applies only on your
 yes).
 
 **Existing installs** keep working: an `enforcer-graph` you installed yourself
-satisfies the dependency as it is. Update both with
-`claude plugin update enforcer@instruxi` (and `enforcer-graph@instruxi`), then
-`/reload-plugins`; session start says so once when an installed copy is older
+satisfies the dependency as it is. Update with
+`claude plugin update enforcer@instruxi` and then `claude plugin install
+enforcer@instruxi` once more (or `/reload-plugins`), which installs the
+dependency when it is new: `plugin update` alone does not, and `enforcer` then
+fails to load with `Dependency "enforcer-graph@instruxi" is not installed — run
+claude plugin install enforcer-graph@instruxi` (bash test/upgrade-install.sh
+shows each step); session start says so once when an installed copy is older
 than the marketplace's, and says `claude plugin install enforcer@instruxi`
 when enforcer-graph is installed without it. If enforcer-graph is DISABLED,
 `enforcer` now fails to load (`Dependency "enforcer-graph@instruxi" is
