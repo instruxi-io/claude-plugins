@@ -18,7 +18,7 @@ Not captured:
 No HTTP, no Jev, no model. It runs on every tool call, so it must stay cheap:
 one stdin parse, one stat of the run file, one append.
 """
-import os, re, sys
+import json, os, re, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import lib
 
@@ -91,16 +91,28 @@ def file_record(name, tool_input):
 def main():
     inp = lib.read_stdin()
     name = inp.get("tool_name") or ""
-    if name not in ("Bash", "Edit", "Write", "MultiEdit", "NotebookEdit"):
+    captured = name in ("Bash", "Edit", "Write", "MultiEdit", "NotebookEdit")
+    if not captured and (not name.startswith("mcp__") or lib.is_graph_tool(name)):
         return
     sid = lib.actor_key(inp)
-    if not lib.load_run(sid):
+    run = lib.load_run(sid)
+    if not run:
         return  # no run held: nothing to attach this to, so nothing to record
+    rid = run.get("run_id")
     resp = normalize(inp.get("tool_response"))
-    rec = bash_record(inp.get("tool_input"), resp) if name == "Bash" \
-        else file_record(name, inp.get("tool_input"))
+    rec = None
+    if captured:
+        rec = bash_record(inp.get("tool_input"), resp) if name == "Bash" \
+            else file_record(name, inp.get("tool_input"))
     if rec:
+        rec["_run"] = rid          # scoped to THIS run; attach strips it
         lib.append_evidence(sid, rec)
+    # A pull request URL seen in a result is evidence the `pr` output can extract.
+    text = rec.get("output") or "" if rec and name == "Bash" else (
+        json.dumps(resp)[:200000] if not captured and resp else "")
+    if text:
+        for url in dict.fromkeys(lib.PR_RE.findall(text)):
+            lib.append_evidence(sid, {"kind": "artifact", "url": url, "label": "pull request URL in tool output", "_run": rid})
 
 
 if __name__ == "__main__":

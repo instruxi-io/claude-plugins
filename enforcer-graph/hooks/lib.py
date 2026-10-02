@@ -476,7 +476,10 @@ def append_evidence(session_id, record):
         pass
 
 
-def load_evidence(session_id):
+def load_evidence(session_id, run_id=None):
+    """Records captured for this actor. With `run_id`, a record tagged with a
+    DIFFERENT run is dropped: capture is scoped to the run that was open when
+    the tool result came back, never another node's work in the same session."""
     out = []
     try:
         with open(evidence_path(session_id)) as f:
@@ -489,6 +492,8 @@ def load_evidence(session_id):
                 except Exception:
                     continue          # a truncated line loses one record, not the file
                 if isinstance(rec, dict) and rec.get("kind"):
+                    if run_id and rec.get("_run") and rec["_run"] != run_id:
+                        continue
                     out.append(rec)
     except Exception:
         pass
@@ -500,6 +505,55 @@ def clear_evidence(session_id):
         os.remove(evidence_path(session_id))
     except Exception:
         pass
+
+
+# The commands that decide whether work is done. Under the cap these are kept
+# whatever their age: a recent `ls` must never push out the `verify.sh` run.
+GATE_RE = re.compile(r"verify\.sh|go test|npm (run )?(check|test)|land-pr|pytest|test/run\.sh|cargo test|make (test|verify)")
+PR_RE = re.compile(r"https?://github\.com/[^/\s\"')]+/[^/\s\"')]+/pull/\d+")
+
+
+def is_gate(rec):
+    return rec.get("kind") == "command" and bool(GATE_RE.search(rec.get("cmd") or ""))
+
+
+def strip_internal(rec):
+    return {k: v for k, v in rec.items() if k != "_run"}
+
+
+def _ekey(rec):
+    if rec.get("kind") == "command":
+        return ("command", rec.get("cmd"), rec.get("exit"))
+    if rec.get("kind") == "artifact":
+        return ("artifact", rec.get("url"))
+    if rec.get("kind") == "file":
+        return ("file", rec.get("path"), rec.get("excerpt"))
+    return None
+
+
+def merge_evidence(captured, passed, cap=EVIDENCE_CAP):
+    """Captured records first, then the worker's own that are not already there.
+
+    Replacing the worker's records discarded 8 verbatim records for 2 captured
+    ones and a correct report was rejected. A passed record is dropped only when
+    it duplicates a captured one (cmd+exit) or is prose (a `note`, or no cmd /
+    path / url): a command with an `output` is never dropped for being old.
+    """
+    seen = {k for k in map(_ekey, captured) if k}
+    extra = []
+    for r in passed if isinstance(passed, list) else []:
+        if not isinstance(r, dict) or r.get("kind") not in ("command", "file", "artifact"):
+            continue
+        if not (r.get("cmd") or r.get("path") or r.get("url")):
+            continue
+        k = _ekey(r)
+        if k in seen:
+            continue
+        seen.add(k)
+        extra.append(r)
+    if len(extra) > cap:
+        extra = [r for r in extra if r.get("output")][-cap:] if any(r.get("output") for r in extra) else extra[-cap:]
+    return select_evidence(captured, cap=max(cap - len(extra), 0)) + extra
 
 
 def select_evidence(records, cap=EVIDENCE_CAP):
@@ -522,7 +576,11 @@ def select_evidence(records, cap=EVIDENCE_CAP):
 
     keep = failed[-cap:]                                   # every failure that fits, oldest of them first
     room = cap - len(keep)
-    tail = (other_cmd[-room:] if room > 0 else [])         # then the most recent commands
+    gates = [t for t in other_cmd if is_gate(t[1])][-max(room, 0):]   # the deciding gates, always
+    other_cmd = [t for t in other_cmd if t not in gates]
+    tail = list(gates)
+    room = cap - len(keep) - len(tail)
+    tail += (other_cmd[-room:] if room > 0 else [])         # then the most recent commands
     room = cap - len(keep) - len(tail)
     tail += (files[-room:] if room > 0 else [])            # then the most recent file changes
     tail.sort(key=lambda t: t[0])

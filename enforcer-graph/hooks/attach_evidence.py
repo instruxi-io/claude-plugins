@@ -108,7 +108,7 @@ def decide(inp):
     if not (is_report or is_remember or is_heartbeat):
         return None
     sid = lib.actor_key(inp)
-    records = lib.load_evidence(sid)
+    records = lib.load_evidence(sid, (lib.load_run(sid) or {}).get("run_id"))
     # What the run cost, read from this agent's own transcript since its claim,
     # so a plan can be queried by model and tokens (graph_query agg
     # sum:data.usage.total_tokens) without the worker knowing its own usage.
@@ -142,9 +142,9 @@ def decide(inp):
         # `grounded`. Measured — a false claim against a record that disproves
         # it scored 0.01. Attaching the wrong thing costs a missed grounding,
         # never a wrong one.
-        evidence = lib.select_evidence(records[-REMEMBER_RECENT:], cap=REMEMBER_RECENT)
+        evidence = lib.select_evidence([lib.strip_internal(r) for r in records[-REMEMBER_RECENT:]], cap=REMEMBER_RECENT)
     else:
-        evidence = lib.select_evidence(records)
+        evidence = lib.select_evidence([lib.strip_internal(r) for r in records])
     # A `pr` on the report is the ONE claim that is externally checkable, and
     # nothing checked it: a URL for a pull request that does not exist was
     # stored and shown as if it were a result (measured against production
@@ -154,7 +154,13 @@ def decide(inp):
     pr = (inp.get("tool_input") or {}).get("pr") if is_report else None
     checked = check_pr(pr) if isinstance(pr, str) and pr.strip() else None
     if checked:
-        evidence = (evidence + [checked])[:lib.MAX_EVIDENCE] if hasattr(lib, "MAX_EVIDENCE") else evidence + [checked]
+        evidence = [e for e in evidence if not (e.get("kind") == "artifact" and e.get("url") == checked.get("url") and "NOT FOUND" not in str(e.get("label")))]
+        evidence = evidence + [checked]
+    if is_report:
+        # The worker's own verbatim records are merged, never replaced (a report
+        # with 8 passed records lost them to 2 captured ones and was rejected).
+        passed = (inp.get("tool_input") or {}).get("evidence")
+        evidence = lib.merge_evidence(evidence, passed, cap=lib.EVIDENCE_CAP)
     # A command whose output was longer than the clip: its whole output goes
     # to the USER's enforcer-files under the user's credential, and the item
     # carries the id. Unset files_base_url, an upload failure, a timeout: the
@@ -176,7 +182,7 @@ def decide(inp):
     else:
         args = with_usage(inp.get("tool_input"), usage) if usage else inp.get("tool_input")
         args = dict(args) if isinstance(args, dict) else {}
-        args["evidence"] = evidence          # replaces anything the model wrote there
+        args["evidence"] = evidence          # captured first, then the worker's own non-duplicate records
         out["updatedInput"] = args
         out["additionalContext"] = NOTE.format(n=len(evidence))
     return out
