@@ -161,6 +161,7 @@ class Session:
         self.born = born if born is not None else time.time()
         self.nodes = 0
         self.last_key = None
+        self.cost = None  # the last total_cost_usd seen (cumulative across resumes)
 
 
 def session_usable(sess, max_nodes, max_age_s, now=None):
@@ -631,10 +632,17 @@ class Dispatcher:
                         self.launch(w.node, cold=True)
                     continue
                 u = s["usage"]
+                cost = s["cost"]
+                if sess is not None and isinstance(cost, (int, float)):
+                    # a resumed session's total_cost_usd is the session's running
+                    # total: log this node's share
+                    if getattr(w, "resumed", False) and isinstance(sess.cost, (int, float)):
+                        cost = round(cost - sess.cost, 6)
+                    sess.cost = s["cost"]
                 self.say("done %s exit=%s turns=%s result=%s denials=%d run=%s reported=%s cost=%s "
                          "session=%s %s cache_read=%s cache_creation=%s output=%s"
                          % (key, w.proc.returncode, s["turns"], s["result"], s["denials"], s["run_id"] or "-",
-                            s["reported"], s["cost"], (sess.sid if sess else "-"),
+                            s["reported"], cost, (sess.sid if sess else "-"),
                             "resumed" if getattr(w, "resumed", False) else "cold",
                             u.get("cache_read_input_tokens", "-"), u.get("cache_creation_input_tokens", "-"),
                             u.get("output_tokens", "-")))

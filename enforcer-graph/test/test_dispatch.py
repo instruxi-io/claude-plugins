@@ -263,7 +263,7 @@ print(json.dumps({"type": "system", "subtype": "init", "session_id": s, "mcp_ser
 print(json.dumps({"type": "assistant", "message": {"content": [
     {"type": "tool_use", "id": "r1", "name": "mcp__plugin_enforcer_enforcer__graph_report"}]}}))
 print(json.dumps({"type": "result", "subtype": "success", "num_turns": 3, "session_id": s,
-                  "permission_denials": [], "total_cost_usd": 0.01,
+                  "permission_denials": [], "total_cost_usd": 0.05 if resume else 0.01,
                   "usage": {"cache_read_input_tokens": 900 if resume else 100,
                             "cache_creation_input_tokens": 10 if resume else 500, "output_tokens": 7}}))
 open(os.path.join(os.environ["FAKE_DONE"], key), "w").close()
@@ -322,6 +322,7 @@ class WarmWorkers(unittest.TestCase):
         self.assertEqual(text.count("mode=resume session=" + sid), 2)
         self.assertIn("cold cache_read=100 cache_creation=500 output=7", text)
         self.assertIn("resumed cache_read=900 cache_creation=10 output=7", text)
+        self.assertIn("cost=0.04 session=", text)  # 0.05 session total - 0.01 before
 
     def test_session_life_cap_retires(self):
         rc, text, launches = self.run_dispatch([node(k, repo="r") for k in "abc"], warm_max_nodes=2)
