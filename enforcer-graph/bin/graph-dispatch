@@ -33,6 +33,9 @@ per node per session when its worktree is on graph/<key>, ahead of base, and cle
 the dispatcher pushes, opens the PR (the worker's final report as body), runs
 land-pr.sh, then resumes the worker's session to claim again, run the gate and
 report. Anything else logs SALVAGE-SKIPPED with the reason and is left for a person.
+land-pr runs as a tracked child (it can wait an hour on CI): the loop keeps launching
+other nodes meanwhile, the salvage counts against the node but not a worker slot, and
+the session is resumed when land-pr exits.
 
 Failure remediation. A failed attempt (reported failed, reported succeeded but
 rejected, or exited without reporting; never a DENIED one, which takes the
@@ -48,6 +51,13 @@ failed node (data.revised_by=triage); prerequisite creates the node(s) and a
 `requires` edge from the failed node to each; gate creates gate-<key> naming
 the decision and the `requires` edge that holds the node behind it. So: at most
 2 task launches + 1 triage per node per session. --no-triage turns it off.
+Triage covers EVERY failed node, whatever its type: a failed node of a type the
+dispatcher never launches (ops, gate, release) with no live run is triaged too, so it
+cannot sit failed forever. The worker never does that node's own work; it revises it
+(revise may retype, e.g. ops -> task with verification-only acceptance), names what it
+waits on (prerequisite: new nodes, or {key, existing: true}, each a `requires` edge),
+or points at / creates the gate for the human decision. The mark data.triaged_at +
+data.triaged_runs makes it idempotent: no re-triage until the node's runs change.
 
 A worker whose result names a permission denial (a denied push, PR or tool,
 or denial text in its result) is logged DENIED with its worktree path and is not
@@ -470,6 +480,8 @@ class Dispatcher:
         self.failures = {}
         self.fail_session = {}
         self.triaged = set()  # node keys triaged (or whose triage could not start) this session
+        self.triaged_sig = {}  # failed node key -> its runs' signature when it was triaged (any node type)
+        self.all_nodes = []  # the last pass's node list: triage resolves `existing` prerequisites against it
 
     def say(self, msg):
         line = "%s %s" % (utcnow().strftime("%H:%M:%S"), msg)
@@ -514,7 +526,44 @@ class Dispatcher:
                     keep.append(dict(n, _triage=True))
                 continue
             keep.append(n)
+        keep += self.failed_for_triage(nodes, {k["id"] for k in keep})
         return keep
+
+    def runs_sig(self, n):
+        """What a node's runs look like now: (count, newest id). None when unreadable."""
+        try:
+            runs = self.api.runs(self.g, n["id"])
+        except (APIError, AttributeError):
+            return None
+        last = runs[-1] if runs else {}
+        return (len(runs), str(last.get("id") or last.get("run_id") or last.get("status") or ""))
+
+    def failed_for_triage(self, nodes, taken):
+        """Failed nodes of a type the dispatcher never launches (ops, gate,
+        release, ...), with no live run, not triaged since their runs last
+        changed. They never reach the task path, so without this nothing
+        recovers them. data.triaged_at + data.triaged_runs persist the mark
+        across sessions; self.triaged_sig holds it for this one."""
+        out = []
+        if self.args.no_triage or self.types is None:
+            return out
+        for n in nodes:
+            key = n.get("key")
+            if (n.get("status") != "failed" or n["id"] in taken or n.get("type") in self.types
+                    or key in self.workers or key in self.denied or merge_target(n)
+                    or (n.get("data") or {}).get("triage_of")):
+                continue
+            d = n.get("data") or {}
+            seen = self.triaged_sig.get(key)
+            if seen is None and d.get("triaged_at"):
+                seen = d.get("triaged_runs")
+                seen = tuple(seen) if isinstance(seen, list) else seen
+            if seen is not None:
+                sig = self.runs_sig(n)
+                if sig is None or sig == seen:
+                    continue  # unchanged since the triage (or unreadable): idempotent
+            out.append(dict(n, _triage=True, _triage_any=True))
+        return out
 
     def held_elsewhere(self, nodes):
         held = set()
@@ -529,6 +578,7 @@ class Dispatcher:
     # --- one pass
     def tick(self):
         nodes = self.api.nodes(self.g)
+        self.all_nodes = nodes
         cands = self.candidates(nodes)
         # Agents fill the N worker slots; a merge costs no model, so it takes
         # no slot, but holds land:<repo> so one repo lands one PR at a time.
@@ -667,9 +717,11 @@ class Dispatcher:
         At most once per node per session, whether or not it starts."""
         a, key = self.args, n["key"]
         self.triaged.add(key)
+        if n.get("_triage_any"):
+            self.triaged_sig[key] = self.runs_sig(n) or ()
         if a.dry_run:
-            self.say("would triage %s with %s after %d failed attempt(s)"
-                     % (key, a.triage_model, len(self.failures.get(key) or [])))
+            self.say("would triage %s (%s) with %s after %d failed attempt(s)"
+                     % (key, n.get("type"), a.triage_model, len(self.failures.get(key) or [])))
             return
         history = {"failures": self.failures.get(key) or []}
         for what, fn in (("runs", "runs"), ("observations", "observations")):
@@ -681,9 +733,9 @@ class Dispatcher:
         try:
             tnode = self.api.create_node(self.g, {
                 "key": tkey, "type": "chore", "title": "triage %s: why it failed, and what it needs" % key,
-                "description": "Triage of `%s` after %d failed attempts in one graph-dispatch session: decide "
+                "description": "Triage of `%s` (type %s, failed): decide "
                                "revise / prerequisite / gate and report data.triage. Created by graph-dispatch."
-                               % (key, len(history["failures"])),
+                               % (key, n.get("type")),
                 "data": {"triage_of": n["id"], "triage_of_key": key, "tier": "deep", "created_by": "graph-dispatch",
                          "acceptance": ["data.triage names exactly one of revise / prerequisite / gate, with the "
                                         "reason drawn from the failed runs' errors and verdicts"]}})
@@ -701,6 +753,7 @@ class Dispatcher:
         log = os.path.join(self.logs, "%s.triage.jsonl" % key)
         w = Worker(tnode, log)
         w.triage_of, w.path, w.model, w.turns, w.session, w.resumed = n, path, a.triage_model, 0, sess, False
+        w.triage_any = bool(n.get("_triage_any"))
         w.max_turns = a.max_turns
         env = dict(os.environ, GRAPH_ID=self.g, JEV_HOOKS_HEADLESS="1")
         with open(log, "w") as f:
@@ -735,7 +788,18 @@ class Dispatcher:
             self.say("TRIAGE-WRITE-FAILED %s (%s): %s" % (key, t["action"], e))
             return None
         self.say("TRIAGE %s -> %s: %s (%s)" % (key, t["action"], "; ".join(writes), clip(t["reason"], 200)))
+        if getattr(w, "triage_any", False):
+            self.mark_triaged(failed, tkey)
         return writes
+
+    def mark_triaged(self, failed, tkey):
+        """data.triaged_at + the runs signature: not triaged again until the runs change."""
+        sig = self.triaged_sig.get(failed["key"]) or ()
+        try:
+            self.api.patch_node(self.g, failed["id"], {"merge_data": True, "data": {
+                "triaged_at": utcnow().isoformat(), "triaged_in": tkey, "triaged_runs": list(sig)}})
+        except APIError as e:
+            self.say("TRIAGE-MARK-FAILED %s: %s (in-session mark still holds)" % (failed["key"], e))
 
     def apply_triage(self, failed, tkey, t):
         """The graph writes of one decision; returns them as log strings.
@@ -754,14 +818,24 @@ class Dispatcher:
             body = {"data": data, "merge_data": True}
             if t.get("description"):
                 body["description"] = t["description"]
+            if t.get("type"):
+                body["type"] = t["type"]  # e.g. a merged-and-applied ops node whose remainder is verification -> task
             self.api.patch_node(g, failed["id"], body)
             return ["patched %s (%s)" % (failed["key"], ", ".join(sorted(set(body) - {"merge_data"} | set(data))))]
         specs = t["nodes"] if act == "prerequisite" else [{
-            "key": "gate-" + failed["key"], "type": "gate", "title": t["decision"],
+            "key": t.get("gate_key") or "gate-" + failed["key"], "type": "gate", "title": t["decision"],
             "description": "%s\n\nWhy (triage %s): %s" % (t["decision"], tkey, reason),
-            "data": {"decision": t["decision"]}}]
+            "data": {"decision": t["decision"]}, "existing": bool(t.get("gate_key"))}]
         out = []
         for spec in specs:
+            if spec.get("existing"):
+                # point at a node that already exists (the thing the failed node is waiting on)
+                ex = next((x for x in self.all_nodes if spec["key"] in (x.get("key"), x.get("id"))), None)
+                if not ex:
+                    raise APIError("triage", "existing node %s not found" % spec["key"])
+                self.api.create_edge(g, {"from_node_id": failed["id"], "to_node_id": ex["id"], "type": "requires"})
+                out.append("requires edge %s -> %s (existing)" % (failed["key"], ex["key"]))
+                continue
             data = dict(spec.get("data") or {}, created_by="triage", triage_of_key=failed["key"], triage_reason=reason)
             for k in ("acceptance", "brief"):
                 if spec.get(k):
@@ -799,6 +873,11 @@ class Dispatcher:
     # --- supervision
     def reap(self):
         for key, w in list(self.workers.items()):
+            if w.kind == "salvage":
+                if not w.alive():
+                    del self.workers[key]
+                    self.finish_salvage(w)
+                continue
             if w.kind == "merge":
                 if w.alive() and time.time() - w.last_hb > self.args.heartbeat:
                     try:
@@ -920,9 +999,10 @@ class Dispatcher:
         return r.returncode, (r.stdout + r.stderr).strip()
 
     def salvage(self, w, s):
-        """Finish the mechanical part of a push/PR-denied worker: push, PR, land,
-        then resume its session to report. Synchronous: it blocks the loop while
-        land-pr waits. Returns True when the worker was resumed."""
+        """Finish the mechanical part of a push/PR-denied worker: push, open the
+        PR, then start land-pr as a tracked child (kind "salvage") and return
+        True; finish_salvage resumes its session to report when land-pr exits.
+        Asynchronous: the loop keeps scheduling other nodes while CI runs."""
         key, path = w.node["key"], getattr(w, "path", None)
 
         def skip(why):
@@ -966,9 +1046,35 @@ class Dispatcher:
             return skip("gh pr create failed: %s" % clip(out, 200))
         pr = m.group(1)
         self.say("salvage %s: pushed %s, opened PR #%s, landing" % (key, branch, pr))
-        rc, out = self._sh([LAND_PR, pr, "--timeout", str(self.args.land_timeout)], path,
-                           timeout=self.args.land_timeout + 120)
-        if rc in (2, 3, 4) or rc:
+        # land-pr waits for CI, possibly for an hour: run it as a tracked child
+        # and keep scheduling; reap() calls finish_salvage when it exits
+        cmd = [LAND_PR, pr, "--timeout", str(self.args.land_timeout)]
+        log = os.path.join(self.logs, "%s.%d.salvage-land.log" % (key, self.attempts.get(key, 1)))
+        sw = Worker(w.node, log)
+        sw.kind, sw.cmd, sw.path, sw.pr, sw.orig = "salvage", cmd, path, pr, (w, s)
+        try:
+            with open(log, "w") as f:
+                sw.proc = subprocess.Popen(cmd, cwd=path, stdin=subprocess.DEVNULL, stdout=f,
+                                           stderr=subprocess.STDOUT, start_new_session=True)
+        except OSError as e:
+            return skip("PR #%s: could not start land-pr: %s" % (pr, e))
+        self.workers[key] = sw  # counts against the node, not against the worker slots
+        self.say("salvage %s: PR #%s landing in the background pid=%d log=%s" % (key, pr, sw.proc.pid, log))
+        return True
+
+    def finish_salvage(self, sw):
+        """land-pr of a salvage exited: resume the worker's session to report.
+        Returns True when the worker was resumed."""
+        key, pr, path = sw.key, sw.pr, sw.path
+        w, s = sw.orig
+        rc = sw.proc.returncode
+        with open(sw.log_path, errors="replace") as f:
+            out = f.read().strip()
+
+        def skip(why):
+            self.say("SALVAGE-SKIPPED %s: %s" % (key, why))
+            return False
+        if rc:
             return skip("PR #%s: land-pr exited %d (%s): %s" % (pr, rc, LAND_CODES.get(rc, "unknown"), clip(out, 200)))
         sess = getattr(w, "session", None)
         if sess is None:
@@ -1218,19 +1324,22 @@ TRIAGE_ACTIONS = ("revise", "prerequisite", "gate")
 
 def triage_prompt(graph, tnode, failed, history):
     return "\n".join([
-        "TRIAGE. You are a triage worker, not a task worker. Node `%s` (%s) failed %d times this "
-        "dispatcher session; it is not relaunched again until you decide what it lacks." % (
-            failed["key"], failed["id"], len(history.get("failures") or [])),
+        "TRIAGE. You are a triage worker, not a task worker. Node `%s` (%s, type %s) failed (%d failed "
+        "attempt(s) this dispatcher session); it is not relaunched until you decide what it lacks. Whatever its "
+        "type (ops, gate, release included) you never do the node's own work; you only change what the graph says "
+        "about it." % (failed["key"], failed["id"], failed.get("type"), len(history.get("failures") or [])),
         "Claim YOUR triage node: graph_next_work {graph: \"%s\", node: \"%s\", runner: \"%s\"}. Report THAT "
         "node only; never claim, heartbeat or report `%s`. Write no code, open no PR." % (
             graph, tnode["id"], tnode["key"], failed["key"]),
         "Read what failed (below, and graph_plan_status / the failed node's observations). Then decide EXACTLY ONE:",
-        "  (a) revise: the description/brief/acceptance cannot be met as written -> "
-        "data.triage = {action: \"revise\", reason, description?, acceptance?: [..], brief?: [..]}",
-        "  (b) prerequisite: work is missing that must land first -> "
-        "data.triage = {action: \"prerequisite\", reason, nodes: [{key, title, description, acceptance: [..], brief?: [..]}]}",
+        "  (a) revise: the description/brief/acceptance cannot be met as written, or the node's remaining work is "
+        "something an agent can do (e.g. an ops node already merged and applied whose remainder is verification: "
+        "retype it) -> data.triage = {action: \"revise\", reason, type?: \"task\", description?, acceptance?: [..], brief?: [..]}",
+        "  (b) prerequisite: the thing it is waiting on is missing or not yet done -> "
+        "data.triage = {action: \"prerequisite\", reason, nodes: [{key, title, description, acceptance: [..], brief?: [..]}]}; "
+        "a node that already exists is named {key, existing: true}",
         "  (c) gate: the blocker is a human decision or a permission -> "
-        "data.triage = {action: \"gate\", reason, decision: \"<the question a person must answer>\"}",
+        "data.triage = {action: \"gate\", reason, decision: \"<the question a person must answer>\", gate_key?: \"<an existing gate node>\"}",
         "Put it in graph_report {status: \"succeeded\", data: {triage: {...}}} on your triage node, with a report "
         "naming the evidence (the failed runs' errors and verdicts) behind the choice. The dispatcher makes the "
         "graph writes from data.triage; you make none. If you cannot decide, report failed and say why.",
@@ -1253,13 +1362,13 @@ def triage_decision(data):
         return None, "data.triage.action %r is not one of %s" % (act, "/".join(TRIAGE_ACTIONS))
     if not str(t.get("reason") or "").strip():
         return None, "data.triage.reason is empty"
-    if act == "revise" and not any(t.get(k) for k in ("description", "acceptance", "brief")):
-        return None, "revise names no description, acceptance or brief"
+    if act == "revise" and not any(t.get(k) for k in ("description", "acceptance", "brief", "type")):
+        return None, "revise names no description, acceptance, brief or type"
     if act == "prerequisite":
         nodes = t.get("nodes")
         if not isinstance(nodes, list) or not nodes or not all(
-                isinstance(n, dict) and n.get("key") and n.get("title") for n in nodes):
-            return None, "prerequisite needs nodes: [{key, title, ...}]"
+                isinstance(n, dict) and n.get("key") and (n.get("title") or n.get("existing")) for n in nodes):
+            return None, "prerequisite needs nodes: [{key, title, ...}] (or {key, existing: true})"
     if act == "gate" and not str(t.get("decision") or "").strip():
         return None, "gate names no decision"
     return t, ""
