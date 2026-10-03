@@ -159,6 +159,10 @@ def plan(_s):
     w = open(os.path.join(ROOT, "agents", "graph-worker.md")).read()
     for need in ("maxTurns: 80", "WORKER_BRIEF.md", "turn 12", "turn 20", "ONLY"):
         assert need in w, "graph-worker.md missing: " + need
+    skill = open(SKILL).read()
+    for name, txt in (("graph-worker.md", w), ("SKILL.md", skill)):
+        assert "`git push -u origin graph/<key>`" in txt, name + " must say to push alone as git push -u origin graph/<key>"
+        assert re.search(r"never chained", txt), name + " must say the push is never chained"
 
 
 if __name__ == "__main__":

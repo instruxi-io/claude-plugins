@@ -75,6 +75,11 @@ tool call, but do not rely on it. `cancel_requested`: finish quickly and report
 
 ## 4. Land it yourself
 
+Commit in one command. Then push in a separate command that is exactly
+`git push -u origin graph/<key>` and nothing else: never chained with `&&`, `;`
+or a test, `git add` or `git commit`, because the headless push rule matches
+only the whole command. Then open the PR.
+
 A code task is done when its PR is MERGED, in the same node; there is no
 separate merge node. Open the PR (body ends with
 `🤖 Generated with [Claude Code](https://claude.com/claude-code)`; commits end

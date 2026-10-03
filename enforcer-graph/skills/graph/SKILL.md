@@ -200,6 +200,10 @@ review is NOT MET: report `failed` with the PR URL in `pr`. On the node before
 a merge node, open the PR, pass `pr` and report. Do not merge it unless your
 own node says to.
 
+Push alone: commit in one command, then run `git push -u origin graph/<key>` as
+its own command, never chained with `&&` or `;` to a test, add or commit (the
+headless push rule matches only the whole command), then open the PR.
+
 To merge, run the plugin's lander, which needs no model in the loop:
 `"$(ls -d ~/.claude/plugins/cache/*/enforcer-graph/*/bin/land-pr.sh | tail -1)" <n>`.
 It queues `gh pr merge <n> --squash --auto`, keeps the branch current, and exits
