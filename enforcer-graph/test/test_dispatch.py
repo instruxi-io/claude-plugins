@@ -424,5 +424,140 @@ class WarmWorkers(unittest.TestCase):
         self.assertIsNone(gd.node_max_turns(node("n")))
 
 
+class SalvageDenied(unittest.TestCase):
+    """salvage() against a real local git repo + bare origin, a fake gh, land-pr and claude."""
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.state = os.path.join(self.tmp, "s")
+        os.makedirs(os.path.join(self.state, "logs"))
+        origin, self.wt = os.path.join(self.tmp, "origin.git"), os.path.join(self.tmp, "wt")
+        self.git(self.tmp, "init", "-q", "--bare", "-b", "main", origin)
+        self.git(self.tmp, "clone", "-q", origin, self.wt)
+        self.git(self.wt, "config", "user.email", "t@t")
+        self.git(self.wt, "config", "user.name", "t")
+        self.git(self.wt, "commit", "-q", "--allow-empty", "-m", "base")
+        self.git(self.wt, "push", "-q", "origin", "HEAD:main")
+        self.git(self.wt, "fetch", "-q")
+        self.git(self.wt, "remote", "set-head", "origin", "main")
+        self.bin = os.path.join(self.tmp, "bin")
+        os.makedirs(self.bin)
+        self.log = os.path.join(self.tmp, "calls.log")
+        self.script("gh", '#!/bin/sh\necho "gh $*" >> %s\n[ -n "$FAKE_GH_FAIL" ] && exit 1\n'
+                    'echo https://github.com/o/r/pull/7\n' % self.log)
+        self.land = self.script("land-pr.sh", '#!/bin/sh\necho "land $*" >> %s\necho landed-output\n'
+                                'exit ${FAKE_LAND_EXIT:-0}\n' % self.log)
+        self.claude = self.script("claude", '#!/bin/sh\necho "claude $*" >> %s\n' % self.log)
+        self.oldpath, self.oldland = os.environ["PATH"], gd.LAND_PR
+        os.environ["PATH"] = self.bin + ":" + self.oldpath
+        gd.LAND_PR = self.land
+        for k in ("FAKE_GH_FAIL", "FAKE_LAND_EXIT"):
+            os.environ.pop(k, None)
+
+    def tearDown(self):
+        os.environ["PATH"], gd.LAND_PR = self.oldpath, self.oldland
+        for k in ("FAKE_GH_FAIL", "FAKE_LAND_EXIT"):
+            os.environ.pop(k, None)
+
+    def git(self, cwd, *a):
+        import subprocess
+        subprocess.run(["git", *a], cwd=cwd, check=True, capture_output=True)
+
+    def script(self, name, body):
+        p = os.path.join(self.bin, name)
+        with open(p, "w") as f:
+            f.write(body)
+        os.chmod(p, 0o755)
+        return p
+
+    def calls(self):
+        return open(self.log).read() if os.path.exists(self.log) else ""
+
+    def setup_branch(self, name="graph/a", commit=True):
+        self.git(self.wt, "checkout", "-q", "-b", name)
+        if commit:
+            self.git(self.wt, "commit", "-q", "--allow-empty", "-m", "work")
+
+    def run_salvage(self, key="a", denied_cmd="git push -u origin graph/a", tools=("Bash",), text="final report", d=None):
+        out = io.StringIO()
+        d = d or gd.Dispatcher(FakeAPI([]), args(state_dir=self.state, claude=self.claude), out)
+        w = gd.Worker(node(key), os.path.join(self.tmp, "w.log"))
+        w.path, w.model, w.max_turns = self.wt, "sonnet", 10
+        w.session = gd.Session("sess-1", "r", "sonnet")
+        s = {"denied_tools": list(tools), "result_text": text,
+             "denied_inputs": [{"tool_name": t, "tool_input": {"command": denied_cmd}} for t in tools]}
+        ok = d.salvage(w, s)
+        time.sleep(0.3)
+        return d, ok, out.getvalue()
+
+    def test_happy_path_pushes_opens_pr_lands_and_resumes(self):
+        self.setup_branch()
+        d, ok, text = self.run_salvage()
+        self.assertTrue(ok, text)
+        c = self.calls()
+        self.assertIn("gh pr create --head graph/a", c)
+        self.assertIn("final report", c)
+        self.assertIn("land 7 --timeout", c)
+        self.assertIn("--resume sess-1", c)
+        self.assertIn("PR #7", c)
+        self.assertIn("a", d.workers)
+        self.assertNotIn("SALVAGE-SKIPPED", text)
+        import subprocess
+        r = subprocess.run(["git", "ls-remote", "--heads", "origin", "graph/a"], cwd=self.wt, capture_output=True, text=True)
+        self.assertIn("refs/heads/graph/a", r.stdout)
+
+    def assertSkipped(self, why, ok, text):
+        self.assertFalse(ok)
+        self.assertIn("SALVAGE-SKIPPED a: " + why, text)
+        c = self.calls()
+        self.assertNotIn("--resume", c)
+
+    def test_skip_dirty_worktree(self):
+        self.setup_branch()
+        open(os.path.join(self.wt, "x"), "w").write("x")
+        d, ok, text = self.run_salvage()
+        self.assertSkipped("worktree is dirty", ok, text)
+        self.assertNotIn("gh pr", self.calls())
+
+    def test_skip_no_commits(self):
+        self.setup_branch(commit=False)
+        d, ok, text = self.run_salvage()
+        self.assertSkipped("branch has no commits", ok, text)
+        self.assertNotIn("gh pr", self.calls())
+
+    def test_skip_non_graph_branch(self):
+        self.setup_branch("feature/x")
+        d, ok, text = self.run_salvage()
+        self.assertSkipped("branch is feature/x", ok, text)
+
+    def test_skip_land_failure(self):
+        self.setup_branch()
+        os.environ["FAKE_LAND_EXIT"] = "2"
+        d, ok, text = self.run_salvage()
+        self.assertSkipped("PR #7: land-pr exited 2", ok, text)
+
+    def test_skip_other_tool_denial(self):
+        self.setup_branch()
+        d, ok, text = self.run_salvage(tools=("Bash", "Write"))
+        self.assertSkipped("not a push or PR denial", ok, text)
+        d, ok, text = self.run_salvage(denied_cmd="rm -rf /")
+        self.assertIn("not a push or PR denial", text)
+        self.assertEqual(self.calls(), "")
+
+    def test_pr_denial_is_salvaged(self):
+        self.setup_branch()
+        d, ok, text = self.run_salvage(denied_cmd="gh pr create --title x")
+        self.assertTrue(ok, text)
+
+    def test_one_attempt_per_node(self):
+        self.setup_branch()
+        os.environ["FAKE_LAND_EXIT"] = "3"
+        d, ok, text = self.run_salvage()
+        self.assertFalse(ok)
+        os.environ["FAKE_LAND_EXIT"] = "0"
+        d, ok, text = self.run_salvage(d=d)
+        self.assertIn("already salvaged once", d.out.getvalue())
+        self.assertNotIn("--resume", self.calls())
+
+
 if __name__ == "__main__":
     unittest.main()

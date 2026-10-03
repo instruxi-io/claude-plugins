@@ -28,6 +28,12 @@ a cold start, logged, with no attempt spent. A session is retired after
 it off. data.max_turns is passed as --max-turns. The done line carries the
 result's cache_read / cache_creation / output tokens.
 
+A DENIED worker whose denial was a push or PR (never another tool) is salvaged once
+per node per session when its worktree is on graph/<key>, ahead of base, and clean:
+the dispatcher pushes, opens the PR (the worker's final report as body), runs
+land-pr.sh, then resumes the worker's session to claim again, run the gate and
+report. Anything else logs SALVAGE-SKIPPED with the reason and is left for a person.
+
 A worker whose result names a permission denial (a denied push, PR or tool,
 or denial text in its result) is logged DENIED with its worktree path and is not
 relaunched this session: the same wall would meet it again. Every worker runs
@@ -63,6 +69,7 @@ import urllib.request
 HERE = os.path.dirname(os.path.abspath(__file__))
 PLUGIN_DIR = os.path.dirname(HERE)
 LAND_PR = os.path.join(HERE, "land-pr.sh")
+ATTRIBUTION = "\U0001F916 Generated with [Claude Code](https://claude.com/claude-code)"
 UA = "graph-dispatch/0.18 (enforcer-graph plugin)"
 AGENT = "enforcer-graph:graph-worker"
 GRAPH_TOOLS = ["graph_next_work", "graph_heartbeat", "graph_report", "graph_remember", "graph_plan_status"]
@@ -73,6 +80,7 @@ TIER_MODEL = {"mechanical": "sonnet", "standard": "sonnet", "deep": "opus"}
 CLIP = 4000
 # A permission denial is the environment's answer, not the work's: relaunching
 # the same worker meets the same wall and (server side) bumps the node's tier.
+PUSH_DENIAL_RE = re.compile(r"git\s+push|gh\s+pr\b|\bpush(ed|ing)?\b.*\bdenied|\bdenied\b.*\b(push|pull request)", re.I | re.S)
 DENIAL_TEXT_RE = re.compile(r"permission denied|was denied|were denied|denied by|requires? (permission|approval)|"
                             r"not (allowed|permitted) to|no approval|needs? approval|auto mode (classifier )?(denied|blocked)",
                             re.I)
@@ -418,6 +426,7 @@ class Dispatcher:
         self.types = None if args.types == "all" else set(args.types.split(","))
         self.peak = 0
         self.blocked = False
+        self.salvaged = set()  # node keys already salvaged (or skipped) this session
         self.denied = {}  # node key -> worktree path: denied by the environment, not relaunched this session
         self.mcp_down = 0
         self.last_skip = {}
@@ -627,6 +636,7 @@ class Dispatcher:
                     self.finish_merge(w)
                     del self.workers[key]
                 continue
+            salvage = None
             w.turns = count_turns(w.log_path)
             cap = getattr(w, "max_turns", self.args.max_turns)
             if w.alive() and w.turns > cap:
@@ -700,7 +710,93 @@ class Dispatcher:
                     self.say("DENIED %s: %s; not relaunching it this session. Worktree: %s "
                              "(a person can land it)"
                              % (key, ", ".join(other) or clip(s["result_text"], 120), self.denied[key]))
+                    salvage = (w, s)
+                elif (other or DENIAL_TEXT_RE.search(s["result_text"] or "")) and not graph_denied \
+                        and key in self.salvaged:
+                    self.say("SALVAGE-SKIPPED %s: denied again after a salvage" % key)
                 del self.workers[key]
+                if salvage and not self.args.no_salvage:
+                    self.salvage(*salvage)
+
+    # --- salvage a denied push / PR
+    def _sh(self, cmd, cwd, timeout=300):
+        try:
+            r = subprocess.run(cmd, cwd=cwd, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=timeout)
+        except (OSError, subprocess.TimeoutExpired) as e:
+            return 127, str(e)
+        return r.returncode, (r.stdout + r.stderr).strip()
+
+    def salvage(self, w, s):
+        """Finish the mechanical part of a push/PR-denied worker: push, PR, land,
+        then resume its session to report. Synchronous: it blocks the loop while
+        land-pr waits. Returns True when the worker was resumed."""
+        key, path = w.node["key"], getattr(w, "path", None)
+
+        def skip(why):
+            self.say("SALVAGE-SKIPPED %s: %s" % (key, why))
+            return False
+        if key in self.salvaged:
+            return skip("already salvaged once this session")
+        self.salvaged.add(key)
+        cmds = " ".join(str((d or {}).get("tool_input", {}).get("command", "")) if isinstance(d, dict) else ""
+                        for d in s.get("denied_inputs", []))
+        others = [t for t in s["denied_tools"] if t != "Bash"]
+        if others or not (PUSH_DENIAL_RE.search(cmds) or (not s["denied_tools"] and PUSH_DENIAL_RE.search(s["result_text"] or ""))):
+            return skip("not a push or PR denial")
+        if not path or path == "-" or not os.path.isdir(path):
+            return skip("no worktree")
+        branch = "graph/" + key
+        rc, cur = self._sh(["git", "rev-parse", "--abbrev-ref", "HEAD"], path)
+        if rc or cur != branch:
+            return skip("branch is %s, not %s" % (cur or "unknown", branch))
+        rc, st = self._sh(["git", "status", "--porcelain"], path)
+        if rc or st:
+            return skip("worktree is dirty or unreadable")
+        base = None
+        for ref in ("origin/HEAD", "origin/main", "origin/master"):
+            if self._sh(["git", "rev-parse", "--verify", "-q", ref], path)[0] == 0:
+                base = ref
+                break
+        if not base:
+            return skip("no base branch found")
+        rc, n = self._sh(["git", "rev-list", "--count", base + "..HEAD"], path)
+        if rc or not n.isdigit() or int(n) < 1:
+            return skip("branch has no commits ahead of %s" % base)
+        rc, out = self._sh(["git", "push", "-u", "origin", branch], path)
+        if rc:
+            return skip("push failed: %s" % clip(out, 200))
+        body = (s["result_text"] or "(no final report)") + "\n\n" + ATTRIBUTION
+        rc, out = self._sh(["gh", "pr", "create", "--head", branch, "--title", w.node.get("title") or key,
+                            "--body", body], path)
+        m = re.search(r"/pull/(\d+)", out) if rc == 0 else None
+        if not m:
+            return skip("gh pr create failed: %s" % clip(out, 200))
+        pr = m.group(1)
+        self.say("salvage %s: pushed %s, opened PR #%s, landing" % (key, branch, pr))
+        rc, out = self._sh([LAND_PR, pr, "--timeout", str(self.args.land_timeout)], path,
+                           timeout=self.args.land_timeout + 120)
+        if rc in (2, 3, 4) or rc:
+            return skip("PR #%s: land-pr exited %d (%s): %s" % (pr, rc, LAND_CODES.get(rc, "unknown"), clip(out, 200)))
+        sess = getattr(w, "session", None)
+        if sess is None:
+            return skip("PR #%s landed but the worker has no session to resume" % pr)
+        prompt = ("Your branch is pushed as PR #%s and land-pr exited %d with %s; claim the node again, "
+                  "run the deciding gate on the merged tree as your last commands, and report."
+                  % (pr, rc, clip(out, 500)))
+        a = self.args
+        cmd = claude_cmd(prompt, w.model, a, key, session=sess.sid, resume=True, max_turns=getattr(w, "max_turns", None))
+        log = os.path.join(self.logs, "%s.%d.salvage.jsonl" % (key, self.attempts.get(key, 1)))
+        nw = Worker(w.node, log)
+        env = dict(os.environ, GRAPH_ID=self.g, JEV_HOOKS_HEADLESS="1")
+        with open(log, "w") as f:
+            nw.proc = subprocess.Popen(cmd, cwd=path, stdin=subprocess.DEVNULL, stdout=f,
+                                       stderr=subprocess.STDOUT, env=env, start_new_session=True)
+        nw.path, nw.model, nw.turns, nw.session, nw.resumed = path, w.model, 0, sess, True
+        nw.max_turns = getattr(w, "max_turns", a.max_turns)
+        self.workers[key] = nw
+        self.say("salvage %s: PR #%s landed (land-pr exit %d); resumed session %s to report, log=%s"
+                 % (key, pr, rc, sess.sid, log))
+        return True
 
     def finish_merge(self, w):
         rc = w.proc.returncode
@@ -797,7 +893,7 @@ def summarize(path):
     claimed (from its graph_next_work tool result) and whether it reported."""
     s = {"turns": 0, "result": None, "denials": 0, "denied_tools": [], "run_id": None, "reported": False,
          "cost": None, "mcp": {}, "started": False, "session_id": None, "usage": {}, "error_text": None,
-         "result_text": None}
+         "result_text": None, "denied_inputs": []}
     claims = set()
     try:  # the first non-JSON line, e.g. claude's "No conversation found with session ID: ..."
         with open(path, errors="replace") as f:
@@ -840,6 +936,7 @@ def summarize(path):
             denied = e.get("permission_denials") or []
             s["denials"] = len(denied)
             s["denied_tools"] = sorted({str(d.get("tool_name")) for d in denied if isinstance(d, dict)})
+            s["denied_inputs"] = [d for d in denied if isinstance(d, dict)]
             s["cost"] = e.get("total_cost_usd")
     s["started"] = s["started"] or s["turns"] > 0
     return s
@@ -872,6 +969,8 @@ def parse_args(argv):
     p.add_argument("--stop-file", help="touch it to drain (default <state-dir>/STOP)")
     p.add_argument("--plugin-dir", action="append", default=[],
                    help="extra plugin dirs (default: the newest cached enforcer plugin, for the MCP server)")
+    p.add_argument("--no-salvage", action="store_true",
+                   help="do not push/PR/land a worker whose push or PR was denied")
     p.add_argument("--no-warm", action="store_true",
                    help="start every worker cold (no session reuse across nodes)")
     p.add_argument("--warm-max-nodes", type=int, default=5,
