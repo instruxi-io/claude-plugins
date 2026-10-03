@@ -34,6 +34,21 @@ the dispatcher pushes, opens the PR (the worker's final report as body), runs
 land-pr.sh, then resumes the worker's session to claim again, run the gate and
 report. Anything else logs SALVAGE-SKIPPED with the reason and is left for a person.
 
+Failure remediation. A failed attempt (reported failed, reported succeeded but
+rejected, or exited without reporting; never a DENIED one, which takes the
+salvage path) makes the node's next launch a REMEDIATION launch: it resumes the
+failed attempt's own session (cold if that cannot start) and its prompt carries
+the previous error, the last_rejection, and "fix the cause, not the symptom".
+When --max-attempts (2) task attempts have all failed, the node is not launched
+again; the dispatcher creates a triage node (data.triage_of) and runs a
+--triage-model (deep tier) worker on it, once per node per session. The triage
+worker reports ITS node with data.triage = revise | prerequisite | gate, and the
+dispatcher makes the writes (a headless worker cannot): revise patches the
+failed node (data.revised_by=triage); prerequisite creates the node(s) and a
+`requires` edge from the failed node to each; gate creates gate-<key> naming
+the decision and the `requires` edge that holds the node behind it. So: at most
+2 task launches + 1 triage per node per session. --no-triage turns it off.
+
 A worker whose result names a permission denial (a denied push, PR or tool,
 or denial text in its result) is logged DENIED with its worktree path and is not
 relaunched this session: the same wall would meet it again. Every worker runs
@@ -318,6 +333,24 @@ class API:
     def complete(self, g, n, r, body):
         return self.call("POST", "/graphs/%s/nodes/%s/runs/%s/complete" % (g, n, r), body)
 
+    # the writes a triage decision needs (a headless worker cannot make them:
+    # every hosted write tool but the graph work loop asks a person)
+    def create_node(self, g, body):
+        d = self.call("POST", "/graphs/%s/nodes" % g, body).get("data")
+        return d[0] if isinstance(d, list) else d
+
+    def create_edge(self, g, body):
+        return self.call("POST", "/graphs/%s/edges" % g, body).get("data")
+
+    def patch_node(self, g, n, body):
+        return self.call("PATCH", "/graphs/%s/nodes/%s" % (g, n), body).get("data")
+
+    def runs(self, g, n):
+        return self.call("GET", "/graphs/%s/nodes/%s/runs" % (g, n)).get("data") or []
+
+    def observations(self, g, n):
+        return self.call("GET", "/graphs/%s/nodes/%s/observations" % (g, n)).get("data") or []
+
 
 # ---------------------------------------------------------------- workers
 
@@ -432,6 +465,11 @@ class Dispatcher:
         self.last_skip = {}
         self.drain_said = False
         self.warm = {}  # (repo, model) -> [Session], idle and resumable
+        # remediation: node key -> [{error, rejection}] of its failed attempts this
+        # session, and the session of the last one (resumed by the next launch)
+        self.failures = {}
+        self.fail_session = {}
+        self.triaged = set()  # node keys triaged (or whose triage could not start) this session
 
     def say(self, msg):
         line = "%s %s" % (utcnow().strftime("%H:%M:%S"), msg)
@@ -465,9 +503,15 @@ class Dispatcher:
         for n in out:
             if self.types is not None and n.get("type") not in self.types:
                 continue
-            if self.attempts.get(n["key"], 0) >= self.args.max_attempts:
-                continue
+            if (n.get("data") or {}).get("triage_of"):
+                continue  # a triage node: launched by the dispatcher that made it, never from the frontier
             if n["key"] in self.denied:
+                continue  # environmental: the salvage path, never triage
+            if self.attempts.get(n["key"], 0) >= self.args.max_attempts:
+                # the task attempts are spent: one triage per node per session
+                if (not self.args.no_triage and n["key"] not in self.triaged and not merge_target(n)
+                        and len(self.failures.get(n["key"]) or []) >= self.args.max_attempts):
+                    keep.append(dict(n, _triage=True))
                 continue
             keep.append(n)
         return keep
@@ -554,17 +598,29 @@ class Dispatcher:
                 return
             self.launch_merge(n, cmd, cwd)
             return
+        if n.get("_triage"):
+            self.launch_triage(n)
+            return
         model = model_for(n, a.model)
         repo = repo_of(n)
         path, branch, note = worktree_for(n, a.repo_root, self.state, dry=a.dry_run)
+        failures = self.failures.get(n["key"]) or []
         sess = None
-        if repo and not cold and not a.no_warm and not a.dry_run:
+        if failures and not cold and not a.no_warm and not a.dry_run:
+            # a remediation launch resumes the failed attempt's own session, so
+            # the worker keeps what it learned
+            sess = self.fail_session.pop(n["key"], None)
+        elif repo and not cold and not a.no_warm and not a.dry_run:
             sess = self.take_warm(repo, model)
         resumed = sess is not None
         if not resumed:
             sess = Session(str(uuid.uuid4()), repo, model)
         turns_cap = node_max_turns(n)
-        prompt = worker_prompt(self.g, n, path, branch, previous=sess.last_key if resumed else None)
+        if failures:
+            prompt = remediation_prompt(self.g, n, path, branch, failures)
+            tag += " (remediation after %d failed attempt(s))" % len(failures)
+        else:
+            prompt = worker_prompt(self.g, n, path, branch, previous=sess.last_key if resumed else None)
         cmd = claude_cmd(prompt, model, a, n["key"], session=sess.sid, resume=resumed, max_turns=turns_cap)
         res = ",".join(sorted(resources_of(n))) or "-"
         if a.dry_run:
@@ -602,6 +658,126 @@ class Dispatcher:
             mode = "mode=cold session=%s" % sess.sid
         self.say("launch %s pid=%d model=%s %s cwd=%s (%s) log=%s%s"
                  % (n["key"], w.proc.pid, model, mode, path, note, log, tag))
+
+    # --- triage: a node whose task attempts all failed
+    def launch_triage(self, n):
+        """Create a triage node for `n` and launch a deep-tier worker on it.
+        The worker decides (revise / prerequisite / gate) and reports the
+        TRIAGE node with data.triage; finish_triage makes the graph writes.
+        At most once per node per session, whether or not it starts."""
+        a, key = self.args, n["key"]
+        self.triaged.add(key)
+        if a.dry_run:
+            self.say("would triage %s with %s after %d failed attempt(s)"
+                     % (key, a.triage_model, len(self.failures.get(key) or [])))
+            return
+        history = {"failures": self.failures.get(key) or []}
+        for what, fn in (("runs", "runs"), ("observations", "observations")):
+            try:
+                history[what] = getattr(self.api, fn)(self.g, n["id"])[-5:]
+            except (APIError, AttributeError) as e:
+                history[what] = "unavailable: %s" % e
+        tkey = "triage-%s-%s" % (key, uuid.uuid4().hex[:6])
+        try:
+            tnode = self.api.create_node(self.g, {
+                "key": tkey, "type": "chore", "title": "triage %s: why it failed, and what it needs" % key,
+                "description": "Triage of `%s` after %d failed attempts in one graph-dispatch session: decide "
+                               "revise / prerequisite / gate and report data.triage. Created by graph-dispatch."
+                               % (key, len(history["failures"])),
+                "data": {"triage_of": n["id"], "triage_of_key": key, "tier": "deep", "created_by": "graph-dispatch",
+                         "acceptance": ["data.triage names exactly one of revise / prerequisite / gate, with the "
+                                        "reason drawn from the failed runs' errors and verdicts"]}})
+        except APIError as e:
+            self.say("TRIAGE-SKIPPED %s: could not create the triage node: %s" % (key, e))
+            return
+        tnode = dict(tnode or {}, key=(tnode or {}).get("key") or tkey)
+        if not tnode.get("id"):
+            self.say("TRIAGE-SKIPPED %s: the triage node came back with no id" % key)
+            return
+        path = os.path.join(self.state, "work", tkey)
+        os.makedirs(path, exist_ok=True)
+        sess = Session(str(uuid.uuid4()), None, a.triage_model)
+        cmd = claude_cmd(triage_prompt(self.g, tnode, n, history), a.triage_model, a, tkey, session=sess.sid)
+        log = os.path.join(self.logs, "%s.triage.jsonl" % key)
+        w = Worker(tnode, log)
+        w.triage_of, w.path, w.model, w.turns, w.session, w.resumed = n, path, a.triage_model, 0, sess, False
+        w.max_turns = a.max_turns
+        env = dict(os.environ, GRAPH_ID=self.g, JEV_HOOKS_HEADLESS="1")
+        with open(log, "w") as f:
+            w.proc = subprocess.Popen(cmd, cwd=path, stdin=subprocess.DEVNULL, stdout=f,
+                                      stderr=subprocess.STDOUT, env=env, start_new_session=True)
+        self.workers[tkey] = w
+        self.peak = max(self.peak, len(self.workers))
+        self.say("TRIAGE %s: %d failed attempt(s); triage node %s, pid=%d model=%s log=%s"
+                 % (key, len(history["failures"]), tkey, w.proc.pid, a.triage_model, log))
+
+    def finish_triage(self, w, s):
+        """Apply a triage worker's decision. Nothing is written unless it
+        reported its own triage node succeeded with a valid data.triage."""
+        failed, tkey = w.triage_of, w.key
+        key = failed["key"]
+        if s["report_node"] and s["report_node"] != w.node["id"]:
+            self.say("TRIAGE-VIOLATION %s: the triage worker reported node %s, not its triage node %s; "
+                     "nothing applied" % (key, s["report_node"], tkey))
+            return None
+        if not s["reported"] or s["report_status"] != "succeeded":
+            self.say("TRIAGE-NONE %s: triage %s %s; left for a person" % (
+                key, tkey, "reported %s: %s" % (s["report_status"], clip(s["report_error"] or "-", 200))
+                if s["reported"] else "did not report"))
+            return None
+        t, why = triage_decision(s["report_data"])
+        if t is None:
+            self.say("TRIAGE-NONE %s: %s; left for a person" % (key, why))
+            return None
+        try:
+            writes = self.apply_triage(failed, tkey, t)
+        except APIError as e:
+            self.say("TRIAGE-WRITE-FAILED %s (%s): %s" % (key, t["action"], e))
+            return None
+        self.say("TRIAGE %s -> %s: %s (%s)" % (key, t["action"], "; ".join(writes), clip(t["reason"], 200)))
+        return writes
+
+    def apply_triage(self, failed, tkey, t):
+        """The graph writes of one decision; returns them as log strings.
+        revise: the failed node's description/acceptance/brief, with
+        data.revised_by=triage. prerequisite: each new node plus a `requires`
+        edge from the failed node to it. gate: one gate node naming the
+        decision plus the `requires` edge that holds the failed node behind it,
+        and nothing else."""
+        g, act, reason = self.g, t["action"], t["reason"]
+        fdata = failed.get("data") or {}
+        if act == "revise":
+            data = {"revised_by": "triage", "revised_reason": reason, "revised_in": tkey}
+            for k in ("acceptance", "brief"):
+                if t.get(k):
+                    data[k] = t[k]
+            body = {"data": data, "merge_data": True}
+            if t.get("description"):
+                body["description"] = t["description"]
+            self.api.patch_node(g, failed["id"], body)
+            return ["patched %s (%s)" % (failed["key"], ", ".join(sorted(set(body) - {"merge_data"} | set(data))))]
+        specs = t["nodes"] if act == "prerequisite" else [{
+            "key": "gate-" + failed["key"], "type": "gate", "title": t["decision"],
+            "description": "%s\n\nWhy (triage %s): %s" % (t["decision"], tkey, reason),
+            "data": {"decision": t["decision"]}}]
+        out = []
+        for spec in specs:
+            data = dict(spec.get("data") or {}, created_by="triage", triage_of_key=failed["key"], triage_reason=reason)
+            for k in ("acceptance", "brief"):
+                if spec.get(k):
+                    data[k] = spec[k]
+            if act == "prerequisite" and fdata.get("repo") and "repo" not in data:
+                data["repo"] = fdata["repo"]
+            created = self.api.create_node(g, {"key": spec["key"], "title": spec["title"],
+                                               "type": spec.get("type") or ("gate" if act == "gate" else "task"),
+                                               "description": spec.get("description") or "", "data": data})
+            nid = (created or {}).get("id")
+            if not nid:
+                raise APIError("triage", "created node %s came back with no id" % spec["key"])
+            self.api.create_edge(g, {"from_node_id": failed["id"], "to_node_id": nid, "type": "requires"})
+            out.append("created %s %s + requires edge %s -> %s"
+                       % ("gate" if act == "gate" else "node", spec["key"], failed["key"], spec["key"]))
+        return out
 
     def launch_merge(self, n, cmd, cwd):
         self.attempts[n["key"]] = self.attempts.get(n["key"], 0) + 1
@@ -672,8 +848,9 @@ class Dispatcher:
                             "resumed" if getattr(w, "resumed", False) else "cold",
                             u.get("cache_read_input_tokens", "-"), u.get("cache_creation_input_tokens", "-"),
                             u.get("output_tokens", "-")))
+                outcome = failed_outcome(s, w.proc.returncode)
                 if sess is not None and sess.repo and not self.args.no_warm:
-                    if s["reported"] and s["result"] == "success" and w.proc.returncode == 0:
+                    if s["reported"] and s["result"] == "success" and w.proc.returncode == 0 and outcome is None:
                         if s["session_id"] and s["session_id"] != sess.sid:
                             sess.sid = s["session_id"]  # claude said otherwise: trust the stream
                         self.keep_warm(sess)
@@ -714,6 +891,22 @@ class Dispatcher:
                 elif (other or DENIAL_TEXT_RE.search(s["result_text"] or "")) and not graph_denied \
                         and key in self.salvaged:
                     self.say("SALVAGE-SKIPPED %s: denied again after a salvage" % key)
+                if getattr(w, "triage_of", None) is not None:
+                    self.finish_triage(w, s)
+                elif outcome and key not in self.denied and not graph_denied and not (down and not s["run_id"]):
+                    # a task failure (not an environmental denial, not an MCP
+                    # flake): the next launch is a remediation launch that
+                    # resumes this session; past the attempt cap, a triage
+                    self.failures.setdefault(key, []).append(outcome)
+                    if sess is not None and s["started"]:
+                        if s["session_id"] and s["session_id"] != sess.sid:
+                            sess.sid = s["session_id"]
+                        self.fail_session[key] = sess
+                    n_failed = len(self.failures[key])
+                    self.say("FAILED %s (attempt %d of %d this session): %s; next: %s"
+                             % (key, n_failed, self.args.max_attempts, clip(outcome["error"], 200),
+                                "remediation launch" if self.attempts.get(key, 0) < self.args.max_attempts
+                                else ("left for a person (--no-triage)" if self.args.no_triage else "triage")))
                 del self.workers[key]
                 if salvage and not self.args.no_salvage:
                     self.salvage(*salvage)
@@ -893,8 +1086,13 @@ def summarize(path):
     claimed (from its graph_next_work tool result) and whether it reported."""
     s = {"turns": 0, "result": None, "denials": 0, "denied_tools": [], "run_id": None, "reported": False,
          "cost": None, "mcp": {}, "started": False, "session_id": None, "usage": {}, "error_text": None,
-         "result_text": None, "denied_inputs": []}
-    claims = set()
+         "result_text": None, "denied_inputs": [],
+         # what the worker reported: its status, error, node and data, and any
+         # rejection reasons it saw (its claim card's last_rejection, its
+         # report's verification)
+         "report_status": None, "report_error": None, "report_node": None, "report_data": None,
+         "rejection": None, "card_rejection": None}
+    claims, reports = set(), set()
     try:  # the first non-JSON line, e.g. claude's "No conversation found with session ID: ..."
         with open(path, errors="replace") as f:
             for line in f:
@@ -914,14 +1112,27 @@ def summarize(path):
                 name = str(c.get("name", "")) if c.get("type") == "tool_use" else ""
                 if name.endswith("graph_report"):
                     s["reported"] = True
+                    reports.add(c.get("id"))
+                    inp = c.get("input") if isinstance(c.get("input"), dict) else {}
+                    s["report_status"] = inp.get("status") or s["report_status"]
+                    s["report_error"] = inp.get("error") or s["report_error"]
+                    s["report_node"] = inp.get("node_id") or s["report_node"]
+                    if isinstance(inp.get("data"), dict):
+                        s["report_data"] = inp["data"]
                 elif name.endswith("graph_next_work"):
                     claims.add(c.get("id"))
         elif t == "user":
             for c in content:
-                if c.get("type") == "tool_result" and c.get("tool_use_id") in claims:
-                    m = re.search(r'"run_id"\s*:\s*"([0-9a-f-]{36})"', tool_text(c.get("content")))
+                if c.get("type") != "tool_result":
+                    continue
+                text = tool_text(c.get("content"))
+                if c.get("tool_use_id") in claims:
+                    m = re.search(r'"run_id"\s*:\s*"([0-9a-f-]{36})"', text)
                     if m:
                         s["run_id"] = m.group(1)
+                    s["card_rejection"] = rejection_of(text, "last_rejection") or s["card_rejection"]
+                elif c.get("tool_use_id") in reports:
+                    s["rejection"] = rejection_of(text, "verification") or s["rejection"]
         elif t == "system" and e.get("subtype") == "init":
             s["started"] = True
             s["session_id"] = e.get("session_id") or s["session_id"]
@@ -950,6 +1161,110 @@ def tool_text(content):
     return ""
 
 
+def rejection_of(text, field):
+    """The rejection named by `field` in a graph tool's JSON answer, as a short
+    string, or None: the claim card's `last_rejection` (any value), or a
+    report's `verification` when its state is rejected/unsupported."""
+    try:
+        d = json.loads(text)
+    except ValueError:
+        return None
+    v = d.get(field) if isinstance(d, dict) else None
+    if not v:
+        return None
+    if field == "verification":
+        if not isinstance(v, dict) or v.get("state") not in ("rejected", "unsupported"):
+            return None
+        v = {k: v[k] for k in ("state", "reason", "reasons", "criteria") if k in v}
+    return clip(v if isinstance(v, str) else json.dumps(v, sort_keys=True), 1500)
+
+
+def failed_outcome(s, rc):
+    """None when the worker reported its node succeeded and was not rejected;
+    otherwise {error, rejection}: what the next attempt must be told. A report
+    whose status the stream does not show is taken as reported, not failed."""
+    if s["reported"] and s["report_status"] in (None, "succeeded") and not s["rejection"]:
+        return None
+    if s["reported"] and s["report_status"] == "succeeded" and s["rejection"]:
+        err = "reported succeeded but the verdict rejected it"
+    elif s["report_error"]:
+        err = s["report_error"]
+    elif s["reported"]:
+        err = "reported %s with no error" % (s["report_status"] or "an unknown status")
+    else:
+        err = "exited (code %s, result %s, %s turns) without reporting: %s" % (
+            rc, s["result"], s["turns"], clip(s["result_text"] or "-", 300))
+    # this run's verdict first; else the rejection its claim card carried
+    return {"error": clip(err, 1500), "rejection": s["rejection"] or s["card_rejection"]}
+
+
+def remediation_prompt(graph, node, path, branch, failures):
+    """The prompt of a node's next launch after a failed attempt this session:
+    the base prompt, then the previous error and rejection, and the rule."""
+    last = failures[-1]
+    lines = ["REMEDIATION LAUNCH (attempt %d this session). Your previous attempt at this node failed."
+             % (len(failures) + 1),
+             "Previous error: " + last["error"],
+             "last_rejection: " + (last.get("rejection") or "none on record (read last_rejection on your claim card)"),
+             "Fix the cause, not the symptom: find WHY it failed (missing context, a wrong assumption, a "
+             "prerequisite) before you change anything, and say in your report what the cause was. If the cause "
+             "is outside this node (a missing prerequisite, a human decision), graph_remember it structured and "
+             "report failed: the dispatcher triages the node next, it does not relaunch it a third time."]
+    return "\n".join(lines + [worker_prompt(graph, node, path, branch)])
+
+
+TRIAGE_ACTIONS = ("revise", "prerequisite", "gate")
+
+
+def triage_prompt(graph, tnode, failed, history):
+    return "\n".join([
+        "TRIAGE. You are a triage worker, not a task worker. Node `%s` (%s) failed %d times this "
+        "dispatcher session; it is not relaunched again until you decide what it lacks." % (
+            failed["key"], failed["id"], len(history.get("failures") or [])),
+        "Claim YOUR triage node: graph_next_work {graph: \"%s\", node: \"%s\", runner: \"%s\"}. Report THAT "
+        "node only; never claim, heartbeat or report `%s`. Write no code, open no PR." % (
+            graph, tnode["id"], tnode["key"], failed["key"]),
+        "Read what failed (below, and graph_plan_status / the failed node's observations). Then decide EXACTLY ONE:",
+        "  (a) revise: the description/brief/acceptance cannot be met as written -> "
+        "data.triage = {action: \"revise\", reason, description?, acceptance?: [..], brief?: [..]}",
+        "  (b) prerequisite: work is missing that must land first -> "
+        "data.triage = {action: \"prerequisite\", reason, nodes: [{key, title, description, acceptance: [..], brief?: [..]}]}",
+        "  (c) gate: the blocker is a human decision or a permission -> "
+        "data.triage = {action: \"gate\", reason, decision: \"<the question a person must answer>\"}",
+        "Put it in graph_report {status: \"succeeded\", data: {triage: {...}}} on your triage node, with a report "
+        "naming the evidence (the failed runs' errors and verdicts) behind the choice. The dispatcher makes the "
+        "graph writes from data.triage; you make none. If you cannot decide, report failed and say why.",
+        "Failed node: " + clip(json.dumps({"key": failed["key"], "title": failed.get("title"),
+                                           "description": failed.get("description"),
+                                           "data": failed.get("data")}, sort_keys=True), 3000),
+        "This session's failed attempts: " + clip(json.dumps(history.get("failures"), sort_keys=True), 3000),
+        "Runs on record: " + clip(json.dumps(history.get("runs"), sort_keys=True), 2500),
+        "Observations: " + clip(json.dumps(history.get("observations"), sort_keys=True), 2500)])
+
+
+def triage_decision(data):
+    """(decision, why-not): data.triage from a triage worker's report,
+    validated, or (None, reason)."""
+    t = (data or {}).get("triage") if isinstance(data, dict) else None
+    if not isinstance(t, dict):
+        return None, "no data.triage in the report"
+    act = t.get("action")
+    if act not in TRIAGE_ACTIONS:
+        return None, "data.triage.action %r is not one of %s" % (act, "/".join(TRIAGE_ACTIONS))
+    if not str(t.get("reason") or "").strip():
+        return None, "data.triage.reason is empty"
+    if act == "revise" and not any(t.get(k) for k in ("description", "acceptance", "brief")):
+        return None, "revise names no description, acceptance or brief"
+    if act == "prerequisite":
+        nodes = t.get("nodes")
+        if not isinstance(nodes, list) or not nodes or not all(
+                isinstance(n, dict) and n.get("key") and n.get("title") for n in nodes):
+            return None, "prerequisite needs nodes: [{key, title, ...}]"
+    if act == "gate" and not str(t.get("decision") or "").strip():
+        return None, "gate names no decision"
+    return t, ""
+
+
 def parse_args(argv):
     p = argparse.ArgumentParser(prog="graph-dispatch", description=__doc__.split("\n")[0])
     p.add_argument("--graph", required=True, help="graph id")
@@ -971,6 +1286,10 @@ def parse_args(argv):
                    help="extra plugin dirs (default: the newest cached enforcer plugin, for the MCP server)")
     p.add_argument("--no-salvage", action="store_true",
                    help="do not push/PR/land a worker whose push or PR was denied")
+    p.add_argument("--no-triage", action="store_true",
+                   help="after the last failed attempt, leave the node for a person instead of triaging it")
+    p.add_argument("--triage-model", default=TIER_MODEL["deep"],
+                   help="model of the triage worker (default the deep tier, %s)" % TIER_MODEL["deep"])
     p.add_argument("--no-warm", action="store_true",
                    help="start every worker cold (no session reuse across nodes)")
     p.add_argument("--warm-max-nodes", type=int, default=5,

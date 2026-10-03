@@ -191,6 +191,39 @@ decision changes. Never do something else quietly and report it as met.
    one may go. Do not edit the node's acceptance to fit your work; that is the
    plan author's call.
 
+## When a node fails: remember, remediate, triage
+
+A failure means the context was not good enough to pass. The loop fixes the
+context, or adds the missing work to the plan, rather than stopping.
+
+1. **Remember, then report.** Before any `failed` report, `graph_remember` one
+   structured observation: `Tried: … Blocked by: … Next attempt needs: …`, with
+   `data: {tried, blocked_by, needs: {kind: file|fact|prerequisite|human_decision, what}}`.
+   The next claim card's `observations` carry it.
+2. **Remediation launch.** graph-dispatch launches a failed node again (not a
+   DENIED one) by resuming the failed attempt's session, with the previous
+   `error`, the `last_rejection`, and "fix the cause, not the symptom" in the
+   prompt.
+3. **Triage.** When the second attempt fails too, the task is not launched a
+   third time. The dispatcher creates a triage node (`data.triage_of`) and runs
+   a deep-tier worker on it. That worker reads the node, its runs, observations
+   and verdicts, then reports its OWN node (never the failed one) with exactly
+   one `data.triage`:
+   - `revise`: the node can't pass as written. The dispatcher patches its
+     description, acceptance or brief with `data.revised_by: triage` and the
+     reason.
+   - `prerequisite`: work is missing. The dispatcher creates the node(s) and a
+     `requires` edge from the failed node to each.
+   - `gate`: the blocker is a human decision or a permission. The dispatcher
+     creates `gate-<key>` naming the decision, adds the `requires` edge that
+     holds the node behind it, and makes no other change.
+   The dispatcher does the writes because a headless worker can't: every hosted
+   write except the graph work loop asks a person.
+4. **Bounded.** Each node gets at most 2 task launches and 1 triage per
+   dispatcher session (`--max-attempts`, `--no-triage`). A denial from the
+   environment (a push, a PR, a tool) takes the salvage path instead, never
+   triage.
+
 ## Done means merged
 
 When the plan has merge nodes (nodes whose acceptance says a PR is merged), an

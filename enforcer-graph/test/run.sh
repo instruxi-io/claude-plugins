@@ -398,6 +398,12 @@ check "dispatch: dry run launches nothing; stop file drains; a denied graph tool
   'echo "$dispatch_out" | grep -E "^test_(dry_run_launches_nothing|stop_file_drains|denied_graph_tool_blocks_and_drains|merge_landed_by_script) .* ok$" | wc -l | grep -qx 4'
 check "dispatch: warm workers (resume in repo, life cap retires, failed resume falls back cold, affinity, one --plugin-dir each, max_turns)" \
   'echo "$dispatch_out" | grep -E "^test_(next_node_in_repo_resumes_the_session|session_life_cap_retires|session_usable_caps|failed_resume_falls_back_to_cold|affinity_prefers_warm_repo|one_plugin_dir_each_and_max_turns) .* ok$" | wc -l | grep -qx 6'
+check "dispatch: failure -> remediation launch (resumed, error + last_rejection) -> triage; at most 2 attempts + 1 triage" \
+  'echo "$dispatch_out" | grep -E "^test_(failure_then_remediation_then_triage|bounded_two_attempts_one_triage|failed_outcome|no_triage_flag|ordinary_failure_is_still_relaunched) .* ok$" | wc -l | grep -qx 5'
+check "dispatch: triage outcomes revise / prerequisite / gate write the graph; a triage never reports the failed node" \
+  'echo "$dispatch_out" | grep -E "^test_(triage_revise|triage_prerequisite|triage_gate|triage_that_reports_the_failed_node_applies_nothing|invalid_decision_applies_nothing) .* ok$" | wc -l | grep -qx 5'
+check "agent + skill: a structured graph_remember before any failed report; the remediation/triage loop documented" \
+  'grep -q "Before ANY \`failed\` report, \`graph_remember\`" agents/graph-worker.md && grep -q "^## When a node fails: remember, remediate, triage" skills/graph/SKILL.md'
 check "dispatch: --help works and names the flags" './bin/graph-dispatch --help | grep -q -- "--workers"'
 
 # --- client attestation: every claim, heartbeat and report says hooks=on (X-Graph-Client, enforcer-graph 089)
