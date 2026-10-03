@@ -450,18 +450,18 @@ class SalvageDenied(unittest.TestCase):
         self.log = os.path.join(self.tmp, "calls.log")
         self.script("gh", '#!/bin/sh\necho "gh $*" >> %s\n[ -n "$FAKE_GH_FAIL" ] && exit 1\n'
                     'echo https://github.com/o/r/pull/7\n' % self.log)
-        self.land = self.script("land-pr.sh", '#!/bin/sh\necho "land $*" >> %s\necho landed-output\n'
+        self.land = self.script("land-pr.sh", '#!/bin/sh\necho "land $*" >> %s\nsleep ${FAKE_LAND_SLEEP:-0}\necho landed-output\n'
                                 'exit ${FAKE_LAND_EXIT:-0}\n' % self.log)
         self.claude = self.script("claude", '#!/bin/sh\necho "claude $*" >> %s\n' % self.log)
         self.oldpath, self.oldland = os.environ["PATH"], gd.LAND_PR
         os.environ["PATH"] = self.bin + ":" + self.oldpath
         gd.LAND_PR = self.land
-        for k in ("FAKE_GH_FAIL", "FAKE_LAND_EXIT"):
+        for k in ("FAKE_GH_FAIL", "FAKE_LAND_EXIT", "FAKE_LAND_SLEEP"):
             os.environ.pop(k, None)
 
     def tearDown(self):
         os.environ["PATH"], gd.LAND_PR = self.oldpath, self.oldland
-        for k in ("FAKE_GH_FAIL", "FAKE_LAND_EXIT"):
+        for k in ("FAKE_GH_FAIL", "FAKE_LAND_EXIT", "FAKE_LAND_SLEEP"):
             os.environ.pop(k, None)
 
     def git(self, cwd, *a):
@@ -492,6 +492,12 @@ class SalvageDenied(unittest.TestCase):
         s = {"denied_tools": list(tools), "result_text": text,
              "denied_inputs": [{"tool_name": t, "tool_input": {"command": denied_cmd}} for t in tools]}
         ok = d.salvage(w, s)
+        if ok:  # land-pr is a background child: reap until it exits and the session is resumed
+            deadline = time.time() + 10
+            while any(x.kind == "salvage" for x in d.workers.values()) and time.time() < deadline:
+                d.reap()
+                time.sleep(0.05)
+            ok = key in d.workers
         time.sleep(0.3)
         return d, ok, out.getvalue()
 
@@ -553,6 +559,38 @@ class SalvageDenied(unittest.TestCase):
         self.setup_branch()
         d, ok, text = self.run_salvage(denied_cmd="gh pr create --title x")
         self.assertTrue(ok, text)
+
+    def test_salvage_is_asynchronous_and_other_nodes_launch(self):
+        """While land-pr waits on CI, the same pass launches another ready node;
+        the salvage holds node a (no double launch) but no worker slot."""
+        self.setup_branch()
+        os.environ["FAKE_LAND_SLEEP"] = "2"
+        out = io.StringIO()
+        api = FakeAPI([node("a"), node("b")])
+        d = gd.Dispatcher(api, args(state_dir=self.state, claude=self.claude, workers=1,
+                                    stop_file=os.path.join(self.state, "STOP")), out)
+        w = gd.Worker(node("a"), os.path.join(self.tmp, "w.log"))
+        w.path, w.model, w.max_turns = self.wt, "sonnet", 10
+        w.session = gd.Session("sess-1", "r", "sonnet")
+        t0 = time.time()
+        self.assertTrue(d.salvage(w, {"denied_tools": ["Bash"], "result_text": "final report",
+                                      "denied_inputs": [{"tool_name": "Bash",
+                                                         "tool_input": {"command": "git push -u origin graph/a"}}]}))
+        self.assertLess(time.time() - t0, 1.5, "salvage must not wait for land-pr")
+        self.assertEqual(d.workers["a"].kind, "salvage")
+        nodes, chosen = d.tick()
+        self.assertEqual([n["key"] for n in chosen], ["b"], out.getvalue())  # the slot is free; a is not double-launched
+        self.assertEqual(d.workers["b"].kind, "agent")
+        self.assertEqual(d.workers["a"].kind, "salvage")
+        deadline = time.time() + 10
+        while d.workers.get("a") is not None and d.workers["a"].kind == "salvage" and time.time() < deadline:
+            d.reap()
+            time.sleep(0.05)
+        self.assertEqual(d.workers["a"].kind, "agent")
+        self.assertIn("--resume sess-1", self.calls())
+        self.assertIn("landing in the background", out.getvalue())
+        for x in d.workers.values():
+            x.proc.wait(timeout=10)
 
     def test_one_attempt_per_node(self):
         self.setup_branch()
@@ -787,6 +825,95 @@ class FailureRemediation(unittest.TestCase):
         self.assertEqual([l["key"] for l in launches], ["a", "a"])
         self.assertEqual(api.writes, [])
         self.assertIn("left for a person (--no-triage)", text)
+
+
+class TriageAllFailures(unittest.TestCase):
+    """Every failed node gets triage, whatever its type."""
+    setUp, tearDown = FailureRemediation.setUp, FailureRemediation.tearDown
+
+    def run_dispatch(self, nodes=None, **kw):
+        out = io.StringIO()
+        api = TriageAPI(nodes or [node("o", type="ops", status="failed", repo="r"),
+                                  node("p", type="ops", status="active")])
+        a = args(workers=2, state_dir=self.state, stop_file=os.path.join(self.state, "STOP"),
+                 interval=0.05, claude=self.claude, **kw)
+        d = gd.Dispatcher(api, a, out)
+        rc = d.run()
+        launches = [json.loads(l) for l in open(self.calls)] if os.path.exists(self.calls) else []
+        return rc, d, api, out.getvalue(), launches
+
+    def test_failed_ops_node_is_triaged_once(self):
+        rc, d, api, text, launches = self.run_dispatch()
+        self.assertEqual(rc, 0, text)
+        self.assertEqual(len(launches), 1, text)  # not relaunched next pass
+        self.assertTrue(launches[0]["key"].startswith("triage-o-"), launches)
+        self.assertTrue(launches[0]["prompt"].startswith("TRIAGE."))
+        self.assertIn("type ops", launches[0]["prompt"])
+        self.assertIn("you never do the node's own work", launches[0]["prompt"])
+        self.assertEqual(text.count("TRIAGE o: 0 failed attempt(s)"), 1, text)
+        # marked: data.triaged_at and the runs signature
+        marks = [w for w in api.writes if w[0] == "patch" and "triaged_at" in w[2]["data"]]
+        self.assertEqual(len(marks), 1, api.writes)
+        self.assertEqual(marks[0][2]["data"]["triaged_runs"], [1, "failed"])
+
+    def test_failed_gate_node_is_triaged_too(self):
+        rc, d, api, text, launches = self.run_dispatch(
+            [node("gt", type="gate", status="failed"), node("rl", type="release", status="failed")])
+        keys = sorted(l["key"].split("-")[1] for l in launches)
+        self.assertEqual(keys, ["gt", "rl"], text)
+
+    def test_node_with_a_live_run_or_already_marked_is_skipped(self):
+        marked = node("m", type="ops", status="failed", triaged_at="2026-10-03T00:00:00Z", triaged_runs=[1, "failed"])
+        live = node("o", type="ops", status="failed")
+        api = TriageAPI([marked, live])
+        d = gd.Dispatcher(api, args(state_dir=self.state), io.StringIO())
+        d.workers["o"] = gd.Worker(live, "/dev/null")  # a live run of ours
+        self.assertEqual(d.candidates(api.nodes("g")), [])
+        # its runs changed since the mark: triaged again
+        changed = node("m", type="ops", status="failed", triaged_at="2026-10-03T00:00:00Z", triaged_runs=[0, ""])
+        d = gd.Dispatcher(TriageAPI([changed]), args(state_dir=self.state), io.StringIO())
+        self.assertEqual([c["key"] for c in d.candidates([changed])], ["m"])
+        # and a node triaged this session is skipped until its runs change
+        d.triaged_sig["m"] = (1, "failed")
+        self.assertEqual(d.candidates([changed]), [])
+        d.triaged_sig["m"] = (0, "")
+        self.assertEqual([c["key"] for c in d.candidates([changed])], ["m"])
+
+    def test_no_triage_flag_skips_ops_failures(self):
+        rc, d, api, text, launches = self.run_dispatch(no_triage=True)
+        self.assertEqual(launches, [])
+
+    def test_outcome_b_writes_requires_edge_to_the_named_prerequisite(self):
+        os.environ["FAKE_TRIAGE"] = json.dumps({"action": "prerequisite", "reason": "waits on the agent existing",
+                                                "nodes": [{"key": "p", "existing": True}]})
+        rc, d, api, text, launches = self.run_dispatch()
+        edges = [w[1] for w in api.writes if w[0] == "edge"]
+        self.assertEqual(edges, [{"from_node_id": "id-o", "to_node_id": "id-p", "type": "requires"}], api.writes)
+        self.assertIn("requires edge o -> p (existing)", text)
+        # a new prerequisite node gets its edge too
+        os.environ["FAKE_TRIAGE"] = json.dumps({"action": "prerequisite", "reason": "needs an agent",
+                                                "nodes": [{"key": "new-p", "title": "t", "acceptance": ["x"]}]})
+        rc, d, api, text, launches = self.run_dispatch()
+        edges = [w[1] for w in api.writes if w[0] == "edge"]
+        self.assertEqual(edges, [{"from_node_id": "id-o", "to_node_id": "id-new-p", "type": "requires"}], api.writes)
+
+    def test_outcome_a_retypes_and_rewrites_acceptance(self):
+        os.environ["FAKE_TRIAGE"] = json.dumps({"action": "revise", "reason": "merged and applied; only verification left",
+                                                "type": "task", "acceptance": ["the applied change is verified live"]})
+        rc, d, api, text, launches = self.run_dispatch()
+        patches = [w for w in api.writes if w[0] == "patch" and w[2].get("type")]
+        self.assertEqual(len(patches), 1, api.writes)
+        _, nid, body = patches[0]
+        self.assertEqual((nid, body["type"]), ("id-o", "task"))
+        self.assertEqual(body["data"]["revised_by"], "triage")
+        self.assertEqual(body["data"]["acceptance"], ["the applied change is verified live"])
+
+    def test_outcome_c_points_at_an_existing_gate(self):
+        os.environ["FAKE_TRIAGE"] = json.dumps({"action": "gate", "reason": "human apply", "decision": "apply?",
+                                                "gate_key": "p"})
+        rc, d, api, text, launches = self.run_dispatch()
+        self.assertEqual([w[1]["to_node_id"] for w in api.writes if w[0] == "edge"], ["id-p"])
+        self.assertEqual([w for w in api.writes if w[0] == "node" and w[1]["key"] == "p"], [])
 
 
 if __name__ == "__main__":
