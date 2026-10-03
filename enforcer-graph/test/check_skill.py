@@ -99,6 +99,11 @@ def agent(_s):
             assert "mcp__%s__%s" % (pre, tool) in names, "missing %s %s" % (pre, tool)
     assert not [n for n in names if "api_write" in n], "agent must not be allowed enforcer_api_write"
     body = t[m.end():]
+    for pat in ("gh pr create", "land-pr", "git push"):
+        assert pat not in body, "agent must not carry delivery commands (they live in the skill): " + pat
+    assert re.search(r"Deliver as your skills say", body), "section 4 must be 'Deliver as your skills say'"
+    assert re.search(r"[Ll]oad\s+and\s+follow\s+them\s+in\s+order", body), "agent must follow the card's skills in order"
+    assert re.search(r"[Rr]eport\s+what\s+you\s+produced", body), "agent must report what it produced when no skill says how to deliver"
     for line in body.splitlines():
         if "api_write" in line:
             assert re.search(r"[Nn]ever|bypass|not ", line), "api_write mentioned without a prohibition: " + line
@@ -160,7 +165,7 @@ def plan(_s):
     for need in ("maxTurns: 80", "WORKER_BRIEF.md", "turn 12", "turn 20", "ONLY"):
         assert need in w, "graph-worker.md missing: " + need
     skill = open(SKILL).read()
-    for name, txt in (("graph-worker.md", w), ("SKILL.md", skill)):
+    for name, txt in (("SKILL.md", skill),):  # the agent no longer carries delivery commands
         assert "`git push -u origin graph/<key>`" in txt, name + " must say to push alone as git push -u origin graph/<key>"
         assert re.search(r"never chained", txt), name + " must say the push is never chained"
 
