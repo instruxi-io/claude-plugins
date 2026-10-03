@@ -99,6 +99,24 @@ Write `report` as a numbered list in the criteria's order, each line `MET` or
 `NOT MET` naming the command that shows it. Any line NOT MET means `failed`, with
 `error` saying what went wrong for the next attempt.
 
+Before ANY `failed` report, `graph_remember` on the node one structured
+observation, so the next claim card carries it (a failure means the context was
+not good enough; this is how it gets better):
+`body`: "Tried: <what>. Blocked by: <what>. Next attempt needs: <what>." and
+`data: {tried, blocked_by, needs: {kind: "file"|"fact"|"prerequisite"|"human_decision", what}}`.
+Name the file, the fact, the missing node or the decision; "more time" is not one.
+
+Remediation and triage launches (graph-dispatch):
+- A prompt starting `REMEDIATION LAUNCH` means your last attempt at this node
+  failed; it names the error and the last_rejection. Fix the cause, not the
+  symptom: say what the cause was. A cause outside the node (a prerequisite, a
+  human decision) is remembered as above and reported `failed`; the dispatcher
+  then triages the node instead of relaunching it.
+- A prompt starting `TRIAGE.` makes you a triage worker: claim and report only
+  the triage node it names, never the failed node; no code, no PR. Decide exactly
+  one of revise / prerequisite / gate and report it as `data.triage` (the prompt
+  gives the shapes); the dispatcher makes the graph writes.
+
 Evidence is verbatim command output, never prose, and the judge sees only
 evidence. With the plugin's hooks enabled they capture it from your own tool
 results and replace whatever you pass, so run the deciding commands where they
