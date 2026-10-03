@@ -220,7 +220,7 @@ class DryRunAndDrain(unittest.TestCase):
         self.assertEqual(text.count("launch "), 1)
 
     def _run_denied(self, body, nodes):
-        api, out = FakeAPI(nodes), io.StringIO()
+        api, out = TriageAPI(nodes), io.StringIO()
         state = os.path.join(self.tmp, "s")
         os.makedirs(os.path.join(state, "logs"))
         p = os.path.join(self.tmp, "claude-denied")
@@ -247,6 +247,8 @@ class DryRunAndDrain(unittest.TestCase):
         self.assertIn("DENIED a: Bash; not relaunching it this session. Worktree: ", text)
         self.assertIn(d.denied["a"], text)
         self.assertEqual(d.attempts["a"], 1)
+        self.assertNotIn("TRIAGE", text)
+        self.assertEqual(d.failures, {})
 
     def test_denial_named_in_result_text_is_not_relaunched(self):
         body = '{"type":"result","subtype":"success","permission_denials":[],"result":"git push was denied by the classifier"}'
@@ -259,6 +261,10 @@ class DryRunAndDrain(unittest.TestCase):
         d, text = self._run_denied(body, [node("a")])
         self.assertEqual(text.count("launch a "), 2, text)
         self.assertNotIn("DENIED", text)
+        self.assertIn("(remediation after 1 failed attempt(s))", text)
+        self.assertIn("without reporting: ran out of turns", text)
+        self.assertIn("TRIAGE a: 2 failed attempt(s)", text)
+        self.assertIn("TRIAGE-NONE a: triage", text)  # the fake triage did not report
 
     def test_worker_env_has_jev_hooks_headless_and_dispatcher_does_not(self):
         os.environ.pop("JEV_HOOKS_HEADLESS", None)
@@ -557,6 +563,230 @@ class SalvageDenied(unittest.TestCase):
         d, ok, text = self.run_salvage(d=d)
         self.assertIn("already salvaged once", d.out.getvalue())
         self.assertNotIn("--resume", self.calls())
+
+
+FAKE_FAIL_CLAUDE = r"""#!/usr/bin/env python3
+import json, os, sys
+argv = sys.argv[1:]
+def opt(name):
+    return argv[argv.index(name) + 1] if name in argv else None
+key, prompt = opt("--name").split(":", 1)[1], opt("-p")
+resume, sid = opt("--resume"), opt("--session-id")
+with open(os.environ["FAKE_CALLS"], "a") as f:
+    f.write(json.dumps({"key": key, "argv": argv, "prompt": prompt, "model": opt("--model")}) + "\n")
+s = resume or sid
+def emit(o):
+    print(json.dumps(o))
+emit({"type": "system", "subtype": "init", "session_id": s, "mcp_servers": []})
+emit({"type": "assistant", "message": {"content": [
+    {"type": "tool_use", "id": "c1", "name": "mcp__plugin_enforcer_enforcer__graph_next_work", "input": {}}]}})
+card = {"run_id": "00000000-0000-0000-0000-%012d" % (len(open(os.environ["FAKE_CALLS"]).readlines())),
+        "last_rejection": {"reasons": ["criterion 2: no test output in the evidence"]}}
+emit({"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "c1",
+                                               "content": json.dumps(card)}]}})
+if prompt.startswith("TRIAGE"):
+    tid = prompt.split('node: "', 1)[1].split('"', 1)[0]
+    if os.environ.get("FAKE_TRIAGE_WRONG_NODE"):
+        tid = "id-a"
+    rep = {"graph": "g1", "node_id": tid, "run_id": card["run_id"], "status": "succeeded",
+           "report": "1. MET", "data": {"triage": json.loads(os.environ["FAKE_TRIAGE"])}}
+    ans = {"verification": {"state": "verified"}}
+else:
+    rep = {"graph": "g1", "node_id": "id-" + key, "run_id": card["run_id"], "status": "failed",
+           "report": "1. NOT MET", "error": "ERR-%d: the suite is red" % (2 if resume else 1)}
+    ans = {"verification": {"state": "rejected", "reason": "evidence shows 3 failing tests"}}
+emit({"type": "assistant", "message": {"content": [
+    {"type": "tool_use", "id": "r1", "name": "mcp__plugin_enforcer_enforcer__graph_report", "input": rep}]}})
+emit({"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "r1",
+                                               "content": json.dumps(ans)}]}})
+emit({"type": "result", "subtype": "success", "num_turns": 3, "session_id": s, "permission_denials": [],
+      "result": "done", "usage": {}})
+"""
+
+
+class TriageAPI(FakeAPI):
+    """Records the graph writes a triage decision makes. A created triage node
+    joins the plan (so the frontier offers it, and the dispatcher must skip it);
+    other created nodes are recorded only."""
+    def __init__(self, nodes):
+        super().__init__(nodes)
+        self.writes = []
+
+    def create_node(self, g, body):
+        self.writes.append(("node", body))
+        n = {"id": "id-" + body["key"], "key": body["key"], "type": body.get("type"), "status": "active",
+             "title": body.get("title"), "work_state": "looking_for_work", "data": body.get("data") or {}}
+        if (body.get("data") or {}).get("triage_of"):
+            self._nodes.append(n)
+        return n
+
+    def create_edge(self, g, body):
+        self.writes.append(("edge", body))
+        return body
+
+    def patch_node(self, g, n, body):
+        self.writes.append(("patch", n, body))
+        return {}
+
+    def runs(self, g, n):
+        return [{"status": "failed", "error": "ERR-1"}]
+
+    def observations(self, g, n):
+        return [{"body": "Tried X; blocked by Y; next needs Z"}]
+
+
+class FailureRemediation(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.state = os.path.join(self.tmp, "s")
+        os.makedirs(os.path.join(self.state, "logs"))
+        self.calls = os.path.join(self.tmp, "calls.jsonl")
+        self.claude = os.path.join(self.tmp, "claude-fail")
+        with open(self.claude, "w") as f:
+            f.write(FAKE_FAIL_CLAUDE)
+        os.chmod(self.claude, 0o755)
+        os.environ["FAKE_CALLS"] = self.calls
+        os.environ["FAKE_TRIAGE"] = json.dumps({"action": "revise", "reason": "acceptance 2 names a removed file",
+                                                "acceptance": ["the suite passes"]})
+        os.environ.pop("FAKE_TRIAGE_WRONG_NODE", None)
+
+    def tearDown(self):
+        for k in ("FAKE_TRIAGE", "FAKE_TRIAGE_WRONG_NODE"):
+            os.environ.pop(k, None)
+
+    def run_dispatch(self, **kw):
+        out = io.StringIO()
+        api = TriageAPI([node("a", repo="r")])
+        a = args(workers=1, state_dir=self.state, stop_file=os.path.join(self.state, "STOP"),
+                 interval=0.05, claude=self.claude, **kw)
+        d = gd.Dispatcher(api, a, out)
+        rc = d.run()
+        with open(self.calls) as f:
+            launches = [json.loads(l) for l in f]
+        return rc, d, api, out.getvalue(), launches
+
+    def test_failure_then_remediation_then_triage(self):
+        rc, d, api, text, launches = self.run_dispatch()
+        self.assertEqual(rc, 0, text)
+        self.assertEqual([l["key"] for l in launches][:2], ["a", "a"], text)
+        first, second, third = launches
+        sid = first["argv"][first["argv"].index("--session-id") + 1]
+        # the remediation launch resumes the failed attempt's session and carries
+        # the previous error, the rejection, and the rule
+        self.assertEqual(second["argv"][second["argv"].index("--resume") + 1], sid)
+        p = second["prompt"]
+        self.assertTrue(p.startswith("REMEDIATION LAUNCH"), p)
+        self.assertIn("Previous error: ERR-1: the suite is red", p)
+        self.assertIn("evidence shows 3 failing tests", p)
+        self.assertIn("last_rejection: ", p)
+        self.assertIn("Fix the cause, not the symptom", p)
+        self.assertIn("graph_next_work {graph", p)
+        self.assertIn("FAILED a (attempt 1 of 2 this session): ERR-1", text)
+        self.assertIn("next: remediation launch", text)
+        self.assertIn("mode=resume session=" + sid, text)
+        # the second failure launches a triage worker, deep tier, not the task
+        self.assertTrue(third["key"].startswith("triage-a-"), third["key"])
+        self.assertTrue(third["prompt"].startswith("TRIAGE."), third["prompt"])
+        self.assertEqual(third["model"], "opus")
+        self.assertIn("ERR-2: the suite is red", third["prompt"])
+        self.assertIn("never claim, heartbeat or report `a`", third["prompt"])
+        self.assertIn("FAILED a (attempt 2 of 2 this session): ERR-2", text)
+        self.assertIn("next: triage", text)
+
+    def test_bounded_two_attempts_one_triage(self):
+        # the triage revises the node, so it stays on the frontier: still nothing more this session
+        rc, d, api, text, launches = self.run_dispatch()
+        self.assertEqual(rc, 0)
+        kinds = ["triage" if l["key"].startswith("triage-") else l["key"] for l in launches]
+        self.assertEqual(kinds, ["a", "a", "triage"], text)
+        self.assertEqual(d.attempts["a"], 2)
+        self.assertEqual(d.triaged, {"a"})
+        self.assertIn("nothing runnable or running; exiting", text)
+        # the triage node joined the frontier and was never launched from it
+        self.assertEqual(text.count("TRIAGE a: 2 failed attempt(s)"), 1)
+
+    def assert_no_report_of_failed_node(self, api):
+        self.assertFalse([c for c in api.calls if c[0] == "complete" and c[1] == "id-a"])
+
+    def test_triage_revise(self):
+        rc, d, api, text, launches = self.run_dispatch()
+        tnode = [w for w in api.writes if w[0] == "node"]
+        self.assertEqual(len(tnode), 1)
+        self.assertEqual(tnode[0][1]["data"]["triage_of"], "id-a")
+        rest = [w for w in api.writes if w not in tnode]
+        self.assertEqual(len(rest), 1, api.writes)
+        kind, nid, body = rest[0]
+        self.assertEqual((kind, nid), ("patch", "id-a"))
+        self.assertEqual(body["data"]["revised_by"], "triage")
+        self.assertEqual(body["data"]["revised_reason"], "acceptance 2 names a removed file")
+        self.assertEqual(body["data"]["acceptance"], ["the suite passes"])
+        self.assertTrue(body["merge_data"])
+        self.assertIn("TRIAGE a -> revise: patched a", text)
+        self.assert_no_report_of_failed_node(api)
+
+    def test_triage_prerequisite(self):
+        os.environ["FAKE_TRIAGE"] = json.dumps({"action": "prerequisite", "reason": "the API has no endpoint yet",
+                                                "nodes": [{"key": "api-endpoint", "title": "add the endpoint",
+                                                           "acceptance": ["GET /x answers 200"]}]})
+        rc, d, api, text, launches = self.run_dispatch()
+        writes = api.writes[1:]  # [0] is the triage node
+        self.assertEqual([w[0] for w in writes], ["node", "edge"], api.writes)
+        n = writes[0][1]
+        self.assertEqual((n["key"], n["type"]), ("api-endpoint", "task"))
+        self.assertEqual(n["data"]["repo"], "r")
+        self.assertEqual(n["data"]["created_by"], "triage")
+        self.assertEqual(writes[1][1], {"from_node_id": "id-a", "to_node_id": "id-api-endpoint", "type": "requires"})
+        self.assertFalse([w for w in api.writes if w[0] == "patch"])
+        self.assertIn("TRIAGE a -> prerequisite: created node api-endpoint + requires edge a -> api-endpoint", text)
+        self.assert_no_report_of_failed_node(api)
+
+    def test_triage_gate(self):
+        os.environ["FAKE_TRIAGE"] = json.dumps({"action": "gate", "reason": "the worker may not rotate prod keys",
+                                                "decision": "May the prod signing key be rotated?"})
+        rc, d, api, text, launches = self.run_dispatch()
+        writes = api.writes[1:]
+        self.assertEqual([w[0] for w in writes], ["node", "edge"], api.writes)
+        g = writes[0][1]
+        self.assertEqual((g["key"], g["type"], g["title"]), ("gate-a", "gate", "May the prod signing key be rotated?"))
+        self.assertEqual(writes[1][1], {"from_node_id": "id-a", "to_node_id": "id-gate-a", "type": "requires"})
+        # nothing else: no rewrite of the node, no task node
+        self.assertFalse([w for w in api.writes if w[0] == "patch"])
+        self.assertEqual([w[1]["type"] for w in api.writes if w[0] == "node"], ["chore", "gate"])
+        self.assertIn("TRIAGE a -> gate: created gate gate-a", text)
+        self.assert_no_report_of_failed_node(api)
+
+    def test_triage_that_reports_the_failed_node_applies_nothing(self):
+        os.environ["FAKE_TRIAGE_WRONG_NODE"] = "1"
+        rc, d, api, text, launches = self.run_dispatch()
+        self.assertIn("TRIAGE-VIOLATION a", text)
+        self.assertEqual([w[0] for w in api.writes], ["node"])  # the triage node only
+
+    def test_invalid_decision_applies_nothing(self):
+        os.environ["FAKE_TRIAGE"] = json.dumps({"action": "rewrite-everything", "reason": "x"})
+        rc, d, api, text, launches = self.run_dispatch()
+        self.assertIn("TRIAGE-NONE a: data.triage.action", text)
+        self.assertEqual([w[0] for w in api.writes], ["node"])
+        self.assertEqual(gd.triage_decision({"triage": {"action": "gate", "reason": "r"}})[0], None)
+        self.assertEqual(gd.triage_decision({"triage": {"action": "prerequisite", "reason": "r", "nodes": []}})[0], None)
+
+    def test_failed_outcome(self):
+        base = {"reported": True, "report_status": "succeeded", "report_error": None, "rejection": None,
+                "card_rejection": '{"reasons": ["old"]}', "result": "success", "turns": 3, "result_text": None}
+        # an earlier run's last_rejection does not fail a run that succeeded
+        self.assertIsNone(gd.failed_outcome(base, 0))
+        o = gd.failed_outcome(dict(base, report_status="failed", report_error="E"), 0)
+        self.assertEqual(o, {"error": "E", "rejection": '{"reasons": ["old"]}'})
+        o = gd.failed_outcome(dict(base, rejection='{"state": "rejected"}'), 0)
+        self.assertIn("verdict rejected", o["error"])
+        self.assertEqual(o["rejection"], '{"state": "rejected"}')
+        self.assertIn("without reporting", gd.failed_outcome(dict(base, reported=False), 1)["error"])
+        self.assertIsNone(gd.rejection_of('{"verification": {"state": "verified"}}', "verification"))
+
+    def test_no_triage_flag(self):
+        rc, d, api, text, launches = self.run_dispatch(no_triage=True)
+        self.assertEqual([l["key"] for l in launches], ["a", "a"])
+        self.assertEqual(api.writes, [])
+        self.assertIn("left for a person (--no-triage)", text)
 
 
 if __name__ == "__main__":
