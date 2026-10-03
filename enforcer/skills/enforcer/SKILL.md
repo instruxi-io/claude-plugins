@@ -39,6 +39,28 @@ customer lookup, transfer trace, ticket triage): one call instead of several.
   sign-in and a scoped API key carry only the scopes they were granted; an
   unscoped key carries its account's whole role.
 
+## Building and managing your own agents
+
+Tools: `agents_mine` (list agents you own or steward), `agent_brief` (one
+agent: owner, steward, role, credentials, groups, audit events, governance
+sessions), `agent_create`, `agent_update`, `agent_set_enabled`, `agent_groups`,
+`agent_credential_issue`, `agent_credential_rotate`, `agent_credential_revoke`.
+Each write is confirmed by the person.
+
+- Create an agent for one job with `agent_create`. Pick its role from the roles
+  the tenant allows (`getTenantAgentPolicy`); do not invent one. Add it to
+  groups with `agent_groups`.
+- Issue a credential (`agent_credential_issue`) only when the person needs one.
+  The secret is shown once: tell them to store it immediately. Never write it
+  to a file or repeat it.
+- Replace with `agent_credential_rotate`; stop use with `agent_credential_revoke`
+  or `agent_set_enabled`.
+- When an agent misbehaves, start with `agent_brief`: its audit events and
+  governance sessions.
+
+Never: set roles, use the kill switch or tenant policy, or touch an agent the
+person does not own or steward.
+
 ## When something is refused
 
 - `401` — no credential, or an expired one. Run `/enforcer:login status`.
