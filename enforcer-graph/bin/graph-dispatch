@@ -28,7 +28,8 @@ a cold start, logged, with no attempt spent. A session is retired after
 it off. data.max_turns is passed as --max-turns. The done line carries the
 result's cache_read / cache_creation / output tokens.
 
-A DENIED worker whose denial was a push or PR (never another tool) is salvaged once
+A DENIED worker whose denial was a push or PR (never another tool), on a node whose
+claim card lists the deliver-via-github-pr skill, is salvaged once
 per node per session when its worktree is on graph/<key>, ahead of base, and clean:
 the dispatcher pushes, opens the PR (the worker's final report as body), runs
 land-pr.sh, then resumes the worker's session to claim again, run the gate and
@@ -1011,6 +1012,8 @@ class Dispatcher:
         if key in self.salvaged:
             return skip("already salvaged once this session")
         self.salvaged.add(key)
+        if DELIVER_SKILL not in (s.get("card_skills") or []):
+            return skip("the node's skills do not include %s; left for triage" % DELIVER_SKILL)
         cmds = " ".join(str((d or {}).get("tool_input", {}).get("command", "")) if isinstance(d, dict) else ""
                         for d in s.get("denied_inputs", []))
         others = [t for t in s["denied_tools"] if t != "Bash"]
@@ -1197,7 +1200,7 @@ def summarize(path):
          # rejection reasons it saw (its claim card's last_rejection, its
          # report's verification)
          "report_status": None, "report_error": None, "report_node": None, "report_data": None,
-         "rejection": None, "card_rejection": None}
+         "rejection": None, "card_rejection": None, "card_skills": []}
     claims, reports = set(), set()
     try:  # the first non-JSON line, e.g. claude's "No conversation found with session ID: ..."
         with open(path, errors="replace") as f:
@@ -1237,6 +1240,7 @@ def summarize(path):
                     if m:
                         s["run_id"] = m.group(1)
                     s["card_rejection"] = rejection_of(text, "last_rejection") or s["card_rejection"]
+                    s["card_skills"] = skills_of(text) or s["card_skills"]
                 elif c.get("tool_use_id") in reports:
                     s["rejection"] = rejection_of(text, "verification") or s["rejection"]
         elif t == "system" and e.get("subtype") == "init":
@@ -1257,6 +1261,26 @@ def summarize(path):
             s["cost"] = e.get("total_cost_usd")
     s["started"] = s["started"] or s["turns"] > 0
     return s
+
+
+DELIVER_SKILL = "deliver-via-github-pr"
+
+
+def skills_of(text):
+    """Names of the skills on a claim card (its `skills` array), [] if unreadable."""
+    try:
+        card = json.loads(text)
+    except ValueError:
+        return []
+    out = []
+    for k in (card.get("skills") if isinstance(card, dict) else None) or []:
+        if isinstance(k, str):
+            out.append(k)
+        elif isinstance(k, dict):
+            nm = k.get("key") or k.get("name") or k.get("slug")
+            if nm:
+                out.append(str(nm))
+    return out
 
 
 def tool_text(content):

@@ -303,7 +303,17 @@ When you author nodes (import, templates, `addNode`), write them so a
 `graph-worker` agent (this plugin's `agents/graph-worker.md`) can take one
 cold:
 
-- **A code task's acceptance includes "landed".** The worker opens the PR and
+- **Start from a template, and let the graph carry HOW.** Create the graph
+  from a template (`software-delivery` or `accounting-close`) or set
+  `node_defaults` per node type (outputs, checks, tier, profile) and graph
+  skills (filtered by node type). The delivery procedure is a skill, not part
+  of the worker: software-delivery attaches `deliver-via-github-pr` (worktree,
+  push, PR, `land-pr.sh`), accounting-close attaches its own. The worker
+  follows the card's skills in order, graph-level first, and with none it only
+  reports what it produced. So a node says WHAT (the outcome and acceptance),
+  never HOW, and does not repeat the defaults. The dispatcher's salvage of a
+  denied push applies only to nodes whose skills include `deliver-via-github-pr`.
+- **On a software-delivery graph, a code task's acceptance includes "landed".** The worker opens the PR and
   lands it with `land-pr.sh` inside its own node, so one of the acceptance lines
   reads like "PR merged to the base branch (merge commit on origin/main)". Do
   not add a separate merge node per code task: it costs a claim, a rebase and

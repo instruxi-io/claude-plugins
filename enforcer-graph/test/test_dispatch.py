@@ -483,13 +483,13 @@ class SalvageDenied(unittest.TestCase):
         if commit:
             self.git(self.wt, "commit", "-q", "--allow-empty", "-m", "work")
 
-    def run_salvage(self, key="a", denied_cmd="git push -u origin graph/a", tools=("Bash",), text="final report", d=None):
+    def run_salvage(self, key="a", denied_cmd="git push -u origin graph/a", tools=("Bash",), text="final report", d=None, skills=("deliver-via-github-pr",)):
         out = io.StringIO()
         d = d or gd.Dispatcher(FakeAPI([]), args(state_dir=self.state, claude=self.claude), out)
         w = gd.Worker(node(key), os.path.join(self.tmp, "w.log"))
         w.path, w.model, w.max_turns = self.wt, "sonnet", 10
         w.session = gd.Session("sess-1", "r", "sonnet")
-        s = {"denied_tools": list(tools), "result_text": text,
+        s = {"denied_tools": list(tools), "result_text": text, "card_skills": list(skills),
              "denied_inputs": [{"tool_name": t, "tool_input": {"command": denied_cmd}} for t in tools]}
         ok = d.salvage(w, s)
         if ok:  # land-pr is a background child: reap until it exits and the session is resumed
@@ -516,6 +516,19 @@ class SalvageDenied(unittest.TestCase):
         import subprocess
         r = subprocess.run(["git", "ls-remote", "--heads", "origin", "graph/a"], cwd=self.wt, capture_output=True, text=True)
         self.assertIn("refs/heads/graph/a", r.stdout)
+
+    def test_no_salvage_without_the_delivery_skill(self):
+        self.setup_branch()
+        d, ok, text = self.run_salvage(skills=())
+        self.assertFalse(ok, text)
+        self.assertIn("SALVAGE-SKIPPED a: the node's skills do not include deliver-via-github-pr", text)
+        self.assertNotIn("gh pr create", self.calls())
+        self.assertNotIn("land ", self.calls())
+
+    def test_skills_of_reads_the_claim_card(self):
+        card = '{"skills":[{"key":"close-books"},{"name":"deliver-via-github-pr"},"x"]}'
+        self.assertEqual(gd.skills_of(card), ["close-books", "deliver-via-github-pr", "x"])
+        self.assertEqual(gd.skills_of("not json"), [])
 
     def assertSkipped(self, why, ok, text):
         self.assertFalse(ok)
@@ -573,7 +586,7 @@ class SalvageDenied(unittest.TestCase):
         w.path, w.model, w.max_turns = self.wt, "sonnet", 10
         w.session = gd.Session("sess-1", "r", "sonnet")
         t0 = time.time()
-        self.assertTrue(d.salvage(w, {"denied_tools": ["Bash"], "result_text": "final report",
+        self.assertTrue(d.salvage(w, {"denied_tools": ["Bash"], "card_skills": ["deliver-via-github-pr"], "result_text": "final report",
                                       "denied_inputs": [{"tool_name": "Bash",
                                                          "tool_input": {"command": "git push -u origin graph/a"}}]}))
         self.assertLess(time.time() - t0, 1.5, "salvage must not wait for land-pr")
