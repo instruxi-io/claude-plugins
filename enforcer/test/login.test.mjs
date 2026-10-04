@@ -10,7 +10,7 @@ import { join } from 'node:path';
 const home = mkdtempSync(join(tmpdir(), 'gov-login-'));
 process.env.HOME = home; process.env.ENFORCER_HOME = join(home, '.enforcer'); process.env.GOVERNOR_HOME = join(home, '.g');
 
-const { browserSignIn, pkce, resourcesFor, requestedScope, chooseScope, extractScope, parseLoginArgs, isWorkspaceCode } = await import('../bin/login.mjs');
+const { browserSignIn, pkce, resourcesFor, requestedScope, chooseScope, extractScope, extractPreset, presetScope, PRESETS, parseLoginArgs, isWorkspaceCode } = await import('../bin/login.mjs');
 let pass = 0;
 const ok = async (label, fn) => { await fn(); pass++; console.log('  ok  ' + label); };
 const b64url = (b) => b.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -31,7 +31,7 @@ const as = createServer(async (req, res) => {
   const json = (s, o) => { res.writeHead(s, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(o)); };
   const base = `http://127.0.0.1:${as.address().port}`;
   if (u.pathname === '/.well-known/oauth-authorization-server') {
-    return json(200, { issuer: base, authorization_endpoint: base + '/authorize', token_endpoint: base + '/token', registration_endpoint: base + '/register' });
+    return json(200, { issuer: base, authorization_endpoint: base + '/authorize', token_endpoint: base + '/token', registration_endpoint: base + '/register', ...(issued.meta || {}) });
   }
   if (u.pathname === '/register') { const b = JSON.parse(body); issued.redirect = b.redirect_uris[0]; return json(201, { client_id: 'mcp_test' }); }
   if (u.pathname === '/token') {
@@ -130,6 +130,64 @@ await ok('resources come from what the MCP server publishes about itself', async
   assert.deepEqual(await resourcesFor('https://api.example.test', fake), ['https://api.example.test', 'https://api.example.test/mcp']);
   const down = async () => { throw new Error('offline'); };
   assert.deepEqual(await resourcesFor('https://api.example.test', down), ['https://api.example.test'], 'no MCP metadata still signs the governor in');
+});
+
+const OFFERED = ['enforcer:read', 'policy:self', 'enforcer:graph-runs.write', 'enforcer:graph-observations.write', 'enforcer:graph-nodes.write',
+  'enforcer:graph-edges.write', 'enforcer:files-files.write', 'enforcer:graph-graphs.write', 'enforcer:graph-templates.write',
+  'enforcer:graph-epochs.write', 'enforcer:agents-credentials.destructive'];
+
+await ok('presets: work, plan, admin pick exactly their scopes; --for parses; unknown is refused', () => {
+  const meta = { scopes_supported: OFFERED };
+  const w = presetScope(meta, 'work').split(' ');
+  assert.equal(w.length, 7);
+  assert.ok(!w.includes('enforcer:agents-credentials.destructive'));
+  const p = presetScope(meta, 'plan').split(' ');
+  assert.deepEqual(p.slice(0, 7), w);
+  assert.deepEqual(p.slice(7), ['enforcer:graph-graphs.write', 'enforcer:graph-templates.write', 'enforcer:graph-epochs.write']);
+  assert.equal(presetScope(meta, 'admin'), OFFERED.join(' '));
+  assert.throws(() => presetScope(meta, 'root'), /unknown preset/);
+  assert.deepEqual(extractPreset(['--for', 'plan', 'X-1']), { argv: ['X-1'], preset: 'plan' });
+  assert.deepEqual(extractPreset(['--for=work']), { argv: [], preset: 'work' });
+  assert.deepEqual(Object.keys(PRESETS), ['work', 'plan', 'admin']);
+});
+
+await ok('the authorize URL carries the preset scope, and the token records the preset', async () => {
+  const meta = { scopes_supported: OFFERED };
+  const scopes = {};
+  for (const preset of ['work', 'plan', 'admin', undefined]) {
+    issued.meta = meta;
+    const tok = await browserSignIn({ base, preset, timeoutMs: 5000, onUrl: async (url) => {
+      const a = new URL(url);
+      scopes[preset ?? 'default'] = a.searchParams.get('scope');
+      issued.challenge = a.searchParams.get('code_challenge');
+      const cb = new URL(a.searchParams.get('redirect_uri'));
+      cb.searchParams.set('code', 'the-code'); cb.searchParams.set('state', a.searchParams.get('state'));
+      await fetch(cb);
+    } });
+    assert.equal(tok.preset, preset || 'work');
+  }
+  assert.equal(scopes.work.split(' ').length, 7);
+  assert.equal(scopes.plan.split(' ').length, 10);
+  assert.equal(scopes.admin.split(' ').length, OFFERED.length);
+  assert.equal(scopes.default, scopes.work, 'no preset means work');
+});
+
+await ok('a work-preset token covers the graph work loop (scope-aware tool list fixture)', () => {
+  // graph_next_work / graph_heartbeat / graph_report / graph_remember need these scopes; planning tools do not belong to work.
+  const TOOLS = { graph_next_work: 'enforcer:graph-runs.write', graph_heartbeat: 'enforcer:graph-runs.write',
+    graph_report: 'enforcer:graph-runs.write', graph_remember: 'enforcer:graph-observations.write', graph_plan_status: 'enforcer:read',
+    graph_createGraph: 'enforcer:graph-graphs.write' };
+  const have = new Set(presetScope({ scopes_supported: OFFERED }, 'work').split(' '));
+  const visible = Object.keys(TOOLS).filter((t) => have.has(TOOLS[t]));
+  for (const t of ['graph_next_work', 'graph_heartbeat', 'graph_report', 'graph_remember', 'graph_plan_status']) assert.ok(visible.includes(t), t);
+  assert.ok(!visible.includes('graph_createGraph'));
+});
+
+await ok('the last preset is remembered and shown by `workspace current`', async () => {
+  const { saveCredentials } = await import('../src/credentials.mjs');
+  const { describe } = await import('../bin/enforcer-workspace.mjs');
+  assert.match(describe({ tenant: 'A', tenant_id: 't', preset: 'plan', scopes: 10 }), /preset plan \(10 scopes\)/);
+  saveCredentials({ enforcer: { base_url: base, oauth: { access_token: 'at', preset: 'plan', scope: 'a b' } } });
 });
 
 await ok('one credential at a time: a sign-in replaces a key and a key replaces a sign-in', async () => {

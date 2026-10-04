@@ -2,6 +2,7 @@
 // Sign this machine in to Enforcer — once, for the MCP server and every plugin that reads ~/.enforcer.
 //
 //   login.mjs              browser sign-in (OAuth 2.1, PKCE, loopback redirect)
+//   login.mjs --for work|plan|admin  scope preset (default: the last one used)
 //   login.mjs --scope "a b" browser sign-in asking for only those scopes
 //   login.mjs scopes       list the scopes this Enforcer offers a sign-in
 //   login.mjs api-key KEY  use an existing Enforcer API key instead
@@ -23,6 +24,36 @@ import { readCredentials, saveCredentials, enforcerKey, SHARED_FILE, DEFAULT_BAS
 const API = '/api/v1/enforcer';
 const b64url = (buf) => buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 const out = (s) => process.stdout.write(s + '\n');
+
+/** Login scope presets: a work-loop session needs 6-7 scopes, not every one the server offers. */
+export const WORK_SCOPES = ['enforcer:read', 'policy:self', 'enforcer:graph-runs.write', 'enforcer:graph-observations.write',
+  'enforcer:graph-nodes.write', 'enforcer:graph-edges.write', 'enforcer:files-files.write'];
+export const PLAN_SCOPES = [...WORK_SCOPES, 'enforcer:graph-graphs.write', 'enforcer:graph-templates.write', 'enforcer:graph-epochs.write'];
+export const PRESETS = { work: WORK_SCOPES, plan: PLAN_SCOPES, admin: null /* everything offered */ };
+export const DEFAULT_PRESET = 'work';
+
+/** Scope string for a preset: the preset's scopes the server offers; admin = all offered. */
+export function presetScope(meta, preset) {
+  if (!Object.hasOwn(PRESETS, preset)) throw new Error(`unknown preset "${preset}". Presets: ${Object.keys(PRESETS).join(', ')}`);
+  if (preset === 'admin') return requestedScope(meta);
+  const offered = Array.isArray(meta?.scopes_supported) ? meta.scopes_supported : [];
+  const have = PRESETS[preset].filter((x) => offered.includes(x));
+  return have.length ? have.join(' ') : 'enforcer:read';
+}
+
+/** `--for work|plan|admin` anywhere in argv, removed. */
+export function extractPreset(argv) {
+  const rest = [];
+  let preset;
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === '--for') { preset = argv[++i] ?? ''; continue; }
+    const m = /^--for=(.*)$/.exec(a);
+    if (m) { preset = m[1]; continue; }
+    rest.push(a);
+  }
+  return { argv: rest, preset };
+}
 
 /** The scope to ask for: everything the server advertises, or read-only. */
 export function requestedScope(meta) {
@@ -83,7 +114,7 @@ function openBrowser(url) {
  * `resource` is the RFC 8707 audience the token is for; `onUrl` receives the
  * authorization URL (printed and opened by the CLI, captured by the tests).
  */
-export async function browserSignIn({ base, resource, resources, scope, tenantCode, fetchImpl = fetch, onUrl, timeoutMs = 5 * 60_000 }) {
+export async function browserSignIn({ base, resource, resources, scope, preset, tenantCode, fetchImpl = fetch, onUrl, timeoutMs = 5 * 60_000 }) {
   // RFC 8707 lets one token name several resources. Asking for Enforcer's API
   // AND its MCP server is what makes this one sign-in serve both the governor
   // (which calls the API) and the MCP server (which serves tools): each server
@@ -94,7 +125,8 @@ export async function browserSignIn({ base, resource, resources, scope, tenantCo
   // client's ceiling IS that list, so asking for less only threw scopes away:
   // this sign-in asked for enforcer:read alone for weeks after the server began
   // granting the graph's write scopes, and every graph tool refused the token.
-  scope = chooseScope(meta, scope);
+  const scopeWasNamed = Boolean(scope);
+  scope = scope ? chooseScope(meta, scope) : presetScope(meta, preset || DEFAULT_PRESET);
   const { verifier, challenge } = pkce();
   const state = b64url(randomBytes(16));
 
@@ -150,7 +182,7 @@ export async function browserSignIn({ base, resource, resources, scope, tenantCo
     return {
       access_token: tok.access_token, refresh_token: tok.refresh_token || null,
       expires_at: new Date(Date.now() + (Number(tok.expires_in) || 900) * 1000).toISOString(),
-      scope: tok.scope || scope, resources: wanted,
+      scope: tok.scope || scope, preset: scopeWasNamed ? 'custom' : (preset || DEFAULT_PRESET), resources: wanted,
       client_id: client.client_id, token_endpoint: meta.token_endpoint, issuer: meta.issuer,
     };
   } finally {
@@ -197,7 +229,8 @@ export function parseLoginArgs(argv) {
 }
 
 async function main(rawArgv) {
-  const { argv, scope } = extractScope(rawArgv);
+  const { argv: a1, scope } = extractScope(rawArgv);
+  const { argv, preset: forPreset } = extractPreset(a1);
   const [cmd, arg] = parseLoginArgs(argv);
   // A saved sign-in pins the origin it was made against; otherwise
   // ENFORCER_BASE_URL (a self-hosted workspace), then the public one.
@@ -217,7 +250,7 @@ async function main(rawArgv) {
   if (cmd === 'scopes') {
     const meta = await discover(base);
     const offered = Array.isArray(meta.scopes_supported) ? meta.scopes_supported : [];
-    out(`${base} offers a sign-in these scopes (a plain /enforcer:login asks for all of them):`);
+    out(`${base} offers a sign-in these scopes (--for admin asks for all of them; the default preset is work):`);
     for (const s of offered) out(`  ${s}`);
     out('Ask for fewer with: /enforcer:login --scope "enforcer:read policy:self"');
     return;
@@ -253,7 +286,10 @@ async function main(rawArgv) {
       : await resourcesFor(base);
     const code = (arg || process.env.ENFORCER_TENANT_CODE || '').trim().toUpperCase() || undefined;
     if (code && !isWorkspaceCode(code)) { out(`"${code}" is not a workspace code. Usage: /enforcer:login [<WORKSPACE-CODE>]`); process.exitCode = 2; return; }
-    const oauth = await browserSignIn({ base, resources, scope, tenantCode: code, onUrl: (url) => {
+    // default = the last preset used, remembered in credentials.json
+    const last = readCredentials()?.enforcer?.oauth?.preset;
+    const preset = forPreset || (Object.hasOwn(PRESETS, last) ? last : DEFAULT_PRESET);
+    const oauth = await browserSignIn({ base, resources, scope, preset, tenantCode: code, onUrl: (url) => {
       out('Opening your browser to sign in to Enforcer. If it does not open, visit:');
       out(url);
       openBrowser(url);
@@ -266,6 +302,8 @@ async function main(rawArgv) {
     saveCredentials({ ...doc, enforcer: { ...kept, base_url: base, oauth } });
     const me = await whoAmI(base).catch(() => null);
     out(me && !me.error ? `Signed in as ${who(me)}.` : 'Signed in.');
+    const granted = String(oauth.scope || '').split(/\s+/).filter(Boolean);
+    out(`Preset: ${oauth.preset} (${granted.length} scopes)`);
     out(`Granted: ${oauth.scope || '(the server did not say)'}`);
     out('Every Enforcer plugin on this machine shares this sign-in.');
     out(describe(await currentWorkspace().catch(() => ({ tenant: 'unknown' }))));
@@ -273,7 +311,7 @@ async function main(rawArgv) {
     return;
   }
 
-  out('Usage: /enforcer:login [<WORKSPACE-CODE>] [--scope "<scopes>"] | api-key <key> | scopes | status | logout  — no argument opens a browser');
+  out('Usage: /enforcer:login [<WORKSPACE-CODE>] [--for work|plan|admin] [--scope "<scopes>"] | api-key <key> | scopes | status | logout  — no argument opens a browser');
   process.exitCode = 2;
 }
 

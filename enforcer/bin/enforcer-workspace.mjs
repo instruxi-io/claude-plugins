@@ -117,10 +117,11 @@ export async function currentWorkspace({ fetchImpl = fetch } = {}) {
     tenant: me?.tenant?.name || c.tenant || null, tenant_id: c.tenant_id || me?.tenant?.id || null,
     role: roleOf(me?.role) || c.role || null, account_id: me?.account_id || c.account_id || c.sub || null,
     expires_at: o.expires_at || null,
+    preset: o.preset || null, scopes: o.scope ? String(o.scope).split(/\s+/).filter(Boolean).length : null,
   };
 }
 
-export const describe = (w) => `Workspace: ${w.tenant || w.name || w.tenant_id} (${w.tenant_id}) · role ${w.role || '?'} · account ${w.account_id || '?'}${w.expires_at ? ` · token expires ${w.expires_at}` : ''}`;
+export const describe = (w) => `Workspace: ${w.tenant || w.name || w.tenant_id} (${w.tenant_id}) · role ${w.role || '?'} · account ${w.account_id || '?'}${w.preset ? ` · preset ${w.preset}${w.scopes != null ? ` (${w.scopes} scopes)` : ''}` : ''}${w.expires_at ? ` · token expires ${w.expires_at}` : ''}`;
 
 async function main([cmd = 'current', ...rest]) {
   if (cmd === 'list') {
