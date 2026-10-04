@@ -1531,7 +1531,16 @@ def skills_of(text):
         if isinstance(k, str):
             out.append(k)
         elif isinstance(k, dict):
-            nm = k.get("key") or k.get("name") or k.get("slug")
+            # The api's card carries skills.AttachedSkill rows:
+            # {"position", "config", "skill": {"id", "slug", "version", ...}} —
+            # the name is NESTED under "skill". Reading only the flat forms
+            # saw no name on any node, so every salvage on
+            # enforcer-plugin-stack-hardening was SALVAGE-SKIPPED "the node's
+            # skills do not include deliver-via-github-pr" while
+            # GET /nodes/{id}/skills listed exactly that skill (2026-10-04).
+            inner = k.get("skill") if isinstance(k.get("skill"), dict) else {}
+            nm = (k.get("key") or k.get("name") or k.get("slug")
+                  or inner.get("slug") or inner.get("key") or inner.get("name"))
             if nm:
                 out.append(str(nm))
     return out
