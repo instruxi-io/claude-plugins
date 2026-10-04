@@ -256,6 +256,83 @@ class DryRunAndDrain(unittest.TestCase):
         self.assertEqual(text.count("launch a "), 1, text)
         self.assertIn("DENIED a:", text)
 
+    # --- decision codes (the governor's records), not text
+    @staticmethod
+    def _rec(code, decision="deny", **kw):
+        return gd.DECISION_PREFIX + json.dumps(dict({"decision": decision, "code": code, "rule": None, "tool": "Bash",
+                                                    "summary": "s of " + code}, **kw))
+
+    def _coded(self, code, result_text="ok", extra_denial=True):
+        """A stream whose Bash tool_result carries the record; the final result
+        text is neutral so only the record can decide."""
+        ev = [{"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "t1",
+                                                       "content": self._rec(code) + "\nsentence"}]}},
+              {"type": "result", "subtype": "success", "result": result_text,
+               "permission_denials": [{"tool_name": "Bash", "tool_input": {"command": "x"}}] if extra_denial else []}]
+        return "\n".join(json.dumps(e) for e in ev)
+
+    def test_decision_records_parse_from_stderr_line_and_stream(self):
+        self.assertEqual(gd.decision_records("noise\n" + self._rec("force_push") + "\ntail")[0]["code"], "force_push")
+        self.assertEqual(gd.decision_records(gd.DECISION_PREFIX + "{broken"), [])
+        log = os.path.join(self.tmp, "s.jsonl")
+        with open(log, "w") as f:
+            f.write(self._rec("push_needs_approval_surface") + "\n" + self._coded("destructive_git") + "\n")
+        codes = [r["code"] for r in gd.summarize(log)["decisions"]]
+        self.assertEqual(codes, ["push_needs_approval_surface", "destructive_git"])
+
+    def test_denial_class_per_code(self):
+        def cls(*recs):
+            return gd.denial_class({"decisions": list(recs)})[0]
+        r = lambda c, d="deny": {"decision": d, "code": c}
+        self.assertEqual(cls(r("push_needs_approval_surface")), "salvage")
+        self.assertEqual(cls(r("destructive_delete")), "triage")
+        self.assertEqual(cls(r("destructive_git")), "triage")
+        self.assertEqual(cls(r("graph_run_not_open")), "remediation")
+        self.assertEqual(cls(r("force_push")), "denied")
+        self.assertEqual(cls(r("destructive_git"), r("push_needs_approval_surface")), "triage")
+        self.assertIsNone(cls(r("graph_push_allowed", "allow")))
+        self.assertIsNone(cls())
+
+    def test_code_salvage_is_denied_and_salvage_attempted_without_text(self):
+        d, text = self._run_denied(self._coded("push_needs_approval_surface"), [node("a")])
+        self.assertEqual(text.count("launch a "), 1, text)
+        self.assertIn("DENIED a: push_needs_approval_surface", text)
+        self.assertIn("SALVAGE-SKIPPED a:", text)
+        self.assertNotIn("not a push or PR denial", text)
+
+    def test_code_destructive_is_never_salvaged_and_goes_to_triage(self):
+        d, text = self._run_denied(self._coded("destructive_delete"), [node("a")])
+        self.assertEqual(text.count("launch a "), 1, text)
+        self.assertIn("TRIAGE-ON-CODE a: destructive_delete", text)
+        self.assertNotIn("SALVAGE", text)
+        self.assertNotIn("DENIED a", text)
+        self.assertIn("TRIAGE a:", text)
+        self.assertNotIn("a", d.denied)
+
+    def test_code_run_not_open_is_remediation_with_the_code(self):
+        d, text = self._run_denied(self._coded("graph_run_not_open"), [node("a")])
+        self.assertEqual(text.count("launch a "), 2, text)
+        self.assertIn("FAILED a (attempt 1 of 2 this session): governor denied (graph_run_not_open)", text)
+        self.assertNotIn("DENIED", text)
+        self.assertNotIn("SALVAGE", text)
+
+    def test_other_code_is_denied_never_salvaged(self):
+        d, text = self._run_denied(self._coded("force_push"), [node("a")])
+        self.assertEqual(text.count("launch a "), 1, text)
+        self.assertIn("DENIED a: force_push", text)
+        self.assertNotIn("SALVAGE", text)
+
+    def test_record_beats_text_match(self):
+        # the result text says "push was denied", the record says destructive: the record wins
+        d, text = self._run_denied(self._coded("destructive_git", result_text="git push was denied by the classifier"),
+                                   [node("a")])
+        self.assertIn("TRIAGE-ON-CODE a", text)
+        self.assertNotIn("SALVAGE", text)
+
+    def test_allow_record_is_no_denial_and_text_fallback_still_applies_without_record(self):
+        # no record at all: the old text match (covered by test_denial_named_in_result_text_is_not_relaunched)
+        self.assertIsNone(gd.denial_class({"decisions": []})[0])
+
     def test_ordinary_failure_is_still_relaunched(self):
         body = '{"type":"result","subtype":"error_max_turns","permission_denials":[],"result":"ran out of turns"}'
         d, text = self._run_denied(body, [node("a")])
