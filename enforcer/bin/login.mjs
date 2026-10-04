@@ -17,6 +17,7 @@
 import { createServer } from 'node:http';
 import { createHash, randomBytes } from 'node:crypto';
 import { spawn } from 'node:child_process';
+import { currentWorkspace, describe } from './enforcer-workspace.mjs';
 import { readCredentials, saveCredentials, enforcerKey, SHARED_FILE, DEFAULT_BASE_URL, authHeaders } from '../src/credentials.mjs';
 
 const API = '/api/v1/enforcer';
@@ -267,6 +268,8 @@ async function main(rawArgv) {
     out(me && !me.error ? `Signed in as ${who(me)}.` : 'Signed in.');
     out(`Granted: ${oauth.scope || '(the server did not say)'}`);
     out('Every Enforcer plugin on this machine shares this sign-in.');
+    out(describe(await currentWorkspace().catch(() => ({ tenant: 'unknown' }))));
+    out('Wrong workspace? /enforcer:workspace list, then /enforcer:workspace switch <name>.');
     return;
   }
 

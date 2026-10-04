@@ -35,6 +35,8 @@ customer lookup, transfer trace, ticket triage): one call instead of several.
   `cross_tenant`), never infer power from its name.
 - **Credential** — how a caller proves who it is: an OAuth sign-in
   (`/enforcer:login`) or an API key. Both act as the account they belong to.
+  A sign-in is bound to one workspace: change it with `/enforcer:workspace
+  switch <name>` when you are already a member, `/enforcer:login <CODE>` when not.
 - **Scope** — what a credential may do, *narrower* than the role. An OAuth
   sign-in and a scoped API key carry only the scopes they were granted; an
   unscoped key carries its account's whole role.

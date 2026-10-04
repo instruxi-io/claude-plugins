@@ -2,7 +2,7 @@
   "name": "enforcer",
   "displayName": "Enforcer",
   "description": "Connects Claude Code to your Enforcer workspace: the Enforcer MCP server, one sign-in that every Instruxi plugin shares, and /enforcer:setup. Depends on enforcer-graph, so the graph tools never run without its hooks.",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "author": {
     "name": "Instruxi",
     "url": "https://instruxi.io"
