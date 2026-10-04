@@ -263,6 +263,19 @@ The MCP server can also come up `needs-auth` in a fresh `claude -p` (seen
 intermittently on 2026-10-02). Such a worker never reaches the graph; it does
 not spend an attempt, and three in a row stop the dispatcher.
 
+## What a denial means to the dispatcher
+
+The dispatcher reads the governor's decision records (from the governor log and the worker's stream-json denials) and branches on the machine `code`, not on log text:
+
+| code | dispatcher action |
+|---|---|
+| `push_needs_approval_surface` | salvage: push, open the PR and land it, as the worker could not |
+| `destructive_*` | never salvaged; the node goes to triage |
+| `graph_run_not_open` | remediation launch, with the code in the prompt |
+| any other deny/ask code | logged; neither salvaged nor relaunched |
+
+When several codes are present the order is destructive, then `graph_run_not_open`, then the push. Only when a worker left no record (an older plugin or governor) does the dispatcher fall back to the old text match on the denial message.
+
 ## The plugin must be ENABLED, and the allowlist must name the tools as they load
 
 Both failed together on the agents-platform build, so no hook ran at all:

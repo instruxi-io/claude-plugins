@@ -1032,15 +1032,33 @@ class Dispatcher:
                              "launching no more workers (drain). See README 'Headless workers'."
                              % ", ".join(graph_denied))
                 other = [t for t in s["denied_tools"] if t not in graph_denied]
-                if (other or DENIAL_TEXT_RE.search(s["result_text"] or "")) and not graph_denied \
-                        and key not in self.denied:
+                kind, rec = denial_class(s)
+                if kind is None:
+                    # no decision record (an older governor): the text match, as before
+                    is_denied = bool(other or DENIAL_TEXT_RE.search(s["result_text"] or ""))
+                    why = ", ".join(other) or clip(s["result_text"] or "", 120)
+                else:
+                    is_denied = kind in ("salvage", "denied")
+                    why = "%s (%s)" % (rec["code"], rec.get("summary") or rec.get("tool") or "-")
+                if kind in ("triage", "remediation") and not graph_denied and not getattr(w, "triage_of", None):
+                    # the code decides: never salvaged. destructive_* spends the
+                    # attempts so the node goes to triage; graph_run_not_open is a
+                    # remediation launch with the code in the prompt
+                    outcome = outcome or {"error": "", "rejection": None}
+                    outcome = dict(outcome, error=clip("governor denied (%s): %s; %s" % (
+                        rec["code"], rec.get("summary") or "-", outcome.get("error") or ""), 1500))
+                    if kind == "triage":
+                        self.attempts[key] = max(self.attempts.get(key, 0), self.args.max_attempts)
+                        self.failures.setdefault(key, []).extend(
+                            [outcome] * max(1, self.args.max_attempts - len(self.failures.get(key) or [])))
+                        outcome = None  # recorded above; not a further attempt
+                        self.say("TRIAGE-ON-CODE %s: %s; never salvaged" % (key, why))
+                elif is_denied and not graph_denied and key not in self.denied:
                     self.denied[key] = getattr(w, "path", None) or "-"
                     self.say("DENIED %s: %s; not relaunching it this session. Worktree: %s "
-                             "(a person can land it)"
-                             % (key, ", ".join(other) or clip(s["result_text"], 120), self.denied[key]))
-                    salvage = (w, s)
-                elif (other or DENIAL_TEXT_RE.search(s["result_text"] or "")) and not graph_denied \
-                        and key in self.salvaged:
+                             "(a person can land it)" % (key, why, self.denied[key]))
+                    salvage = (w, s) if kind in (None, "salvage") else None
+                elif is_denied and not graph_denied and key in self.salvaged:
                     self.say("SALVAGE-SKIPPED %s: denied again after a salvage" % key)
                 if getattr(w, "triage_of", None) is not None:
                     self.finish_triage(w, s)
@@ -1095,7 +1113,9 @@ class Dispatcher:
         cmds = " ".join(str((d or {}).get("tool_input", {}).get("command", "")) if isinstance(d, dict) else ""
                         for d in s.get("denied_inputs", []))
         others = [t for t in s["denied_tools"] if t != "Bash"]
-        if others or not (PUSH_DENIAL_RE.search(cmds) or (not s["denied_tools"] and PUSH_DENIAL_RE.search(s["result_text"] or ""))):
+        if denial_class(s)[0] == "salvage":
+            pass  # the governor said so by code: no text to match
+        elif denial_class(s)[0] is not None or others or not (PUSH_DENIAL_RE.search(cmds) or (not s["denied_tools"] and PUSH_DENIAL_RE.search(s["result_text"] or ""))):
             return skip("not a push or PR denial")
         if not path or path == "-" or not os.path.isdir(path):
             return skip("no worktree")
@@ -1361,12 +1381,45 @@ def count_turns(path):
     return sum(1 for e in _events(path) if e.get("type") == "assistant")
 
 
+DECISION_PREFIX = "enforcer-governor:decision "
+
+
+def decision_records(text):
+    """The governor's decision records in `text`: each `enforcer-governor:decision
+    {json}` line (the hook's stderr line and the first line of a permission
+    reason), parsed. Anything unparseable is ignored."""
+    out, dec, i = [], json.JSONDecoder(), 0
+    while isinstance(text, str):
+        i = text.find(DECISION_PREFIX, i)
+        if i < 0:
+            break
+        i += len(DECISION_PREFIX)
+        try:
+            rec, _ = dec.raw_decode(text, i)
+        except ValueError:
+            continue
+        if isinstance(rec, dict) and isinstance(rec.get("code"), str):
+            out.append(rec)
+    return out
+
+
+def _strings(o):
+    if isinstance(o, str):
+        yield o
+    elif isinstance(o, dict):
+        for v in o.values():
+            yield from _strings(v)
+    elif isinstance(o, list):
+        for v in o:
+            yield from _strings(v)
+
+
 def summarize(path):
     """turns, result subtype, permission denials, cost, the run id the worker
     claimed (from its graph_next_work tool result) and whether it reported."""
     s = {"turns": 0, "result": None, "denials": 0, "denied_tools": [], "run_id": None, "reported": False,
          "cost": None, "mcp": {}, "started": False, "session_id": None, "usage": {}, "error_text": None,
-         "result_text": None, "denied_inputs": [],
+         "result_text": None, "denied_inputs": [], "decisions": [],
          # what the worker reported: its status, error, node and data, and any
          # rejection reasons it saw (its claim card's last_rejection, its
          # report's verification)
@@ -1378,8 +1431,8 @@ def summarize(path):
             for line in f:
                 line = line.strip()
                 if line and not line.startswith("{"):
-                    s["error_text"] = line[:300]
-                    break
+                    s["error_text"] = s["error_text"] or line[:300]
+                    s["decisions"] += decision_records(line)  # the hook's stderr line
     except OSError:
         pass
     for e in _events(path):
@@ -1406,6 +1459,7 @@ def summarize(path):
                 if c.get("type") != "tool_result":
                     continue
                 text = tool_text(c.get("content"))
+                s["decisions"] += decision_records(text)  # a denial's reason leads with the record
                 if c.get("tool_use_id") in claims:
                     m = re.search(r'"run_id"\s*:\s*"([0-9a-f-]{36})"', text)
                     if m:
@@ -1429,12 +1483,37 @@ def summarize(path):
             s["denials"] = len(denied)
             s["denied_tools"] = sorted({str(d.get("tool_name")) for d in denied if isinstance(d, dict)})
             s["denied_inputs"] = [d for d in denied if isinstance(d, dict)]
+            for text in _strings(denied):
+                s["decisions"] += decision_records(text)
             s["cost"] = e.get("total_cost_usd")
     s["started"] = s["started"] or s["turns"] > 0
     return s
 
 
 DELIVER_SKILL = "deliver-via-github-pr"
+
+
+def denial_class(s):
+    """What a worker's denial means, from the governor's decision codes:
+    (kind, record) with kind one of
+      "salvage"      push_needs_approval_surface: push + PR + land for it
+      "triage"       destructive_*: never salvaged, goes to triage
+      "remediation"  graph_run_not_open: relaunched with the code in the prompt
+      "denied"       any other denied/ask code: logged, not relaunched, not salvaged
+      None           no record to go on: the caller falls back to the text match
+    Only deny/ask records count (an allow is no denial). Severity decides when a
+    worker was refused for several reasons: destructive, then run-not-open, then
+    the push."""
+    recs = [r for r in s.get("decisions") or [] if r.get("decision") in ("deny", "ask")]
+    if not recs:
+        return None, None
+    for pick, kind in ((lambda c: c.startswith("destructive_"), "triage"),
+                       (lambda c: c == "graph_run_not_open", "remediation"),
+                       (lambda c: c == "push_needs_approval_surface", "salvage")):
+        for r in recs:
+            if pick(r["code"]):
+                return kind, r
+    return "denied", recs[0]
 
 
 def skills_of(text):
