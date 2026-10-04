@@ -85,6 +85,7 @@ import os
 import re
 import shlex
 import signal
+import socket
 import subprocess
 import sys
 import time
@@ -101,7 +102,10 @@ AGENT = "enforcer-graph:graph-worker"
 GRAPH_TOOLS = ["graph_next_work", "graph_heartbeat", "graph_report", "graph_remember", "graph_plan_status"]
 PREFIXES = ["mcp__plugin_enforcer_enforcer__", "mcp__enforcer__", "mcp__enforcer-graph__"]
 BASE_TOOLS = ["Bash", "Read", "Edit", "Write", "Grep", "Glob", "ToolSearch"]
-DEFAULT_TYPES = "task,bug,chore,merge"
+DEFAULT_TYPES = "task,bug,chore,merge,scout,milestone,ops"  # gate stays human
+LEASE_KEY = "dispatcher-lease"
+LEASE_TTL = 180  # seconds a lease outlives its last renewal
+RETRY_STATUS = (429, 502, 503, 504)
 TIER_MODEL = {"mechanical": "sonnet", "standard": "sonnet", "deep": "opus"}
 CLIP = 4000
 # A permission denial is the environment's answer, not the work's: relaunching
@@ -110,6 +114,9 @@ PUSH_DENIAL_RE = re.compile(r"git\s+push|gh\s+pr\b|\bpush(ed|ing)?\b.*\bdenied|\
 DENIAL_TEXT_RE = re.compile(r"permission denied|was denied|were denied|denied by|requires? (permission|approval)|"
                             r"not (allowed|permitted) to|no approval|needs? approval|auto mode (classifier )?(denied|blocked)",
                             re.I)
+TRANSIENT_RE = re.compile(r"temporary failure in name resolution|could not resolve host|connection (reset|refused|timed out)|"
+                          r"timed? ?out|network is unreachable|tls handshake|unexpected eof|http (502|503|504)|"
+                          r"error connecting to|name or service not known", re.I)
 GRAPH_TOOL_RE = re.compile(r"__graph_(next_work|heartbeat|report|remember|plan_status)$")
 
 
@@ -300,6 +307,7 @@ class API:
     def __init__(self, base, helper=None, key=None):
         self.base = base.rstrip("/")
         self.helper, self.key = helper, key
+        self.tries, self.backoff, self.sleep = 4, 1.0, time.sleep
 
     def headers(self):
         h = {"User-Agent": UA, "Content-Type": "application/json"}
@@ -313,13 +321,23 @@ class API:
         return h
 
     def call(self, method, path, body=None):
-        req = urllib.request.Request(self.base + path, method=method, headers=self.headers(),
-                                     data=json.dumps(body).encode() if body is not None else None)
-        try:
-            with urllib.request.urlopen(req, timeout=60) as r:
-                return json.loads(r.read() or b"{}")
-        except urllib.error.HTTPError as e:
-            raise APIError(e.code, e.read().decode(errors="replace"))
+        last = None
+        for i in range(self.tries):
+            req = urllib.request.Request(self.base + path, method=method, headers=self.headers(),
+                                         data=json.dumps(body).encode() if body is not None else None)
+            try:
+                with urllib.request.urlopen(req, timeout=60) as r:
+                    return json.loads(r.read() or b"{}")
+            except urllib.error.HTTPError as e:
+                err = APIError(e.code, e.read().decode(errors="replace"))
+                if e.code not in RETRY_STATUS:
+                    raise err
+                last = err
+            except (OSError, ValueError) as e:  # URLError, DNS blips, resets, timeouts, truncated bodies
+                last = APIError("network", "%s: %s" % (type(e).__name__, e))
+            if i + 1 < self.tries:
+                self.sleep(self.backoff * (2 ** i))
+        raise last
 
     def frontier(self, g):
         return self.call("GET", "/graphs/%s/frontier" % g).get("data") or []
@@ -358,6 +376,10 @@ class API:
 
     def runs(self, g, n):
         return self.call("GET", "/graphs/%s/nodes/%s/runs" % (g, n)).get("data") or []
+
+    def node(self, g, n):
+        d = self.call("GET", "/graphs/%s/nodes/%s" % (g, n)).get("data")
+        return d[0] if isinstance(d, list) else d
 
     def observations(self, g, n):
         return self.call("GET", "/graphs/%s/nodes/%s/observations" % (g, n)).get("data") or []
@@ -482,6 +504,8 @@ class Dispatcher:
         self.fail_session = {}
         self.triaged = set()  # node keys triaged (or whose triage could not start) this session
         self.triaged_sig = {}  # failed node key -> its runs' signature when it was triaged (any node type)
+        self.retry_sleep = 2.0
+        self.lease_at = 0.0
         self.all_nodes = []  # the last pass's node list: triage resolves `existing` prerequisites against it
 
     def say(self, msg):
@@ -516,6 +540,8 @@ class Dispatcher:
         for n in out:
             if self.types is not None and n.get("type") not in self.types:
                 continue
+            if n.get("key") == LEASE_KEY or (n.get("data") or {}).get("dispatcher_lease"):
+                continue  # the dispatcher's own lease record, not work
             if (n.get("data") or {}).get("triage_of"):
                 continue  # a triage node: launched by the dispatcher that made it, never from the frontier
             if n["key"] in self.denied:
@@ -523,7 +549,8 @@ class Dispatcher:
             if self.attempts.get(n["key"], 0) >= self.args.max_attempts:
                 # the task attempts are spent: one triage per node per session
                 if (not self.args.no_triage and n["key"] not in self.triaged and not merge_target(n)
-                        and len(self.failures.get(n["key"]) or []) >= self.args.max_attempts):
+                        and len(self.failures.get(n["key"]) or []) >= self.args.max_attempts
+                        and self.grace_ok(n)):
                     keep.append(dict(n, _triage=True))
                 continue
             keep.append(n)
@@ -563,8 +590,43 @@ class Dispatcher:
                 sig = self.runs_sig(n)
                 if sig is None or sig == seen:
                     continue  # unchanged since the triage (or unreadable): idempotent
+            if not self.grace_ok(n):
+                continue
             out.append(dict(n, _triage=True, _triage_any=True))
         return out
+
+    def last_run_end(self, n):
+        """Epoch seconds the node's newest run ended, or None when unknown."""
+        try:
+            runs = self.api.runs(self.g, n["id"])
+        except (APIError, AttributeError):
+            return None
+        if not runs:
+            return None
+        r = runs[-1]
+        for k in ("ended_at", "finished_at", "completed_at", "updated_at"):
+            if r.get(k):
+                try:
+                    return parse_ts(r[k]).timestamp()
+                except (ValueError, TypeError, AttributeError):
+                    return None
+        return None
+
+    def grace_ok(self, n):
+        """Triage waits --triage-grace seconds after the last run ended: the
+        coordinator may still be reporting the node, or retrying it."""
+        grace = getattr(self.args, "triage_grace", 0) * 60
+        if grace <= 0:
+            return True
+        end = self.last_run_end(n)
+        if end is None:
+            return True
+        if time.time() - end >= grace:
+            return True
+        if self.last_skip.get("grace:" + n["key"]) is None:
+            self.say("triage %s waits: last run ended under %g min ago" % (n["key"], grace / 60))
+            self.last_skip["grace:" + n["key"]] = 1
+        return False
 
     def held_elsewhere(self, nodes):
         held = set()
@@ -717,6 +779,15 @@ class Dispatcher:
         TRIAGE node with data.triage; finish_triage makes the graph writes.
         At most once per node per session, whether or not it starts."""
         a, key = self.args, n["key"]
+        fresh = None
+        try:
+            fresh = self.api.node(self.g, n["id"]) if hasattr(self.api, "node") else None
+        except APIError:
+            fresh = None
+        if fresh and fresh.get("status") in ("done", "running", "verifying", "cancelled"):
+            self.say("TRIAGE-SKIPPED %s: no longer failed (status %s)" % (key, fresh.get("status")))
+            self.last_skip.pop("grace:" + key, None)
+            return
         self.triaged.add(key)
         if n.get("_triage_any"):
             self.triaged_sig[key] = self.runs_sig(n) or ()
@@ -993,11 +1064,18 @@ class Dispatcher:
 
     # --- salvage a denied push / PR
     def _sh(self, cmd, cwd, timeout=300):
-        try:
-            r = subprocess.run(cmd, cwd=cwd, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=timeout)
-        except (OSError, subprocess.TimeoutExpired) as e:
-            return 127, str(e)
-        return r.returncode, (r.stdout + r.stderr).strip()
+        """Run a command; a gh/git network failure is retried with backoff (never raises)."""
+        rc, out = 127, ""
+        for i in range(3):
+            try:
+                r = subprocess.run(cmd, cwd=cwd, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=timeout)
+                rc, out = r.returncode, (r.stdout + r.stderr).strip()
+            except (OSError, subprocess.TimeoutExpired) as e:
+                rc, out = 127, str(e)
+            if rc == 0 or not TRANSIENT_RE.search(out) or i == 2:
+                break
+            time.sleep(self.retry_sleep * (2 ** i))
+        return rc, out
 
     def salvage(self, w, s):
         """Finish the mechanical part of a push/PR-denied worker: push, open the
@@ -1131,7 +1209,95 @@ class Dispatcher:
         except APIError as e:
             self.say("could not fail orphan run of %s: %s" % (w.key, e))
 
+    # --- the dispatcher lease: one dispatcher per graph
+    def lease_data(self):
+        until = utcnow() + dt.timedelta(seconds=LEASE_TTL)
+        return {"dispatcher": {"owner": "graph-dispatch", "host": socket.gethostname(), "pid": os.getpid(),
+                               "until": until.isoformat()}}
+
+    def acquire_lease(self, nodes=None):
+        """True when this dispatcher holds the lease (or --takeover took it).
+        The lease is data.dispatcher on a `dispatcher-lease` node of the graph."""
+        nodes = self.api.nodes(self.g) if nodes is None else nodes
+        cur = next((n for n in nodes if n.get("key") == LEASE_KEY), None)
+        held = ((cur or {}).get("data") or {}).get("dispatcher")
+        if held and held.get("pid") != os.getpid():
+            try:
+                live = parse_ts(held.get("until")) > utcnow()
+            except (ValueError, TypeError, AttributeError):
+                live = False
+            if live and not self.args.takeover:
+                self.say("another graph-dispatch holds graph %s (host %s pid %s, lease until %s); "
+                         "exiting. Use --takeover to replace it." % (
+                             self.g, held.get("host"), held.get("pid"), held.get("until")))
+                return False
+            if live:
+                self.say("TAKEOVER: replacing the dispatcher on %s pid %s" % (held.get("host"), held.get("pid")))
+        self.write_lease(cur)
+        return True
+
+    def write_lease(self, cur):
+        data = self.lease_data()
+        if cur is None:
+            self.api.create_node(self.g, {
+                "key": LEASE_KEY, "type": "ops", "status": "done", "title": "graph-dispatch lease",
+                "description": "Held by the running graph-dispatch for this graph; renewed each pass. Not work.",
+                "data": dict(data, dispatcher_lease=True)})
+        else:
+            self.api.patch_node(self.g, cur["id"], {"data": dict(cur.get("data") or {}, **data)})
+
+    def renew_lease(self):
+        if self.args.no_lease:
+            return True
+        nodes = self.api.nodes(self.g)
+        cur = next((n for n in nodes if n.get("key") == LEASE_KEY), None)
+        held = ((cur or {}).get("data") or {}).get("dispatcher") or {}
+        if held and held.get("pid") != os.getpid() and held.get("host") != socket.gethostname():
+            self.say("lease lost to %s pid %s; exiting" % (held.get("host"), held.get("pid")))
+            return False
+        if held and held.get("pid") != os.getpid():
+            self.say("lease lost to pid %s; exiting" % held.get("pid"))
+            return False
+        self.write_lease(cur)
+        return True
+
+    def release_lease(self):
+        if self.args.no_lease or self.args.dry_run:
+            return
+        try:
+            nodes = self.api.nodes(self.g)
+            cur = next((n for n in nodes if n.get("key") == LEASE_KEY), None)
+            if cur and ((cur.get("data") or {}).get("dispatcher") or {}).get("pid") == os.getpid():
+                self.api.patch_node(self.g, cur["id"], {"data": dict(cur.get("data") or {}, dispatcher=None)})
+        except APIError:
+            pass
+
+    def write_pids(self):
+        """Process control by recorded pids, never by pgrep patterns."""
+        try:
+            pids = {"dispatcher": os.getpid(), "workers": {k: w.proc.pid for k, w in self.workers.items()
+                                                           if getattr(w, "proc", None)}}
+            with open(os.path.join(self.state, "pids.json"), "w") as f:
+                json.dump(pids, f)
+        except OSError:
+            pass
+
     def run(self):
+        a = self.args
+        if not a.dry_run and not a.no_lease:
+            try:
+                if not self.acquire_lease():
+                    return 3
+            except APIError as e:
+                self.say("could not take the dispatcher lease: %s" % e)
+                return 1
+            try:
+                return self.loop()
+            finally:
+                self.release_lease()
+        return self.loop()
+
+    def loop(self):
         a = self.args
         if a.dry_run:
             self.say("dry run on graph %s, %d worker slot(s); nothing is launched" % (self.g, a.workers))
@@ -1141,11 +1307,16 @@ class Dispatcher:
         self.say("dispatching graph %s with %d workers; stop file %s" % (self.g, a.workers, a.stop_file))
         idle = 0
         while True:
-            self.reap()
             try:
+                self.reap()
+                if time.time() - self.lease_at > LEASE_TTL / 3:
+                    if not self.renew_lease():
+                        return 3
+                    self.lease_at = time.time()
+                self.write_pids()
                 nodes, launched = self.tick()
             except APIError as e:
-                self.say("API error: %s" % e)
+                self.say("API error (pass skipped, retrying): %s" % e)
                 if e.status in (401, 403, "auth"):
                     return 1
                 time.sleep(a.interval)
@@ -1273,6 +1444,10 @@ def skills_of(text):
     except ValueError:
         return []
     out = []
+    # graph_next_work answers {"state": "claimed", "node": {...card...}}: the
+    # skills (graph-level ones merged in) live on the node, not at the top.
+    if isinstance(card, dict) and isinstance(card.get("node"), dict) and "skills" not in card:
+        card = card["node"]
     for k in (card.get("skills") if isinstance(card, dict) else None) or []:
         if isinstance(k, str):
             out.append(k)
@@ -1419,6 +1594,11 @@ def parse_args(argv):
                    help="extra plugin dirs (default: the newest cached enforcer plugin, for the MCP server)")
     p.add_argument("--no-salvage", action="store_true",
                    help="do not push/PR/land a worker whose push or PR was denied")
+    p.add_argument("--takeover", action="store_true",
+                   help="replace a live dispatcher's lease on this graph (default: exit if one holds it)")
+    p.add_argument("--no-lease", action="store_true", help="do not take the per-graph dispatcher lease")
+    p.add_argument("--triage-grace", type=float, default=10,
+                   help="minutes after a node's last run ended before it is triaged (default 10)")
     p.add_argument("--no-triage", action="store_true",
                    help="after the last failed attempt, leave the node for a person instead of triaging it")
     p.add_argument("--triage-model", default=TIER_MODEL["deep"],

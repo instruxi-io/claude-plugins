@@ -402,6 +402,8 @@ check "dispatch: warm workers (resume in repo, life cap retires, failed resume f
   'echo "$dispatch_out" | grep -E "^test_(next_node_in_repo_resumes_the_session|session_life_cap_retires|session_usable_caps|failed_resume_falls_back_to_cold|affinity_prefers_warm_repo|one_plugin_dir_each_and_max_turns) .* ok$" | wc -l | grep -qx 6'
 check "dispatch: failure -> remediation launch (resumed, error + last_rejection) -> triage; at most 2 attempts + 1 triage" \
   'echo "$dispatch_out" | grep -E "^test_(failure_then_remediation_then_triage|bounded_two_attempts_one_triage|failed_outcome|no_triage_flag|ordinary_failure_is_still_relaunched) .* ok$" | wc -l | grep -qx 5'
+check "dispatch: lease (second dispatcher refuses unless --takeover), transient retry, triage grace, scout/milestone/ops default" \
+  'echo "$dispatch_out" | grep -E "^test_(second_dispatcher_refuses_unless_takeover|expired_lease_is_taken_and_lease_node_is_never_work|defaults_include_scout_milestone_ops_not_gate|api_retries_transient_errors_then_succeeds|network_error_never_crashes_a_pass|sh_retries_transient_gh_failure|triage_waits_grace_and_rechecks_status) .* ok$" | wc -l | grep -qx 7'
 check "dispatch: triage outcomes revise / prerequisite / gate write the graph; a triage never reports the failed node" \
   'echo "$dispatch_out" | grep -E "^test_(triage_revise|triage_prerequisite|triage_gate|triage_that_reports_the_failed_node_applies_nothing|invalid_decision_applies_nothing) .* ok$" | wc -l | grep -qx 5'
 check "agent + skill: a structured graph_remember before any failed report; the remediation/triage loop documented" \
