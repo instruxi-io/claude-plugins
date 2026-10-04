@@ -11,7 +11,7 @@ they go to the person (systemMessage) and to the model."""
 import json, os, sys
 from collections import Counter
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import lib
+import lib, version_check
 
 
 def _vtuple(v):
@@ -42,6 +42,11 @@ def marketplace_name():
     return "instruxi"
 
 
+def base_url():
+    doc = lib.read_credentials() or {}
+    return str(os.environ.get("ENFORCER_BASE_URL") or (doc.get("enforcer") or {}).get("base_url") or version_check.DEFAULT_BASE)
+
+
 def notices():
     """(key, text) for each thing the person should fix. Reads Claude Code's own
     plugin bookkeeping under CLAUDE_CONFIG_DIR (default ~/.claude); writes nothing there."""
@@ -49,20 +54,7 @@ def notices():
     mkt = marketplace_name()
     installed = ((_load(os.path.join(cfgdir, "plugins", "installed_plugins.json")) or {}).get("plugins")) or {}
     loc = (((_load(os.path.join(cfgdir, "plugins", "known_marketplaces.json")) or {}).get(mkt)) or {}).get("installLocation")
-    catalog = _load(os.path.join(loc, ".claude-plugin", "marketplace.json")) if loc else None
-    out = []
-    for entry in (catalog or {}).get("plugins") or []:
-        pid = f"{entry.get('name')}@{mkt}"
-        src = entry.get("source")
-        if pid not in installed or not isinstance(src, str):
-            continue  # not installed here, or hosted elsewhere (no local copy to compare)
-        have = max((i.get("version") for i in installed[pid] if isinstance(i, dict)), key=lambda v: _vtuple(v) or (), default=None)
-        avail = ((_load(os.path.join(loc, src, ".claude-plugin", "plugin.json")) or {}).get("version"))
-        hv, av = _vtuple(have), _vtuple(avail)
-        if hv and av and hv < av:
-            out.append((f"outdated:{pid}:{have}:{avail}",
-                        f"enforcer-graph: {pid} {have} is installed; the marketplace has {avail}. "
-                        f"Update it in your shell: claude plugin update {pid}  (then /reload-plugins)"))
+    out = [(f"drift:{l}", l) for l in version_check.report(cfgdir, mkt, lib.plugin_version(), lib.read_credentials(), base_url(), None)]
     if f"enforcer-graph@{mkt}" in installed and f"enforcer@{mkt}" not in installed:
         out.append((f"no-enforcer:{mkt}",
                     f"enforcer-graph: the `enforcer` plugin is not installed, so the graph tools have no MCP server here. "
@@ -91,6 +83,12 @@ def main():
     except Exception:
         said = []
     lines = status_lines(inp)
+    try:
+        w = version_check.workspace_line(lib.read_credentials())
+    except Exception:
+        w = None
+    if w:
+        lines.insert(0, w)
     if said:
         print(json.dumps({"systemMessage": "\n".join(said),
                           "hookSpecificOutput": {"hookEventName": "SessionStart",
