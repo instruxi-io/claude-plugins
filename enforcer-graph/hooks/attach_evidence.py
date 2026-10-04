@@ -99,6 +99,28 @@ def with_usage(args, usage, legacy=True):
     return args
 
 
+def evidence_block(inp, evidence):
+    """A deny for a succeeded report whose evidence misses a hinted kind, else None.
+    Hints come from the run state (saved at claim). Override: evidence_override
+    true plus evidence_override_reason, recorded on the report's data."""
+    ti = inp.get("tool_input") or {}
+    if ti.get("status") != "succeeded":
+        return None
+    hints = (lib.load_run(lib.actor_key(inp)) or {}).get("acceptance_evidence")
+    gaps = lib.evidence_gaps(hints, evidence)
+    if not gaps:
+        return None
+    if ti.get("evidence_override") is True:
+        if str(ti.get("evidence_override_reason") or "").strip():
+            return None
+        return {"hookEventName": "PreToolUse", "permissionDecision": "deny",
+                "permissionDecisionReason": "enforcer-graph: evidence_override needs an evidence_override_reason."}
+    msg = "; ".join(f"criterion {n} ({c}) {fix}" for n, c, fix in gaps)
+    return {"hookEventName": "PreToolUse", "permissionDecision": "deny",
+            "permissionDecisionReason": "enforcer-graph: report blocked, the evidence misses what the card's hints ask for: " + msg +
+            ". Run it, then report again; or pass evidence_override: true with evidence_override_reason."}
+
+
 def decide(inp):
     """The hookSpecificOutput for this call, or None to let it through as written."""
     tool = (inp.get("tool_name") or "")
@@ -176,6 +198,18 @@ def decide(inp):
         for it in evidence:
             if isinstance(it, dict):
                 it.pop("raw", None)
+    if is_report:
+        blocked = evidence_block(inp, evidence)
+        if blocked:
+            return blocked
+        if (inp.get("tool_input") or {}).get("evidence_override") is True:
+            inp = dict(inp); ti = dict(inp.get("tool_input") or {})
+            reason = str(ti.pop("evidence_override_reason", "") or "")
+            ti.pop("evidence_override", None)
+            data = dict(ti.get("data") or {}) if isinstance(ti.get("data"), dict) else {}
+            data["evidence_override"] = {"reason": reason}
+            ti["data"] = data
+            inp["tool_input"] = ti
     out = {"hookEventName": "PreToolUse"}
     if MODE == "context":
         out["additionalContext"] = HANDOFF.format(js=json.dumps(evidence, indent=None))

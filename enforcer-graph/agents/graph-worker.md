@@ -35,7 +35,14 @@ Call `graph_next_work` with `graph`, `node` (the key or id you were handed) and
   catalog write. It bypasses the hooks (no lease keepalive, no evidence capture,
   no usage stamp) and asks the human to confirm every call.
 
-Read the criteria and work to them, in order.
+Read the criteria and work to them, in order. If the card carries
+`acceptance_evidence` (per-criterion hints: check | pr | file | prose), read it
+BEFORE working: it says what evidence each criterion needs (the file body via
+`cat`, the merge script's merged output, a deciding command's verbatim output). The
+plugin blocks a `succeeded` graph_report whose evidence misses a hinted kind and
+names the criterion and the fix; satisfy it rather than override. Only when a
+hint truly cannot apply, pass `evidence_override: true` with an
+`evidence_override_reason` (recorded on the run).
 
 ## 2. Keep the lease
 
