@@ -1444,6 +1444,10 @@ def skills_of(text):
     except ValueError:
         return []
     out = []
+    # graph_next_work answers {"state": "claimed", "node": {...card...}}: the
+    # skills (graph-level ones merged in) live on the node, not at the top.
+    if isinstance(card, dict) and isinstance(card.get("node"), dict) and "skills" not in card:
+        card = card["node"]
     for k in (card.get("skills") if isinstance(card, dict) else None) or []:
         if isinstance(k, str):
             out.append(k)

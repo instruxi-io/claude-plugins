@@ -530,6 +530,13 @@ class SalvageDenied(unittest.TestCase):
         self.assertEqual(gd.skills_of(card), ["close-books", "deliver-via-github-pr", "x"])
         self.assertEqual(gd.skills_of("not json"), [])
 
+    def test_skills_of_reads_the_claimed_node(self):
+        # graph_next_work wraps the card as {"state","graph_id","node":{...}}; the
+        # graph-level skills merged onto the node were invisible here, so every
+        # salvage on enforcer-plugin-stack-hardening was skipped (2026-10-04).
+        wrapped = json.dumps({"state": "claimed", "graph_id": "g", "node": {"key": "k", "skills": [{"slug": "deliver-via-github-pr"}, "other"]}})
+        self.assertEqual(gd.skills_of(wrapped), ["deliver-via-github-pr", "other"])
+
     def assertSkipped(self, why, ok, text):
         self.assertFalse(ok)
         self.assertIn("SALVAGE-SKIPPED a: " + why, text)
@@ -1049,3 +1056,4 @@ class DispatcherService(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
