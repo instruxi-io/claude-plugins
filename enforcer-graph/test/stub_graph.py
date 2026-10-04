@@ -48,6 +48,12 @@ class H(BaseHTTPRequestHandler):
 
     def do_GET(self):
         log({"method": "GET", "path": self.path})
+        if self.path == "/api/v1/mcp/health":  # public; the body comes from a file the test rewrites
+            try:
+                self._send(200, json.load(open(os.environ["STUB_HEALTH_FILE"])))
+            except Exception:
+                self._send(404, {"success": False})
+            return
         if not self._auth():
             return
         if self.path.endswith("/frontier"):

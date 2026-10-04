@@ -4,6 +4,7 @@ set -u
 cd "$(dirname "$0")/.."
 PORT=${PORT:-18790}
 export STUB_LOG="$(mktemp)"
+export STUB_HEALTH_FILE="$(mktemp)"
 python3 test/stub_graph.py "$PORT" & STUB=$!
 trap 'kill $STUB 2>/dev/null; rm -rf "$WORK" "$STUB_LOG" "$STUB_LOG.hb"' EXIT
 sleep 0.4
@@ -15,6 +16,7 @@ printf '{"graph_id":"g1","base_url":"http://127.0.0.1:%s","api_key_env":"GRAPH_A
 export GRAPH_API_KEY=stub-key
 # Claude Code's own plugin bookkeeping, for session_start's notices: never the real one.
 export CLAUDE_CONFIG_DIR="$WORK/cc"; mkdir -p "$CLAUDE_CONFIG_DIR"
+export ENFORCER_BASE_URL="http://127.0.0.1:$PORT" ENFORCER_HOME="$WORK/eh"   # version check: never the real server or credential
 SID=s1
 pass=0; fail=0
 check() { if eval "$2"; then echo "PASS  $1"; pass=$((pass+1)); else echo "FAIL  $1"; fail=$((fail+1)); fi; }
@@ -435,24 +437,34 @@ import json,os,sys; r=[json.loads(l) for l in open(sys.argv[1]) if \"/heartbeat\
 sys.exit(0 if r and all(x.get(\"client\")==os.environ[\"W\"] for x in r) else 1)" "$STUB_LOG"'
 rm -f "$rf2"
 
-# --- session_start notices: an outdated install, enforcer-graph without enforcer; each said once
-MK="$WORK/mkt"; mkdir -p "$MK/.claude-plugin" "$MK/enforcer-graph/.claude-plugin" "$MK/enforcer/.claude-plugin" "$CLAUDE_CONFIG_DIR/plugins"
+# --- session_start version check: one line per mismatch, silent when aligned, workspace from the credential
+MK="$WORK/mkt"; mkdir -p "$MK/.claude-plugin" "$MK/enforcer-graph/.claude-plugin" "$MK/enforcer/.claude-plugin" "$CLAUDE_CONFIG_DIR/plugins" "$ENFORCER_HOME"
 printf '{"name":"instruxi","plugins":[{"name":"enforcer","source":"./enforcer"},{"name":"enforcer-graph","source":"./enforcer-graph"},{"name":"gov","source":{"source":"github","repo":"x/y"}}]}' > "$MK/.claude-plugin/marketplace.json"
 printf '{"name":"enforcer-graph","version":"9.1.0"}' > "$MK/enforcer-graph/.claude-plugin/plugin.json"
 printf '{"name":"enforcer","version":"0.5.0"}' > "$MK/enforcer/.claude-plugin/plugin.json"
 printf '{"instruxi":{"installLocation":"%s"}}' "$MK" > "$CLAUDE_CONFIG_DIR/plugins/known_marketplaces.json"
-printf '{"version":2,"plugins":{"enforcer-graph@instruxi":[{"scope":"user","version":"0.15.0"}]}}' > "$CLAUDE_CONFIG_DIR/plugins/installed_plugins.json"
+printf '{"version":2,"plugins":{"enforcer-graph@instruxi":[{"scope":"user","version":"0.15.0"},{"scope":"local","version":"0.13.0"},{"scope":"project","version":"9.1.0"}]}}' > "$CLAUDE_CONFIG_DIR/plugins/installed_plugins.json"
+python3 -c 'import json;print(json.dumps({"version":"0.9.14","tools":json.load(open("hooks/known_tools.json"))}))' > "$STUB_HEALTH_FILE"
 ss() { hook session_start.py "{\"session_id\":\"$SID\",\"cwd\":\"/\",\"hook_event_name\":\"SessionStart\",\"source\":\"startup\"}"; }
+out=$(ss); raw="$out"; out=$(echo "$raw" | python3 -c "import json,sys; print(json.load(sys.stdin)['systemMessage'])")
+check "version check: one line per stale install, with scope and the update command" '[ "$(echo "$out" | grep -c "^enforcer-graph .* installed (")" = 2 ] && echo "$out" | grep -q "enforcer-graph 0.15.0 installed (user) — 9.1.0 available: claude plugin update enforcer-graph@instruxi" && echo "$out" | grep -q "enforcer-graph 0.13.0 installed (local) — 9.1.0 available"'
+check "version check: an install at the marketplace version is not reported" '! echo "$out" | grep -q "9.1.0 installed"'
+check "version check: enforcer-graph without enforcer is told exactly what to install" 'echo "$out" | grep -q "claude plugin install enforcer@instruxi"'
+check "version check: notices reach the person (systemMessage)" 'echo "$raw" | grep -q systemMessage'
 out=$(ss)
-check "session_start: an install older than the marketplace says so, with the update command" 'echo "$out" | grep -q "enforcer-graph@instruxi 0.15.0 is installed; the marketplace has 9.1.0" && echo "$out" | grep -q "claude plugin update enforcer-graph@instruxi"'
-check "session_start: enforcer-graph without enforcer is told exactly what to install" 'echo "$out" | grep -q "claude plugin install enforcer@instruxi"'
-check "session_start: notices reach the person (systemMessage)" 'echo "$out" | python3 -c "import json,sys; sys.exit(0 if \"9.1.0\" in json.load(sys.stdin)[\"systemMessage\"] else 1)"'
-out=$(ss)
-check "session_start: each notice is said once" '[ -z "$out" ]'
+check "version check: each notice is said once" '[ -z "$out" ]'
 printf '{"version":2,"plugins":{"enforcer-graph@instruxi":[{"version":"9.1.0","auto":true}],"enforcer@instruxi":[{"version":"0.5.0"}]}}' > "$CLAUDE_CONFIG_DIR/plugins/installed_plugins.json"
 rm -f "$CLAUDE_PLUGIN_DATA/notices.json"; out=$(ss)
-check "session_start: up to date and installed together, nothing to say" '[ -z "$out" ]'
-rm -rf "$CLAUDE_CONFIG_DIR/plugins"
+check "version check: aligned (no credential), nothing to say" '[ -z "$out" ]'
+python3 -c 'import json;print(json.dumps({"version":"0.9.14","tools":json.load(open("hooks/known_tools.json"))+["workspace_list","workspace_switch","zeta"]}))' > "$STUB_HEALTH_FILE"
+rm -f "$CLAUDE_PLUGIN_DATA/notices.json"; out=$(ss | python3 -c "import json,sys; print(json.load(sys.stdin)['systemMessage'])")
+check "version check: MCP tools the plugin does not know are one line" '[ "$(echo "$out" | grep -c "^MCP ")" = 1 ] && echo "$out" | grep -q "MCP 0.9.14 serves tools this plugin (.*) does not know: workspace_\*, zeta"'
+python3 -c 'import json;print(json.dumps({"version":"0.9.14","tools":json.load(open("hooks/known_tools.json"))}))' > "$STUB_HEALTH_FILE"
+JWT=$(python3 -c 'import base64,json;e=lambda d:base64.urlsafe_b64encode(json.dumps(d).encode()).decode().rstrip("=");print(e({"alg":"none"})+"."+e({"tenant":"Acme","tenant_id":"t-1","role":"admin"})+".x")')
+printf '{"enforcer":{"oauth":{"access_token":"%s","expires_at":"2099-01-01T00:00:00Z"}}}' "$JWT" > "$ENFORCER_HOME/credentials.json"
+rm -f "$CLAUDE_PLUGIN_DATA/notices.json"; out=$(ss)
+check "version check: prints the credential's workspace" '[ "$out" = "enforcer workspace: Acme (t-1) · role admin" ]'
+rm -rf "$CLAUDE_CONFIG_DIR/plugins" "$ENFORCER_HOME"
 
 
 # --- evidence merge and run scoping (0.19.0)
