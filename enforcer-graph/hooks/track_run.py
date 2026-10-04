@@ -21,6 +21,7 @@ def main():
                 lib.clear_evidence(sid)   # a new claim starts a clean capture: nothing before it is this run's
                 lib.save_run(sid, {"graph_id": out.get("graph_id"), "node_id": node["node_id"], "run_id": run["run_id"],
                                    "key": node.get("key"), "title": node.get("title"), "lease_expires_at": run.get("lease_expires_at"),
+                                   "acceptance_evidence": [h for h in (out.get("acceptance_evidence") or (out.get("criteria_hints")) or []) if isinstance(h, dict)],
                                    "claimed_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"})
     elif name.endswith("graph_report"):
         # The run is over whether the server accepted the report or refused it as

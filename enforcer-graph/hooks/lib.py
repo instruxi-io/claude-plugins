@@ -715,3 +715,27 @@ def last_assistant_text(transcript_path, limit=1500):
     except Exception:
         pass
     return last[:limit]
+
+
+def evidence_gaps(hints, evidence):
+    """Which of the claim card's per-criterion evidence hints the evidence misses.
+    Returns [(n, criterion, fix)], n being the 1-based row. Deliberately coarse
+    (kind-level): the hint kinds are check | pr | file | prose. No hints -> []."""
+    recs = [e for e in (evidence or []) if isinstance(e, dict)]
+    cmds = [e for e in recs if e.get("kind") == "command"]
+    def text(e):
+        return " ".join(str(e.get(k) or "") for k in ("cmd", "output", "url", "label", "excerpt", "path")).lower()
+    has_pr = any(("land-pr" in text(e) and "merge" in text(e)) or ("pull request merged" in text(e)) or "merged=" in text(e) and "merged=no" not in text(e) for e in recs)
+    has_file = any(e.get("kind") == "file" or ((e.get("cmd") or "").lstrip().startswith(("cat ", "sed -n", "head ", "tail "))) for e in recs)
+    gaps = []
+    for i, h in enumerate(hints or [], 1):
+        if not isinstance(h, dict):
+            continue
+        kind, crit = h.get("kind"), str(h.get("criterion") or "")[:80]
+        if kind == "pr" and not has_pr:
+            gaps.append((i, crit, "wants land-pr.sh's merged output; attach the command that ran land-pr.sh"))
+        elif kind == "file" and not has_file:
+            gaps.append((i, crit, "wants the file body; attach `cat <file>` (or a Read/Edit of it), not a listing or diff stat"))
+        elif kind in ("check", "prose") and not cmds:
+            gaps.append((i, crit, "wants a command whose verbatim output shows it; run the deciding command and attach it"))
+    return gaps
