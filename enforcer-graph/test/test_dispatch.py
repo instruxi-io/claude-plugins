@@ -614,6 +614,21 @@ class SalvageDenied(unittest.TestCase):
         wrapped = json.dumps({"state": "claimed", "graph_id": "g", "node": {"key": "k", "skills": [{"slug": "deliver-via-github-pr"}, "other"]}})
         self.assertEqual(gd.skills_of(wrapped), ["deliver-via-github-pr", "other"])
 
+    def test_skills_of_reads_attached_skill_rows(self):
+        # The real card body (POST /frontier/claim, enforcer-graph 0.27): each
+        # entry is a skills.AttachedSkill row and the slug is nested under
+        # "skill". Copied from GET /graphs/{id}/nodes/{id}/skills on plan
+        # b50d452b, 2026-10-04 — the shape that made skills_of return [] and
+        # every salvage skip although the skill was attached.
+        card = json.dumps({"node_id": "e5395ade-303d-4be6-a8c8-e1de27c01e72", "key": "portal-vendor-bot", "skills": [
+            {"node_id": "e5395ade-303d-4be6-a8c8-e1de27c01e72", "position": 0, "config": {},
+             "created_at": "2026-10-04T21:12:01.094906Z",
+             "skill": {"id": "674fd6aa-5c4e-424c-859a-31c2e8660cf2", "tenant_id": "7d548352-3941-44fb-a217-09c55d86b379",
+                       "slug": "deliver-via-github-pr", "version": 1, "name": "Deliver via GitHub PR"}}]})
+        self.assertEqual(gd.skills_of(card), ["deliver-via-github-pr"])
+        wrapped = json.dumps({"state": "claimed", "node": json.loads(card)})
+        self.assertEqual(gd.skills_of(wrapped), ["deliver-via-github-pr"])
+
     def assertSkipped(self, why, ok, text):
         self.assertFalse(ok)
         self.assertIn("SALVAGE-SKIPPED a: " + why, text)

@@ -276,6 +276,8 @@ The dispatcher reads the governor's decision records (from the governor log and 
 
 When several codes are present the order is destructive, then `graph_run_not_open`, then the push. Only when a worker left no record (an older plugin or governor) does the dispatcher fall back to the old text match on the denial message.
 
+Salvage runs only for a node whose claim card carries the `deliver-via-github-pr` skill. The card's `skills` entries are the api's attached-skill rows, `{"position", "config", "skill": {"slug", ...}}` — the slug is nested under `skill` (0.27.1; before it the dispatcher read only a flat `slug`/`key`/`name`, saw no skill on any node, and skipped every salvage).
+
 ## The plugin must be ENABLED, and the allowlist must name the tools as they load
 
 Both failed together on the agents-platform build, so no hook ran at all:
