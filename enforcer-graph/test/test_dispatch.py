@@ -145,7 +145,7 @@ class FakeAPI:
 
 
 def args(**kw):
-    a = gd.parse_args(["--graph", "g1", "--repo-root", "/nonexistent", "--plugin-dir", "/p"])
+    a = gd.parse_args(["--graph", "g1", "--repo-root", "/nonexistent", "--plugin-dir", "/p", "--no-lease"])
     for k, v in kw.items():
         setattr(a, k, v)
     return a
@@ -849,7 +849,7 @@ class TriageAllFailures(unittest.TestCase):
         api = TriageAPI(nodes or [node("o", type="ops", status="failed", repo="r"),
                                   node("p", type="ops", status="active")])
         a = args(workers=2, state_dir=self.state, stop_file=os.path.join(self.state, "STOP"),
-                 interval=0.05, claude=self.claude, **kw)
+                 interval=0.05, types=kw.pop('types', 'task,bug,chore,merge'), claude=self.claude, **kw)
         d = gd.Dispatcher(api, a, out)
         rc = d.run()
         launches = [json.loads(l) for l in open(self.calls)] if os.path.exists(self.calls) else []
@@ -879,12 +879,12 @@ class TriageAllFailures(unittest.TestCase):
         marked = node("m", type="ops", status="failed", triaged_at="2026-10-03T00:00:00Z", triaged_runs=[1, "failed"])
         live = node("o", type="ops", status="failed")
         api = TriageAPI([marked, live])
-        d = gd.Dispatcher(api, args(state_dir=self.state), io.StringIO())
+        d = gd.Dispatcher(api, args(state_dir=self.state, types="task"), io.StringIO())
         d.workers["o"] = gd.Worker(live, "/dev/null")  # a live run of ours
         self.assertEqual(d.candidates(api.nodes("g")), [])
         # its runs changed since the mark: triaged again
         changed = node("m", type="ops", status="failed", triaged_at="2026-10-03T00:00:00Z", triaged_runs=[0, ""])
-        d = gd.Dispatcher(TriageAPI([changed]), args(state_dir=self.state), io.StringIO())
+        d = gd.Dispatcher(TriageAPI([changed]), args(state_dir=self.state, types="task"), io.StringIO())
         self.assertEqual([c["key"] for c in d.candidates([changed])], ["m"])
         # and a node triaged this session is skipped until its runs change
         d.triaged_sig["m"] = (1, "failed")
@@ -927,6 +927,124 @@ class TriageAllFailures(unittest.TestCase):
         rc, d, api, text, launches = self.run_dispatch()
         self.assertEqual([w[1]["to_node_id"] for w in api.writes if w[0] == "edge"], ["id-p"])
         self.assertEqual([w for w in api.writes if w[0] == "node" and w[1]["key"] == "p"], [])
+
+
+class LeaseAPI(TriageAPI):
+    pass
+
+
+class DispatcherService(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+
+    def disp(self, api, **kw):
+        a = args(state_dir=self.tmp, stop_file=os.path.join(self.tmp, "STOP"), no_lease=False, **kw)
+        out = io.StringIO()
+        return gd.Dispatcher(api, a, out), out
+
+    def test_second_dispatcher_refuses_unless_takeover(self):
+        api = LeaseAPI([node("a", status="done")])
+        d1, _ = self.disp(api)
+        self.assertTrue(d1.acquire_lease())
+        created = [w for w in api.writes if w[0] == "node"][0][1]
+        self.assertEqual(created["key"], "dispatcher-lease")  # visible on the graph
+        held = created["data"]["dispatcher"]
+        self.assertEqual(held["pid"], os.getpid())
+        other = dict(held, pid=os.getpid() + 1)
+        lease = node("dispatcher-lease", type="ops", status="done", dispatcher=other)
+        api2 = LeaseAPI([lease])
+        d2, out = self.disp(api2)
+        self.assertEqual(d2.run(), 3)
+        self.assertIn("another graph-dispatch holds graph g1", out.getvalue())
+        self.assertIn("--takeover", out.getvalue())
+        d3, out = self.disp(api2, takeover=True)
+        self.assertTrue(d3.acquire_lease())
+        self.assertIn("TAKEOVER", out.getvalue())
+        patched = [w for w in api2.writes if w[0] == "patch"][0]
+        self.assertEqual(patched[2]["data"]["dispatcher"]["pid"], os.getpid())
+
+    def test_expired_lease_is_taken_and_lease_node_is_never_work(self):
+        old = {"owner": "x", "host": "h", "pid": os.getpid() + 1, "until": "2020-01-01T00:00:00+00:00"}
+        lease = node("dispatcher-lease", type="ops", status="failed", dispatcher=old)
+        d, out = self.disp(LeaseAPI([lease]))
+        self.assertTrue(d.acquire_lease())
+        self.assertEqual(d.candidates([lease]), [])
+
+    def test_defaults_include_scout_milestone_ops_not_gate(self):
+        ts = set(gd.DEFAULT_TYPES.split(","))
+        self.assertTrue({"scout", "milestone", "ops", "task", "bug", "chore", "merge"} <= ts)
+        self.assertNotIn("gate", ts)
+
+    def test_api_retries_transient_errors_then_succeeds(self):
+        import urllib.error
+        import urllib.request
+        api = gd.API("http://x", None, "k")
+        api.sleep = lambda s: None
+        calls = []
+
+        class R:
+            def __enter__(s): return s
+            def __exit__(s, *a): return False
+            def read(s): return b'{"data": [1]}'
+
+        def fake(req, timeout=0):
+            calls.append(1)
+            if len(calls) < 3:
+                raise urllib.error.URLError("[Errno -3] Temporary failure in name resolution")
+            return R()
+        orig = urllib.request.urlopen
+        urllib.request.urlopen = fake
+        try:
+            self.assertEqual(api.call("GET", "/x"), {"data": [1]})
+            self.assertEqual(len(calls), 3)
+            calls.clear()
+            urllib.request.urlopen = lambda req, timeout=0: (_ for _ in ()).throw(urllib.error.URLError("down"))
+            with self.assertRaises(gd.APIError) as c:
+                api.call("GET", "/x")
+            self.assertEqual(c.exception.status, "network")
+        finally:
+            urllib.request.urlopen = orig
+
+    def test_network_error_never_crashes_a_pass(self):
+        class Flaky(LeaseAPI):
+            n = 0
+            def nodes(s, g):
+                s.n += 1
+                if s.n == 1:
+                    raise gd.APIError("network", "URLError: dns")
+                return super().nodes(g)
+        d, out = self.disp(Flaky([node("a", status="done")]), interval=0.01)
+        d.args.no_lease = True
+        self.assertEqual(d.run(), 0)
+        self.assertIn("API error (pass skipped, retrying)", out.getvalue())
+
+    def test_sh_retries_transient_gh_failure(self):
+        d, _ = self.disp(LeaseAPI([]))
+        d.retry_sleep = 0
+        flag = os.path.join(self.tmp, "f")
+        cmd = ["sh", "-c", "if [ -e %s ]; then echo ok; else touch %s; echo 'Temporary failure in name resolution'; exit 1; fi" % (flag, flag)]
+        self.assertEqual(d._sh(cmd, self.tmp), (0, "ok"))
+
+    def test_triage_waits_grace_and_rechecks_status(self):
+        recent = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(seconds=30)).isoformat()
+        old = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(minutes=30)).isoformat()
+        f = node("o", type="ops", status="failed")
+
+        class G(LeaseAPI):
+            end = recent
+            fresh = "failed"
+            def runs(s, g, n): return [{"status": "failed", "ended_at": s.end}]
+            def node(s, g, n): return dict(f, status=s.fresh)
+        api = G([f])
+        d, out = self.disp(api, triage_grace=10, types="task")
+        self.assertEqual(d.candidates([f]), [])
+        self.assertIn("waits", out.getvalue())
+        api.end = old
+        self.assertEqual([c["key"] for c in d.candidates([f])], ["o"])
+        api.fresh = "done"  # the coordinator reported it done meanwhile
+        d.launch_triage(dict(f, _triage=True, _triage_any=True))
+        self.assertIn("no longer failed", out.getvalue())
+        self.assertEqual([w for w in api.writes if w[0] == "node"], [])
 
 
 if __name__ == "__main__":

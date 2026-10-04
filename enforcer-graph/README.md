@@ -183,8 +183,17 @@ GRAPH_AUTH_HELPER='node ~/.claude/plugins/cache/instruxi/enforcer/0.4.0/bin/enfo
 A python loop (stdlib only) that reads the frontier every `--interval` seconds
 and, for each ready node, up to `--workers` at once:
 
-- **Agent nodes** (`--types`, default `task,bug,chore,merge`; `release`, `gate`
-  and `milestone` stay with a person): a git worktree of `data.repo` at
+- **One dispatcher per graph.** The running dispatcher holds a lease,
+  `data.dispatcher {owner, host, pid, until}` on the graph's `dispatcher-lease`
+  node, renewed each pass. A second `graph-dispatch` on the same graph exits (3)
+  with a message unless `--takeover`. Graph and GitHub calls retry transient
+  network errors (DNS blips, resets, 429/502/503/504) with backoff, 4 tries, and
+  a pass that still fails is skipped, never fatal. A failed node is triaged only
+  once its last run ended `--triage-grace` minutes ago (default 10) and it is
+  still failed when the triage launches. Worker pids are recorded in
+  `<state-dir>/pids.json`.
+- **Agent nodes** (`--types`, default `task,bug,chore,merge,scout,milestone,ops`; `release`
+  and `gate` stay with a person): a git worktree of `data.repo` at
   `<repo-root>/<repo>-<key>` on `graph/<key>` (off `data.base` or origin's
   default branch; reused on a re-claim; a scratch dir when the node has no
   repo), then `claude -p` with `--agent enforcer-graph:graph-worker`, `--model`,
