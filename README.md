@@ -72,6 +72,14 @@ now shows `enforcer` as `failed to load: Dependency "enforcer-graph@instruxi" is
 disabled`: run `claude plugin enable enforcer-graph@instruxi`. An older install
 says so once at session start, with the update command.
 
+**Switch workspace vs sign in again.** If you already belong to several
+workspaces, move between them with `/enforcer:workspace list` and
+`/enforcer:workspace switch <name|code|tenant_id>` (it keeps your sign-in and
+swaps the token; `/enforcer:workspace current` shows tenant, role, account and
+expiry). Only if you do not belong to the workspace yet, sign in with its code
+(`/enforcer:login ACME-1234-ABCD`) or accept an invite. Login prints the
+workspace it landed in.
+
 If your admin gave you a workspace code, add it (`/enforcer:login ACME-1234-ABCD`)
 and the sign-in page goes straight to your workspace's email step. A team can
 set `ENFORCER_TENANT_CODE` in its shared settings to do the same for everyone.
