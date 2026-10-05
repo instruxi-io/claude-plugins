@@ -101,8 +101,13 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 PLUGIN_DIR = os.path.dirname(HERE)
 LAND_PR = os.path.join(HERE, "land-pr.sh")
 ATTRIBUTION = "\U0001F916 Generated with [Claude Code](https://claude.com/claude-code)"
-UA = "graph-dispatch/0.18 (enforcer-graph plugin)"
-AGENT = "enforcer-graph:graph-worker"
+UA = "graph-dispatch/1.0 (enforcer plugin)"
+# The worker agent ships in the `enforcer` plugin since 1.0.0 (graph-fold-in);
+# `enforcer-graph:graph-worker` was the pre-1.0 name and `claude -p` refuses an
+# unknown --agent at startup ("--agent 'enforcer-graph:graph-worker' not found"),
+# which failed every launch at 0 turns on 2026-10-05. GRAPH_DISPATCH_AGENT
+# overrides for a checkout that still carries the old plugin.
+AGENT = os.environ.get("GRAPH_DISPATCH_AGENT") or "enforcer:graph-worker"
 GRAPH_TOOLS = ["graph_next_work", "graph_heartbeat", "graph_report", "graph_remember", "graph_plan_status"]
 PREFIXES = ["mcp__plugin_enforcer_enforcer__", "mcp__enforcer__", "mcp__enforcer-graph__"]
 BASE_TOOLS = ["Bash", "Read", "Edit", "Write", "Grep", "Glob", "ToolSearch"]
