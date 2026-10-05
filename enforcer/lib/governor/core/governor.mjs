@@ -17,6 +17,7 @@ import { createHash } from 'node:crypto';
 import { gate } from './gate.mjs';
 import { matchRule, DEFAULT_RULES, resolveRules } from './capability.mjs';
 import { consult } from './central.mjs';
+import { evaluate as workerEvaluate } from './worker.mjs';
 import { evaluate as economics } from './economics.mjs';
 import { DEFAULTS, priceOf, tokensForDollars, dollarsForTokens, getAgent, setModel, clientFor, sha256 } from './policy.mjs';
 import { withLock, loadState, saveState, loadConfig, writeReceipt } from './store.mjs';
@@ -95,6 +96,10 @@ export function createGovernor({ harness = 'unknown', adapterVersion = '', cost 
     const rules = resolveRules(cfg);
     const matched = matchRule(rules, event);
     const central = matched ? await consult(matched, cfg) : null;
+    // A worker rule (graph.push, graph.pr_create, graph.land ...) is a rule too:
+    // the tenant is asked about it, or it could never be vetoed.
+    const wv = cfg.rulesOn !== false ? workerEvaluate(event) : null;
+    const workerCentral = wv?.ruleId && wv.ruleId !== matched?.id ? await consult({ id: wv.ruleId, name: wv.rule }, cfg) : central;
 
     const spend = { model: cfg.model, tokens: 0, budget: 0 };
     // Who the agent acted for, and for which project, from config and the
@@ -120,6 +125,7 @@ export function createGovernor({ harness = 'unknown', adapterVersion = '', cost 
         withState: (fn) => ({ ok: true, value: fn(state, reading) }),
         economics,
         central,
+        workerCentral,
       });
 
       spend.model = a.model; spend.tokens = a.tokens; spend.budget = a.budget;
@@ -152,15 +158,18 @@ export function createGovernor({ harness = 'unknown', adapterVersion = '', cost 
    * check: the rate-limited call is cheap, the retry after it is what costs.
    */
   function after(event, { failed = false } = {}) {
-    if (failed) {
-      withLock(() => {
-        const state = loadState();
-        const a = getAgent(state, event.agent, { ...DEFAULTS, ...loadConfig() });
+    withLock(() => {
+      const state = loadState();
+      const a = getAgent(state, event.agent, { ...DEFAULTS, ...loadConfig() });
+      // The tool ran, so a pending ask was answered yes.
+      const answered = !!a.pendingAsk;
+      if (answered) { a.pendingAsk = undefined; if (a.status === 'paused') a.status = 'active'; }
+      if (failed) {
         (a.fails ||= []).push(Date.now());
         while (a.fails.length > 40) a.fails.shift();
-        saveState(state);
-      });
-    }
+      }
+      if (failed || answered) saveState(state);
+    });
     // Ship what has been decided, without waiting (at most every 30s).
     if (loadConfig().shipOn !== false) kick(30_000, shipper);
   }

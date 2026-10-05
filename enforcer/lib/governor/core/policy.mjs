@@ -343,7 +343,7 @@ export const DEFAULTS = {
 
 // Period keys double as the reset mechanism: when the key changes, the total
 // starts again. No scheduler, no cron, correct across restarts and time zones.
-const dayKey   = t => new Date(t).toISOString().slice(0, 10);
+export const dayKey   = t => new Date(t).toISOString().slice(0, 10);
 const monthKey = t => new Date(t).toISOString().slice(0, 7);
 const weekKey  = t => {           // ISO-ish: week identified by its Monday
   const d = new Date(t);
@@ -692,6 +692,7 @@ export function release(state, agentId, extra = 1.5) {
   a.escalated = false;
   a.loopStreak = 0;
   a.burnFlagged = a.retryFlagged = state.fanoutFlagged = false;
+  a.pendingAsk = undefined;
   return record(state, a, 'allow', 'you resumed it and raised its limit', a.tokens, 'human');
 }
 

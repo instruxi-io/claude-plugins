@@ -80,7 +80,9 @@ export function gate(ev, cfg = {}, deps = {}) {
   // can ALLOW, and a headless force-push must be refused rather than rewritten
   // into a prompt nobody will answer. A tenant can still refuse what they allow.
   if (cfg.rulesOn !== false) {
-    const w = compose(worker(ev), deps.central);
+    // The tenant is asked about the WORKER rule id (deps.workerCentral), not only
+    // the capability rule that matched: otherwise a tenant could never veto a push.
+    const w = compose(worker(ev), deps.workerCentral !== undefined ? deps.workerCentral : deps.central);
     // A worker allow does not skip the capability rules, and a worker shape
     // refusal yields to a capability code that names the harm (a credentials
     // file in the command). Nobody can answer an ask headless, so it is a deny.
@@ -88,6 +90,15 @@ export function gate(ev, cfg = {}, deps = {}) {
       const c = compose(capability(rules, ev), deps.central);
       if (c && c.action !== 'allow') {
         return ev.worker?.headless && c.action === 'ask' ? new Verdict({ ...c, action: 'deny' }) : c;
+      }
+    }
+    // A worker allow must also clear the spend latches: a paused, grounded or
+    // human-stopped agent cannot push, open a pull request or land.
+    if (w && w.action === 'allow' && typeof deps.withState === 'function') {
+      const held = deps.withState((state, reading) => deps.economics(state, { ...ev, ...(reading || {}) }, cfg));
+      const e = held.ok ? held.value : null;
+      if (e && e.action !== 'allow') {
+        return ev.worker?.headless && e.action === 'ask' ? new Verdict({ ...e, action: 'deny' }) : e;
       }
     }
     if (w) return w;
