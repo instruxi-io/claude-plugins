@@ -15,7 +15,7 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SKILL = os.path.join(ROOT, "skills", "graph", "SKILL.md")
-FILES_CLI = os.path.join(os.path.dirname(ROOT), "enforcer-files", "bin", "files.mjs")
+FILES_CLI = os.path.join(ROOT, "bin", "files.mjs")
 
 # enforcer-v3-mcp src/graph.ts, graph-replay.ts, graph-validation.ts,
 # graph-sharing.ts. Params are listed for the tools the loop documents; None
@@ -50,7 +50,7 @@ RULES = [
     "Never call `graph_report` for a worker",
 ]
 
-UPLOAD = 'files.mjs | tail -1)" upload <log> --dir graph-evidence'
+UPLOAD = 'files.mjs" upload <log> --dir graph-evidence'
 
 
 def frontmatter(s):
