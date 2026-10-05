@@ -348,6 +348,9 @@ class API:
                 self.sleep(self.backoff * (2 ** i))
         raise last
 
+    def graph(self, g):
+        return self.call("GET", "/graphs/%s" % g).get("data") or {}
+
     def frontier(self, g):
         return self.call("GET", "/graphs/%s/frontier" % g).get("data") or []
 
@@ -412,7 +415,51 @@ def git(args, cwd):
     return subprocess.run(["git"] + args, cwd=cwd, capture_output=True, text=True)
 
 
-def worktree_for(node, repo_root, state_dir, dry=False):
+class BaseMissing(RuntimeError):
+    """The resolved start-from ref does not exist on origin."""
+
+
+def _origin_ref(b):
+    b = (b or "").strip()
+    return b if b.startswith("origin/") else "origin/" + b
+
+
+def load_repo_bases(path=None):
+    """The repo -> branch registry file; {} when absent or unreadable."""
+    path = path or os.path.join(os.environ.get("ENFORCER_CONFIG_HOME") or os.path.expanduser("~/.config/enforcer"),
+                                "dispatch", "repo-bases.json")
+    try:
+        with open(path) as f:
+            d = json.load(f)
+        return {str(k): str(v) for k, v in d.items() if isinstance(v, str) and v.strip()} if isinstance(d, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def resolve_base(node, graph_bases=None, registry=None, origin_head=None):
+    """(ref, source): node data.base, then the graph's node_defaults.bases[repo],
+    then the repo registry (repo-bases.json), then origin/HEAD. Never guessed:
+    the last step is only the repo's own declared default."""
+    data = node.get("data") or {}
+    repo = data.get("repo")
+    if (data.get("base") or "").strip():
+        return _origin_ref(data["base"]), "data.base"
+    for src, table in (("graph bases", graph_bases), ("repo-bases.json", registry)):
+        b = (table or {}).get(repo) if repo else None
+        if isinstance(b, str) and b.strip():
+            return _origin_ref(b), src
+    return origin_head or "origin/main", "origin/HEAD"
+
+
+def check_base(ref, source, cwd):
+    """Refuse a declared base that is not on origin (origin/HEAD is not declared)."""
+    if source == "origin/HEAD":
+        return
+    if git(["rev-parse", "--verify", "-q", ref], cwd).returncode != 0:
+        raise BaseMissing("base %s (from %s) does not exist on origin" % (ref, source))
+
+
+def worktree_for(node, repo_root, state_dir, dry=False, graph_bases=None, registry=None):
     """(path, branch, note). A node with a data.repo checkout under repo_root
     gets <repo_root>/<repo>-<key> on graph/<key>, off data.base or origin's
     default branch; a re-claimed node reuses its worktree. A node with no repo
@@ -432,15 +479,13 @@ def worktree_for(node, repo_root, state_dir, dry=False):
     path = os.path.join(repo_root, "%s-%s" % (repo, key))
     if os.path.isdir(path):
         return path, branch, "reused"
-    base = data.get("base")
-    if not base:
-        h = git(["symbolic-ref", "--short", "refs/remotes/origin/HEAD"], src).stdout.strip()
-        base = h or "origin/main"
-    elif not base.startswith("origin/"):
-        base = "origin/" + base
+    h = git(["symbolic-ref", "--short", "refs/remotes/origin/HEAD"], src).stdout.strip()
+    base, source = resolve_base(node, graph_bases, registry, h)
+    if not dry:
+        git(["fetch", "-q", "origin"], src)
+    check_base(base, source, src)
     if dry:
         return path, branch, "would add off " + base
-    git(["fetch", "-q", "origin"], src)
     r = git(["worktree", "add", path, "-b", branch, base], src)
     if r.returncode != 0:  # the branch exists from an earlier attempt
         r = git(["worktree", "add", path, branch], src)
@@ -710,6 +755,32 @@ class Dispatcher:
             self.launch(n)
         return nodes, chosen
 
+    # --- start-from ref
+    def graph_bases(self):
+        if not hasattr(self, "_gbases"):
+            self._gbases = {}
+            try:
+                g = getattr(self.api, "graph", None)
+                nd = ((g(self.g) if g else None) or {}).get("node_defaults") or {}
+                b = nd.get("bases")
+                if isinstance(b, dict):
+                    self._gbases = {str(k): str(v) for k, v in b.items()}
+            except Exception:
+                pass
+        return self._gbases
+
+    def registry(self):
+        if not hasattr(self, "_registry"):
+            self._registry = load_repo_bases(getattr(self.args, "repo_bases", None))
+        return self._registry
+
+    def base_of(self, n, cwd=None):
+        """(ref, source) for node n, as the worktree, the ahead-count and the PR use."""
+        h = None
+        if cwd and os.path.isdir(cwd):
+            h = self._sh(["git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD"], cwd)[1] or None
+        return resolve_base(n, self.graph_bases(), self.registry(), h)
+
     # --- warm sessions
     def warm_counts(self):
         return {k: len(v) for k, v in self.warm.items() if v}
@@ -753,7 +824,14 @@ class Dispatcher:
             return
         model = model_for(n, a.model)
         repo = repo_of(n)
-        path, branch, note = worktree_for(n, a.repo_root, self.state, dry=a.dry_run)
+        try:
+            path, branch, note = worktree_for(n, a.repo_root, self.state, dry=a.dry_run,
+                                              graph_bases=self.graph_bases(), registry=self.registry())
+        except BaseMissing as e:
+            self.say("refuse %s: %s; set data.base or fix the registry" % (n["key"], e))
+            return
+        if branch:
+            note += " base=%s" % self.base_of(n, path)[0]
         failures = self.failures.get(n["key"]) or []
         sess = None
         if failures and not cold and not a.no_warm and not a.dry_run:
@@ -1176,19 +1254,11 @@ class Dispatcher:
         rc, st = self._sh(["git", "status", "--porcelain"], path)
         if rc or st:
             return skip("worktree is dirty or unreadable")
-        base = None
-        dbase = ((w.node.get("data") or {}).get("base") or "").strip()
-        if dbase:  # the node's own base, as the worktree step honours it
-            dbase = dbase if dbase.startswith("origin/") else "origin/" + dbase
-            if self._sh(["git", "rev-parse", "--verify", "-q", dbase], path)[0] == 0:
-                base = dbase
-            else:
-                return skip("data.base %s not found on origin" % dbase)
-        for ref in (() if base else ("origin/HEAD", "origin/main", "origin/master")):
-            if self._sh(["git", "rev-parse", "--verify", "-q", ref], path)[0] == 0:
-                base = ref
-                break
-        if not base:
+        base, bsrc = self.base_of(w.node, path)
+        if bsrc != "origin/HEAD":
+            if self._sh(["git", "rev-parse", "--verify", "-q", base], path)[0] != 0:
+                return skip("base %s (from %s) not found on origin" % (base, bsrc))
+        elif self._sh(["git", "rev-parse", "--verify", "-q", base], path)[0] != 0:
             return skip("no base branch found")
         rc, n = self._sh(["git", "rev-list", "--count", base + "..HEAD"], path)
         if rc or not n.isdigit() or int(n) < 1:
@@ -1833,6 +1903,7 @@ def parse_args(argv):
     p.add_argument("--workers", type=int, default=3)
     p.add_argument("--repo-root", default=os.path.expanduser("~/apps"),
                    help="directory holding each data.repo checkout (default ~/apps)")
+    p.add_argument("--repo-bases", help="repo -> base branch registry (default ~/.config/enforcer/dispatch/repo-bases.json)")
     p.add_argument("--dry-run", action="store_true", help="print what would launch; launch nothing")
     p.add_argument("--model", help="cap for nodes without an explicit model or user tier (e.g. sonnet)")
     p.add_argument("--max-turns", type=int, default=150, help="stop a worker past this many turns")

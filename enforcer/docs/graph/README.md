@@ -278,7 +278,18 @@ When several codes are present the order is destructive, then `graph_run_not_ope
 
 Salvage runs only for a node whose claim card carries the `deliver-via-github-pr` skill. The card's `skills` entries are the api's attached-skill rows, `{"position", "config", "skill": {"slug", ...}}` — the slug is nested under `skill` (0.27.1; before it the dispatcher read only a flat `slug`/`key`/`name`, saw no skill on any node, and skipped every salvage).
 
-Salvage opens the PR against the node's `data.base` (as the worktree step does), counting commits ahead of `origin/<data.base>` and passing `gh pr create --base <data.base>`; with no `data.base` it uses origin's default branch.
+Salvage opens the PR against the node's resolved base (see below, as the worktree step does), counting commits ahead of `origin/<base>` and passing the base to the PR create step.
+
+### The start-from ref per repo (`bases`, `repo-bases.json`)
+
+A repo may not work off origin's default branch (`enforcer-v3-portal` works off `staging`). The dispatcher resolves a node's base in this order and never guesses past it:
+
+1. the node's `data.base`;
+2. the graph's `node_defaults.bases`, e.g. `{"bases": {"enforcer-v3-portal": "staging"}}` (keyed by `data.repo`);
+3. the registry `~/.config/enforcer/dispatch/repo-bases.json` (or `$ENFORCER_CONFIG_HOME/dispatch/repo-bases.json`, or `--repo-bases FILE`), e.g. `{"enforcer-v3-portal": "staging"}`;
+4. origin's default branch (`origin/HEAD`).
+
+The worktree, the commits-ahead count and the PR base all use the resolved base, and the launch line logs `base=<ref>`. A declared base (steps 1 to 3) that does not exist on origin is refused with `refuse <key>: base origin/<b> (from <source>) does not exist on origin`; the node is not launched.
 
 ## The plugin must be ENABLED, and the allowlist must name the tools as they load
 
