@@ -3,7 +3,7 @@
 // machine that is not signed in.
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { mkdtempSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync, mkdirSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -11,7 +11,8 @@ const home = mkdtempSync(join(tmpdir(), 'files-plugin-'));
 process.env.HOME = home; process.env.ENFORCER_HOME = join(home, '.enforcer'); process.env.GOVERNOR_HOME = join(home, '.g');
 delete process.env.ENFORCER_API_KEY;
 
-const { upload, download, provider, parseArgs, fileRef, USER_AGENT } = await import('../bin/files.mjs');
+const { upload, download, provider, parseArgs, fileRef, serverName, USER_AGENT } = await import('../bin/files.mjs');
+const { splitArgs, commandArgs } = await import('../src/args.mjs');
 
 let pass = 0;
 const ok = async (label, fn) => { await fn(); pass++; console.log('  ok  ' + label); };
@@ -52,7 +53,11 @@ const srv = createServer(async (req, res) => {
     state.lastMultipart = body.toString('latin1');
     return json(200, { success: true, data: { file_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee' } });
   }
-  if (u.pathname === `${P}/file/gcs/download`) { res.writeHead(200); return res.end(Buffer.from('gcs bytes')); }
+  if (u.pathname === `${P}/file/gcs/download`) {
+    const h = state.disposition ? { 'Content-Disposition': state.disposition } : {};
+    if (state.truncate) { res.writeHead(200, { ...h, 'Content-Length': '100' }); res.write('short'); return setTimeout(() => res.destroy(), 20); }
+    res.writeHead(200, h); return res.end(Buffer.from('gcs bytes'));
+  }
   json(404, { success: false, error: 'not_found' });
 });
 await new Promise((r) => srv.listen(0, '127.0.0.1', r));
@@ -116,6 +121,38 @@ await ok('proxy (GCS): download streams from enforcer-files', async () => {
   const dest = join(home, 'g.txt');
   await download('aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', { out: dest }, { base });
   assert.equal(readFileSync(dest, 'utf8'), 'gcs bytes');
+});
+
+await ok('download refuses to overwrite without --force', async () => {
+  Object.assign(state, { mode: 'proxy', provider: 'gcs', refuse: false });
+  const dest = join(home, 'keep.txt');
+  writeFileSync(dest, 'precious');
+  await assert.rejects(download('aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', { out: dest }, { base }), /already exists.*--force/s);
+  assert.equal(readFileSync(dest, 'utf8'), 'precious');
+  await download('aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', { out: dest, force: true }, { base });
+  assert.equal(readFileSync(dest, 'utf8'), 'gcs bytes');
+});
+
+await ok('failed download leaves no partial file', async () => {
+  state.truncate = true;
+  const dest = join(home, 'partial.txt');
+  await assert.rejects(download('aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', { out: dest }, { base }));
+  state.truncate = false;
+  assert.deepEqual(readdirSync(home).filter((f) => f.startsWith('partial')), []);
+});
+
+await ok('a UUID download takes the server filename', async () => {
+  state.disposition = 'attachment; filename="../evil/Q3 report.pdf"';
+  const cwd = process.cwd(); process.chdir(home);
+  try { const r = await download('aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', {}, { base }); assert.equal(r.path, join(home, 'Q3 report.pdf')); }
+  finally { process.chdir(cwd); state.disposition = undefined; }
+  assert.equal(serverName("attachment; filename*=UTF-8''a%20b.txt"), 'a b.txt');
+});
+
+await ok('arguments come from ENFORCER_ARGS, quoted, never run by a shell', () => {
+  assert.deepEqual(splitArgs(`upload "my dir/a b.txt" --dir 'x y' $(touch /tmp/pwned) ; rm`), ['upload', 'my dir/a b.txt', '--dir', 'x y', '$(touch', '/tmp/pwned)', ';', 'rm']);
+  assert.deepEqual(commandArgs(['x'], { ENFORCER_ARGS: 'a "b c"' }), ['a', 'b c']);
+  assert.deepEqual(commandArgs(['x'], {}), ['x']);
 });
 
 await ok('a scope refusal says what is missing and how to fix it, not "HTTP 403"', async () => {

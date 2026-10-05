@@ -5,7 +5,7 @@
 //   login.mjs --for work|plan|admin  scope preset (default: the last one used)
 //   login.mjs --scope "a b" browser sign-in asking for only those scopes
 //   login.mjs scopes       list the scopes this Enforcer offers a sign-in
-//   login.mjs api-key KEY  use an existing Enforcer API key instead
+//   login.mjs api-key -|FILE  use an existing Enforcer API key, read from stdin (-) or a file; never an argument
 //   login.mjs status       who is signed in, and how
 //   login.mjs logout       forget the credential on this machine
 //
@@ -16,6 +16,8 @@
 // The refresh token is kept, so the sign-in outlives the one-hour access
 // token (credentials.mjs rotates it).
 import { isMain } from '../src/is-main.mjs';
+import { commandArgs } from '../src/args.mjs';
+import { readFileSync, existsSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { createHash, randomBytes } from 'node:crypto';
 import { spawn } from 'node:child_process';
@@ -271,8 +273,20 @@ async function main(rawArgv) {
   }
 
   if (cmd === 'api-key') {
-    const key = (arg || process.env.ENFORCER_API_KEY || '').trim();
-    if (!/^[a-z0-9]+_[A-Za-z0-9_-]{20,}$/.test(key)) { out('Usage: /enforcer:login api-key <your API key>  (or set ENFORCER_API_KEY)'); process.exitCode = 2; return; }
+    // The key is never an argument: an argument lands in the transcript and the process list.
+    const KEY = /^[a-z0-9]+_[A-Za-z0-9_-]{20,}$/;
+    if (arg && KEY.test(arg.trim())) {
+      out('Do not pass the key as an argument: it is now in this transcript. Revoke it, make a new one, and put it in a file: /enforcer:login api-key <file> (or "-" to read stdin, or set ENFORCER_API_KEY).');
+      process.exitCode = 2; return;
+    }
+    let raw = process.env.ENFORCER_API_KEY || '';
+    if (arg === '-') raw = readFileSync(0, 'utf8');
+    else if (arg) {
+      if (!existsSync(arg)) { out(`api-key: no such file: ${arg}`); process.exitCode = 2; return; }
+      raw = readFileSync(arg, 'utf8');
+    }
+    const key = raw.trim();
+    if (!KEY.test(key)) { out('Usage: /enforcer:login api-key <file holding the key> | api-key -  (key on stdin)  (or set ENFORCER_API_KEY)'); process.exitCode = 2; return; }
     // Likewise a key replaces a browser sign-in: one credential, one identity.
     const doc = readCredentials() || { enforcer: {} };
     const { oauth: _oauth, ...kept } = doc.enforcer;
@@ -315,10 +329,10 @@ async function main(rawArgv) {
     return;
   }
 
-  out('Usage: /enforcer:login [<WORKSPACE-CODE>] [--for work|plan|admin] [--scope "<scopes>"] | api-key <key> | scopes | status | logout  — no argument opens a browser');
+  out('Usage: /enforcer:login [<WORKSPACE-CODE>] [--for work|plan|admin] [--scope "<scopes>"] | api-key <file>|- | scopes | status | logout  — no argument opens a browser');
   process.exitCode = 2;
 }
 
 if (isMain(import.meta.url)) {
-  main(process.argv.slice(2)).catch((e) => { out(`Sign-in failed: ${e.message}`); process.exitCode = 1; });
+  main(commandArgs()).catch((e) => { out(`Sign-in failed: ${e.message}`); process.exitCode = 1; });
 }

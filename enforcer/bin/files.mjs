@@ -2,7 +2,7 @@
 // Move file BYTES between this machine and an Enforcer workspace.
 //
 //   files.mjs upload <path> [--name <file_name>] [--dir <directory>] [--overwrite]
-//   files.mjs download <file_id|path> [--out <path>]
+//   files.mjs download <file_id|path> [--out <path>] [--force]
 //   files.mjs provider
 //
 // Finding, reading metadata and sharing go through the enforcer MCP server's
@@ -16,8 +16,9 @@
 //                         storage, then record the upload so it is listable;
 //   proxy (GCS, Storj)    send the bytes to enforcer-files as a multipart form.
 import { isMain } from '../src/is-main.mjs';
-import { createWriteStream, readFileSync, statSync } from 'node:fs';
+import { createWriteStream, existsSync, openAsBlob, renameSync, rmSync, statSync } from 'node:fs';
 import { basename, resolve } from 'node:path';
+import { commandArgs } from '../src/args.mjs';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { authHeaders, baseUrl } from '../src/credentials.mjs';
@@ -36,6 +37,7 @@ export function parseArgs(argv) {
   for (let i = 0; i < rest.length; i++) {
     const a = rest[i];
     if (a === '--overwrite') opts.overwrite = true;
+    else if (a === '--force') opts.force = true;
     else if (a === '--name' || a === '--dir' || a === '--out') opts[a.slice(2)] = rest[++i];
     else opts._.push(a);
   }
@@ -85,7 +87,7 @@ export async function upload(path, opts = {}, { fetchImpl = fetch, base = baseUr
 
   if (mode === 'presigned') {
     const pre = await call(fetchImpl, base, `/file/${prov}/presigned-upload-url`, { query: { file_name: fileName, overwrite: opts.overwrite ? 'true' : undefined } });
-    const put = await fetchImpl(pre.data.url, { method: 'PUT', body: readFileSync(abs), headers: { 'Content-Type': 'application/octet-stream' } });
+    const put = await fetchImpl(pre.data.url, { method: 'PUT', body: await openAsBlob(abs), headers: { 'Content-Type': 'application/octet-stream' } });
     if (!put.ok) throw new Error(`storage refused the upload: HTTP ${put.status} ${(await put.text()).slice(0, 200)}`);
     const done = await call(fetchImpl, base, `/file/${prov}/presigned-upload-complete`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -95,7 +97,7 @@ export async function upload(path, opts = {}, { fetchImpl = fetch, base = baseUr
   }
 
   const form = new FormData();
-  form.set('file', new Blob([readFileSync(abs)]), name);
+  form.set('file', await openAsBlob(abs), name);
   form.set('file_name', name);
   if (opts.dir) form.set('directory', opts.dir);
   if (opts.overwrite) form.set('overwrite', 'true');
@@ -115,9 +117,33 @@ export async function download(ref, opts = {}, { fetchImpl = fetch, base = baseU
     res = await fetchImpl(url, { headers: { ...(await authHeaders({ fetchImpl })), 'User-Agent': USER_AGENT } });
   }
   if (!res.ok) throw new Error(`download failed: HTTP ${res.status} ${(await res.text()).slice(0, 200)}`);
-  const dest = resolve(opts.out || basename(ref));
-  await pipeline(Readable.fromWeb(res.body), createWriteStream(dest));
+  const dest = resolve(opts.out || serverName(res.headers.get('content-disposition')) || basename(ref));
+  if (existsSync(dest) && !opts.force) {
+    await res.body?.cancel();
+    throw new Error(`${dest} already exists. Pass --force to overwrite it, or --out <path> to write elsewhere.`);
+  }
+  // Write beside the destination and rename: a failed or interrupted download never leaves a partial file at dest.
+  const tmp = `${dest}.part-${process.pid}`;
+  try {
+    await pipeline(Readable.fromWeb(res.body), createWriteStream(tmp));
+    renameSync(tmp, dest);
+  } catch (e) {
+    rmSync(tmp, { force: true });
+    throw e;
+  }
   return { provider: prov, path: dest, bytes: statSync(dest).size };
+}
+
+/** The file name the server sent (Content-Disposition), reduced to a base name; undefined when none. */
+export function serverName(h) {
+  if (!h) return undefined;
+  const star = /filename\*\s*=\s*(?:UTF-8|utf-8)''([^;]+)/.exec(h);
+  const plain = /filename\s*=\s*(?:"((?:[^"\\]|\\.)*)"|([^;]+))/.exec(h);
+  let n = star ? star[1].trim() : plain && (plain[1] ?? plain[2]).trim();
+  if (!n) return undefined;
+  if (star) { try { n = decodeURIComponent(n); } catch { /* keep as sent */ } }
+  n = basename(n.replace(/\\/g, '/'));
+  return n && n !== '.' && n !== '..' ? n : undefined;
 }
 
 async function main(argv) {
@@ -134,11 +160,11 @@ async function main(argv) {
     const r = await download(opts._[0], opts);
     out(`Downloaded ${r.bytes} bytes from ${r.provider} to ${r.path}.`);
   } else {
-    out('Usage: files.mjs upload <path> [--name <n>] [--dir <d>] [--overwrite] | download <file_id|path> [--out <path>] | provider');
+    out('Usage: files.mjs upload <path> [--name <n>] [--dir <d>] [--overwrite] | download <file_id|path> [--out <path>] [--force] | provider');
     process.exitCode = 2;
   }
 }
 
 if (isMain(import.meta.url)) {
-  main(process.argv.slice(2)).catch((e) => { out(`enforcer-files: ${e.message}`); process.exitCode = 1; });
+  main(commandArgs()).catch((e) => { out(`enforcer-files: ${e.message}`); process.exitCode = 1; });
 }
