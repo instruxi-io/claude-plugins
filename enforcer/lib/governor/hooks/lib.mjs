@@ -4,8 +4,14 @@
 // JSON -- that combination is ignored.
 import { readFileSync } from 'node:fs';
 
-export function input() {
-  try { return JSON.parse(readFileSync(0, 'utf8') || '{}'); } catch { return {}; }
+// `allowed` names the events this hook answers. A harness may route others here
+// (Codex also sends PermissionRequest, PostCompact, Interrupt): those are not
+// ours, so the only right answer is nothing at all, exit 0.
+export function input(...allowed) {
+  let ev = {};
+  try { ev = JSON.parse(readFileSync(0, 'utf8') || '{}'); } catch { return {}; }
+  if (allowed.length && ev && typeof ev.hook_event_name === 'string' && !allowed.includes(ev.hook_event_name)) process.exit(0);
+  return ev;
 }
 
 // `top` carries the universal fields -- systemMessage above all. They belong

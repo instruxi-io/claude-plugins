@@ -12,7 +12,7 @@ import { agentOf } from '../adapters/claude-code/events.mjs';
 import { governor } from '../adapters/claude-code/index.mjs';
 
 const EVENT = 'UserPromptSubmit';
-const ev = input();
+const ev = input('UserPromptSubmit');
 
 // Fails open and silent, like everything else on this path: a governor that
 // cannot read its own state has nothing useful to tell the agent.
