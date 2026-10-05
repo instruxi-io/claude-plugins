@@ -1487,15 +1487,43 @@ class HarnessParsers(unittest.TestCase):
         self.assertIsNone(s["error_text"])
         self.assertEqual(gd.count_turns(path, "grok"), 1)
 
+    def test_harness_grok_fixture_reported(self):
+        # grok-stream.jsonl: a live `streaming-messages-json` run (grok 4.7),
+        # its tool names rewritten to the graph tools and a claim result added
+        s = gd.summarize(os.path.join(self.FX, "grok-stream.jsonl"), "grok")
+        self.assertTrue(s["reported"])
+        self.assertEqual(s["run_id"], "5a1c33f4-e7bd-4f6b-8b52-2ce6a3c92754")
+        self.assertEqual(s["result"], "success")
+
     def test_codex_stub_fails_loudly(self):
         with self.assertRaisesRegex(NotImplementedError, "no fixture"):
             gd.summarize(os.path.join(self.FX, "grok-ok.json"), "codex")
+
+    def test_harness_codex_refused_at_parse(self):
+        with self.assertRaisesRegex(gd.HarnessRefused, "not supported"):
+            gd.parse_args(["--graph", "g1", "--harness", "codex", "--experimental"])
+
+    def test_harness_grok_needs_experimental(self):
+        with self.assertRaisesRegex(gd.HarnessRefused, "--experimental"):
+            gd.parse_args(["--graph", "g1", "--harness", "grok"])
+        gd.parse_args(["--graph", "g1", "--harness", "grok", "--experimental"])
+
+    def test_harness_codex_cli_exit_2(self):
+        import subprocess
+        r = subprocess.run([PATH, "--harness", "codex", "--graph", "g1"], capture_output=True, text=True)
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("not supported", r.stderr)
+
+    def test_harness_claude_alias_not_passed_to_grok(self):
+        a = args(harness="grok")
+        self.assertNotIn("--model", gd.launch_cmd("hi", "sonnet", a, "k"))
+        self.assertIn("--model", gd.launch_cmd("hi", "grok-4.7", a, "k"))
 
     def test_launchers(self):
         a = args(harness="grok")
         c = gd.launch_cmd("hi", "grok-4.7-build", a, "k")
         self.assertEqual(c[1:4], ["-p", "hi", "--output-format"])
-        self.assertEqual(c[4], "json")
+        self.assertEqual(c[4], "streaming-messages-json")
         a = args(harness="codex")
         self.assertEqual(gd.launch_cmd("hi", None, a, "k")[1:3], ["exec", "--json"])
 
