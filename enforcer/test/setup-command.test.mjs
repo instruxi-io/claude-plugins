@@ -4,9 +4,9 @@
 import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 
-const src = readFileSync(new URL('../commands/setup.md', import.meta.url), 'utf8');
-const fm = src.match(/^---\n([\s\S]*?)\n---\n/)?.[1] ?? '';
-const body = src.slice(src.indexOf('\n---\n', 4) + 5);
+const cmd = readFileSync(new URL('../commands/setup.md', import.meta.url), 'utf8');
+const fm = cmd.match(/^---\n([\s\S]*?)\n---\n/)?.[1] ?? '';
+const body = readFileSync(new URL('../skills/enforcer/setup.md', import.meta.url), 'utf8');
 const allowed = (fm.match(/^allowed-tools:\s*(.+)$/m)?.[1] ?? '').split(/[,\s]+/).filter(Boolean);
 let n = 0;
 const ok = (s) => { n++; console.log(`ok   ${s}`); };

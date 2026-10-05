@@ -78,3 +78,9 @@ person does not own or steward.
   batch destructive operations without showing what they will touch.
 - Never put an API key or token in a file, a command line or a message. Keys
   are revocable; say so if one may have leaked.
+
+## Procedures
+
+- Sign in: [login.md](login.md)
+- Set a project up: [setup.md](setup.md)
+- List or switch workspaces: [workspace.md](workspace.md)

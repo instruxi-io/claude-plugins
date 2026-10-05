@@ -1,0 +1,10 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "enforcer",
+  "version": "1.0.0-rc.1",
+  "description": "Connects your agent to your Enforcer workspace: the Enforcer MCP server, one sign-in, workspace switching and setup.",
+  "author": { "name": "Instruxi", "url": "https://instruxi.io" },
+  "homepage": "https://instruxi.io",
+  "repository": "https://github.com/instruxi-io/claude-plugins",
+  "keywords": ["enforcer", "mcp", "identity", "authorization"]
+}
