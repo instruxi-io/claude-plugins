@@ -158,7 +158,7 @@ leave the report exactly as the model wrote it.
 ## The graph-worker agent
 
 `agents/graph-worker.md` is the worker protocol as a plugin subagent
-(`enforcer-graph:graph-worker`). Hand it a graph id, a node id or key, and
+(`enforcer:graph-worker`). Hand it a graph id, a node id or key, and
 optionally a brief in its prompt; it claims that node with `graph_next_work`
 (`node` parameter, MCP 0.9.5+), heartbeats, does the work, lands its own PR with
 `bin/land-pr.sh` and reports with captured evidence. It never claims, heartbeats
@@ -196,7 +196,7 @@ and, for each ready node, up to `--workers` at once:
   and `gate` stay with a person): a git worktree of `data.repo` at
   `<repo-root>/<repo>-<key>` on `graph/<key>` (off `data.base` or origin's
   default branch; reused on a re-claim; a scratch dir when the node has no
-  repo), then `claude -p` with `--agent enforcer-graph:graph-worker`, `--model`,
+  repo), then `claude -p` with `--agent enforcer:graph-worker`, `--model`,
   `--plugin-dir` for this plugin AND the cached `enforcer` plugin (so the hooks
   and the MCP server load whatever `enabledPlugins` says; an inline plugin
   replaces an installed copy of the same name), `--allowedTools` naming the five
