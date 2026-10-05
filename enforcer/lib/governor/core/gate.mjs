@@ -19,7 +19,7 @@
 // without any of the logic below knowing.
 
 import { Verdict, ECONOMICS, CAPABILITY, POLICY } from './verdict.mjs';
-import { evaluate as capability, DEFAULT_RULES } from './capability.mjs';
+import { evaluate as capability, DEFAULT_RULES, resolveRules } from './capability.mjs';
 import { evaluate as worker } from './worker.mjs';
 
 /**
@@ -66,7 +66,7 @@ export function compose(cap, central) {
  * @returns {Verdict}
  */
 export function gate(ev, cfg = {}, deps = {}) {
-  const rules = cfg.rulesOn === false ? [] : (cfg.rules || DEFAULT_RULES);
+  const rules = resolveRules(cfg);
 
   // Layer A runs first and runs unconditionally. "You may not do this"
   // outranks "you have budget left" — a cheap command is still the destructive

@@ -2,13 +2,14 @@
 // Session boundaries. SessionEnd closes the record with what the session
 // actually cost -- a summary an audit can read without replaying every line.
 import { appendFileSync } from 'node:fs';
-import { input, emit, done } from './lib.mjs';
+import { guard, input, emit, done } from './lib.mjs';
 import { agentOf } from '../adapters/claude-code/events.mjs';
 import { DEFAULTS } from '../src/policy.mjs';
 import { loadConfig } from '../src/store.mjs';
 import { sweep } from '../adapters/claude-code/sweep.mjs';
 import { recordPluginRoot } from '../adapters/claude-code/telemetry.mjs';
 import { governor } from '../adapters/claude-code/index.mjs';
+await guard(async () => {
 
 const ev = input('SessionStart', 'SessionEnd');
 const EVENT = ev.hook_event_name === 'SessionEnd' ? 'SessionEnd' : 'SessionStart';
@@ -48,3 +49,4 @@ if (EVENT === 'SessionStart') {
   emit(EVENT, { env: { ENFORCER_GOVERNOR: '1' } });
 }
 emit(EVENT, {});
+});

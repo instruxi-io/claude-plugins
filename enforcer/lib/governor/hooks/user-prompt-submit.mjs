@@ -7,9 +7,10 @@
 // additionalContext puts a sentence into the model's own context, before it
 // decides what to do, which turns "you have been stopped" into "land what you
 // have". Cheaper for everyone, and it happens before the money is spent.
-import { input, emit } from './lib.mjs';
+import { guard, input, emit } from './lib.mjs';
 import { agentOf } from '../adapters/claude-code/events.mjs';
 import { governor } from '../adapters/claude-code/index.mjs';
+await guard(async () => {
 
 const EVENT = 'UserPromptSubmit';
 const ev = input('UserPromptSubmit');
@@ -18,3 +19,4 @@ const ev = input('UserPromptSubmit');
 // cannot read its own state has nothing useful to tell the agent.
 const b = governor().brief(agentOf(ev));
 emit(EVENT, b ? { additionalContext: b.text } : {});
+});

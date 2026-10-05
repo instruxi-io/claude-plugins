@@ -15,11 +15,25 @@ export function normalize(ev) {
 }
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const root = fileURLToPath(new URL('../../', import.meta.url));
-  let ev = {};
-  const raw = (() => { try { return readFileSync(0, 'utf8'); } catch { return ''; } })();
-  try { ev = normalize(JSON.parse(raw || '{}')); } catch {}
   const [target, ...rest] = process.argv.slice(2);
+  const pre = target === 'governor-pre-tool-use.mjs';
+  // A governor that cannot run must not be an allow: for the tool-gating hook
+  // an unspawnable child is a deny, unreadable stdin is an ask.
+  const answer = (decision, why) => {
+    process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: decision,
+      permissionDecisionReason: `enforcer-governor:governor_error ${why}` } }));
+    process.exit(0);
+  };
+  let ev = {}, bad = false;
+  const raw = (() => { try { return readFileSync(0, 'utf8'); } catch { bad = true; return ''; } })();
+  try { ev = normalize(JSON.parse(raw)); if (!ev || typeof ev !== 'object') throw 0; } catch { bad = true; ev = {}; }
+  if (pre && bad) answer('ask', 'unreadable or empty hook input');
   const argv = target === 'hook' ? [`${root}bin/enforcer`, 'hook', ...rest] : [`${root}hooks/claude/${target}`];
   const r = spawnSync(process.execPath, argv, { input: JSON.stringify(ev), stdio: ['pipe', 'inherit', 'inherit'] });
-  process.exit(r.status ?? 0);
+  if (r.status === null || r.error) {
+    process.stderr.write(`enforcer-governor: hook child did not run to completion (${r.error?.message || r.signal})\n`);
+    if (pre) answer('deny', 'hook child did not run');
+    process.exit(1);
+  }
+  process.exit(r.status);
 }
