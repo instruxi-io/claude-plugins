@@ -39,11 +39,43 @@ assert.ok(validate(schema, { name: 'x' }).length > 0); assert.ok(validate(schema
 console.log('ok   the validator rejects a missing $schema and an unknown property');
 
 const versions = { 'plugin.json': plugin.version, [`${DOT}-plugin/plugin.json`]: rd(`${DOT}-plugin/plugin.json`).version, 'package.json': rd('package.json').version };
+const kitJson = JSON.parse(readFileSync(new URL('../../kit.json', import.meta.url), 'utf8'));
+if (kitJson.version) versions['kit.json'] = kitJson.version;
+const codex = JSON.parse(readFileSync(new URL('../../.agents/plugins/marketplace.json', import.meta.url), 'utf8')).plugins.find((p) => p.name === 'enforcer');
+assert.ok(codex.version, 'Codex marketplace entry has no version'); versions['.agents marketplace.json'] = codex.version;
+assert.ok(codex.policy?.authentication, 'Codex marketplace entry has no policy.authentication');
+{ const g = readFileSync(new URL('../src/grok-install.mjs', import.meta.url), 'utf8'); assert.match(g, /JSON\.parse\(rd\('plugin\.json'\)\)\.version/, 'Grok VERSION file must come from plugin.json'); }
 const market = rd(`../${DOT}-plugin/marketplace.json`).plugins.find((p) => p.name === 'enforcer');
 if (market.version) versions['marketplace.json'] = market.version;
 assert.equal(new Set(Object.values(versions)).size, 1, `versions differ: ${JSON.stringify(versions)}`);
+console.log(`ok   versions agree across plugin.json, both marketplaces and kit.json`);
 console.log(`ok   one version everywhere: ${plugin.version} (${Object.keys(versions).join(', ')})`);
 
+{
+  const t = (ok, msg) => { assert.ok(ok, msg); };
+  const m = rd('.mcp.json');
+  const names = Object.keys(m.mcpServers ?? {});
+  t(names.length > 0, '.mcp.json has no mcpServers');
+  for (const [n, sv] of Object.entries(m.mcpServers)) {
+    t(['http', 'streamable-http', 'sse', 'stdio'].includes(sv.type), `.mcp.json ${n}: bad type`);
+    if (sv.type !== 'stdio') t(/^https:\/\//.test(sv.url ?? ''), `.mcp.json ${n}: url must be https`);
+    else t(typeof sv.command === 'string', `.mcp.json ${n}: stdio needs command`);
+  }
+  const m2 = rd('mcp.json');
+  assert.ok(m2.$schema, 'mcp.json has no $schema');
+  console.log('ok   .mcp.json is valid');
+}
+{
+  const KNOWN = new Set(['Bash', 'Read', 'Edit', 'Write', 'Grep', 'Glob', 'ToolSearch', 'Skill', 'WebFetch', 'WebSearch', 'Task', 'NotebookEdit', 'TodoWrite']);
+  for (const d of ['agents', 'harness/grok/agents']) for (const f of readdirSync(new URL(`../${d}/`, import.meta.url))) {
+    const head = readFileSync(new URL(`../${d}/${f}`, import.meta.url), 'utf8').match(/^---\n([\s\S]*?)\n---/)?.[1];
+    assert.ok(head, `${d}/${f}: no frontmatter`);
+    assert.match(head, /^name:\s*\S+/m, `${d}/${f}: name`); assert.match(head, /^description:\s*\S+/m, `${d}/${f}: description`);
+    const tools = (head.match(/^tools:\s*(.+)$/m)?.[1] ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+    for (const x of tools) assert.ok(KNOWN.has(x) || /^mcp__[\w-]+__\w+$/.test(x) || /^enforcer__\w+$/.test(x), `${d}/${f}: unknown tool ${x}`);
+  }
+  console.log('ok   agent frontmatter tools are known');
+}
 const mcp = rd('mcp.json').mcpServers.enforcer;
 assert.equal(mcp.type, 'streamable-http'); assert.equal(mcp.url, 'https://api.instruxi.dev/mcp');
 console.log('ok   mcp.json is streamable-http at api.instruxi.dev/mcp');
