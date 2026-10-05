@@ -34,7 +34,14 @@ import { ruleCode } from './codes.mjs';
 export const DEFAULT_RULES = [
   { id: 'shell.pipe_to_shell', authz: 'write',
     name: 'run a script downloaded from the internet', tool: 'shell', action: 'deny',
-    match: '(curl|wget)[^|]*\\|\\s*(ba|z|fi)?sh' },
+    // Judged on the stripped, tokenised pipeline (sudo/env/nohup/... removed),
+    // so a sudo'd shell, a tee in the middle, a bare interpreter and a decoded
+    // payload are the same shape as the plain one; process and command
+    // substitution into a shell are covered too.
+    match: '(?:(?:curl|wget)\\b|base64\\s+(?:-d|--decode)\\b)[^|;&\\n]*(?:\\|[^|;&\\n]*)*?\\|\\s*(?:(?:(?:ba|z|fi|da|k|a)?sh)\\b|(?:python[\\d.]*|perl|ruby|node|php)\\b(?=\\s*(?:-\\s*)?(?:$|[|;&)])))'
+      + '|\\b(?:ba|z|da|k)?sh\\s+(?:-\\S+\\s+)*<\\(\\s*(?:curl|wget)\\b'
+      + '|(?:^|[\\s;&|(])(?:\\.|source)\\s+<\\(\\s*(?:curl|wget)\\b'
+      + '|\\b(?:(?:ba|z|da|k)?sh\\s+-\\w*c|eval)\\s+["\']?(?:\\$\\(|`)\\s*(?:curl|wget)\\b' },
 
   // A force-push is the one dangerous git action with a strictly safer form
   // that preserves the intent: --force-with-lease refuses when someone else
@@ -43,13 +50,20 @@ export const DEFAULT_RULES = [
   // kubectl delete into --dry-run — that does not do what was asked at all.
   { id: 'git.force_push', authz: 'write',
     name: 'force-push without a lease', tool: 'shell', action: 'rewrite',
-    match: 'git\\s+push\\s+(?:[^|;&]*\\s)?(--force|-f)(?=\\s|$)', field: 'command',
-    replace: ['(--force|-f)(?=\\s|$)', '--force-with-lease'],
+    // Judged per segment (never across `&&`), anchored at the segment's `git`,
+    // case-sensitive (`-F` is not `-f`), flag-cluster aware (`-uf`), and
+    // tolerant of `git -C dir` / `git -c k=v` before `push`.
+    scope: 'segment', cs: true, field: 'command',
+    match: '^git\\s+(?:(?:-[Cc]\\s+\\S+|-\\S+)\\s+)*push\\s+(?:.*\\s)?(?:--force|-[a-zA-Z]*f[a-zA-Z]*)(?=\\s|$)',
+    replace: ['(?<=\\spush\\s(?:.*\\s)?)(?:--force|-([a-zA-Z]*)f([a-zA-Z]*))(?=\\s|$)',
+      (m, a, b) => ((a || '') + (b || '') ? `-${a || ''}${b || ''} ` : '') + '--force-with-lease'],
     why: 'a lease refuses the push if someone else has pushed since your last fetch' },
 
   { id: 'fs.delete_tree', authz: 'write',
     name: 'delete a whole tree', tool: 'shell', action: 'ask',
-    match: 'rm\\s+(-[a-zA-Z]*r[a-zA-Z]*f|-[a-zA-Z]*f[a-zA-Z]*r)' },
+    // Any spelling of recursive + force, split across flags or not:
+    // -rf, -fr, -r -f, -R --force, --recursive -f.
+    match: '\\brm\\s+(?=(?:[^;&|\\n]*\\s)?(?:-[a-zA-Z]*r[a-zA-Z]*|--recursive)(?=\\s|$))(?=(?:[^;&|\\n]*\\s)?(?:-[a-zA-Z]*f[a-zA-Z]*|--force)(?=\\s|$))' },
   { id: 'git.rewrite_history', authz: 'write',
     name: 'rewrite git history', tool: 'shell', action: 'ask',
     match: 'reset\\s+--hard|filter-branch' },
@@ -62,10 +76,10 @@ export const DEFAULT_RULES = [
   // denial (2026-10-05, dispatcher-worktree-include, three attempts).
   { id: 'secrets.access', authz: 'read',
     name: 'read or write credentials', tool: 'shell', field: 'command', action: 'ask',
-    match: '(?:^|[\\s;&|(`])(?:cat|less|more|head|tail|cp|mv|scp|rsync|source|\\.|tee|sed|awk|cut|base64|xxd|od|strings|curl|wget|gh|printf|echo|vim?|nano|cmp|diff|gpg|openssl|python3?|node)\\s+(?:[^|;&\\n]*?[\\s\'"=/])?(?:\\.env(?:\\.[\\w-]+)?|id_rsa\\w*|[\\w.-]+\\.pem|credentials\\.json)(?=[\\s\'"|;&)]|$)|\\.(?:aws|ssh)/|[<>]{1,2}\\s*[^|;&\\s]*(?:\\.env(?:\\.[\\w-]+)?|id_rsa|\\.pem\\b|credentials\\.json|\\.aws/|\\.ssh/)' },
+    match: '(?:^|[\\s;&|(`])(?:cat|less|more|head|tail|cp|mv|scp|rsync|source|\\.|tee|sed|awk|cut|base64|xxd|od|strings|curl|wget|gh|printf|echo|vim?|nano|cmp|diff|gpg|openssl|python3?|node|grep|egrep|fgrep|rg|ag|bat|tac|nl|find|perl|ruby|php)\\s+(?:[^|;&\\n]*?[\\s\'"=/])?(?:\\.env(?:\\.[\\w-]+)?|id_rsa\\w*|id_ed25519\\w*|[\\w.-]+\\.pem|credentials\\.json|\\.npmrc|\\.netrc|\\.git-credentials|\\.pgpass|policy-cache\\.json)(?=[\\s\'"|;&)]|$)|(?:\\.(?:aws|ssh)|~/\\.enforcer)/|[<>]{1,2}\\s*[^|;&\\s]*(?:\\.env(?:\\.[\\w-]+)?|id_rsa|id_ed25519|\\.pem\\b|credentials\\.json|\\.npmrc|\\.netrc|\\.git-credentials|\\.pgpass|policy-cache\\.json|\\.aws/|\\.ssh/|\\.enforcer/)' },
   { id: 'secrets.edit', authz: 'write',
     name: 'read or write credentials', tool: '', field: 'path', action: 'ask',
-    match: '(?:^|/)(?:\\.env(?:\\.[\\w-]+)?|id_rsa\\w*|[\\w.-]+\\.pem|credentials\\.json)$|(?:^|/)\\.(?:aws|ssh)/' },
+    match: '(?:^|/)(?:\\.env(?:\\.[\\w-]+)?|id_rsa\\w*|id_ed25519\\w*|[\\w.-]+\\.pem|credentials\\.json|\\.npmrc|\\.netrc|\\.git-credentials|\\.pgpass|policy-cache\\.json)$|(?:^|/)\\.(?:aws|ssh|enforcer)/' },
   { id: 'deploy.publish', authz: 'write',
     name: 'publish or deploy', tool: 'shell', action: 'ask',
     match: 'npm\\s+publish|vercel\\s+.*--prod|kubectl\\s+(apply|delete)|terraform\\s+apply' },
@@ -117,26 +131,198 @@ export function resolveRules(cfg = {}) {
   return good;
 }
 
-/** First rule whose tool and pattern both match. Null when nothing matches. */
-export function matchRule(rules, ev) {
+// ---- shell tokeniser -------------------------------------------------------
+// A rule is judged on every command the text contains, not on the text as one
+// string: split on ; && || | & and newlines (outside quotes and $( ) ), peel
+// the wrappers that change nothing about WHAT runs (env, sudo, nohup, time,
+// xargs, bash -c ...), and look inside $(...), `...`, <(...) and -c strings.
+const SHELLS = new Set(['sh', 'bash', 'zsh', 'dash', 'ksh', 'ash']);
+// wrapper -> the options that take a separate argument
+const WRAPPERS = {
+  sudo: ['-u', '-g', '-h', '-p', '-C', '-D', '-R', '-T', '-U', '-r', '-t'],
+  env: ['-u', '-C', '-S'], nohup: [], time: ['-f', '-o'], command: [], exec: ['-a'], builtin: [],
+  nice: ['-n'], ionice: ['-c', '-n', '-p'], stdbuf: ['-i', '-o', '-e'], setsid: [], timeout: ['-s', '-k'],
+  xargs: ['-I', '-n', '-P', '-d', '-L', '-s', '-E', '-a', '-l'],
+};
+const MAX_DEPTH = 5, MAX_SEGS = 400;
+
+function words(seg) {
+  const out = []; let i = 0;
+  while (i < seg.length) {
+    while (i < seg.length && /\s/.test(seg[i])) i++;
+    if (i >= seg.length) break;
+    const start = i; let w = ''; let q = null;
+    while (i < seg.length && (q || !/\s/.test(seg[i]))) {
+      const c = seg[i];
+      if (q) { if (c === q) q = null; else if (c === '\\' && q === '"' && i + 1 < seg.length) w += seg[++i]; else w += c; }
+      else if (c === '"' || c === "'") q = c;
+      else if (c === '\\' && i + 1 < seg.length) w += seg[++i];
+      else w += c;
+      i++;
+    }
+    out.push({ w, start });
+  }
+  return out;
+}
+
+// Peel wrappers off one segment. Returns the command that actually runs plus
+// any -c strings found on the way.
+function strip(seg) {
+  const inner = [];
+  let text = seg.replace(/^[\s({!]+/, '');
+  for (let guard = 0; guard < 12; guard++) {
+    const ws = words(text);
+    let k = 0;
+    while (k < ws.length && /^[A-Za-z_]\w*=/.test(ws[k].w)) k++;
+    if (k >= ws.length) return { cmd: '', inner };
+    const base = ws[k].w.replace(/^.*\//, '');
+    if (Object.hasOwn(WRAPPERS, base)) {
+      const takes = WRAPPERS[base];
+      k++;
+      while (k < ws.length) {
+        const t = ws[k].w;
+        if (/^[A-Za-z_]\w*=/.test(t)) k++;
+        else if (t === '--') { k++; break; }
+        else if (t.startsWith('-') && t.length > 1) k += takes.includes(t) ? 2 : 1;
+        else break;
+      }
+      if (base === 'timeout' && k < ws.length && /^[\d.]+[smhd]?$/.test(ws[k].w)) k++;
+      if (k >= ws.length) return { cmd: '', inner };
+      text = text.slice(ws[k].start);
+      continue;
+    }
+    if (SHELLS.has(base)) {
+      for (let m = k + 1; m < ws.length; m++) {
+        const t = ws[m].w;
+        if (/^-[a-zA-Z]*c[a-zA-Z]*$/.test(t)) { if (ws[m + 1]) inner.push(ws[m + 1].w); break; }
+        if (!t.startsWith('-')) break;
+      }
+    }
+    return { cmd: text.slice(ws[k].start), inner };
+  }
+  return { cmd: text, inner };
+}
+
+// Index just past the ')' that closes a '(' already consumed at text[from-1].
+function closeParen(text, from) {
+  let i = from, d = 1, q = null;
+  while (i < text.length && d) {
+    const c = text[i];
+    if (q) { if (c === q) q = null; else if (c === '\\' && q === '"') i++; }
+    else if (c === '"' || c === "'") q = c;
+    else if (c === '\\') i++;
+    else if (c === '(') d++;
+    else if (c === ')') d--;
+    i++;
+  }
+  return i;
+}
+
+// Split text into top-level segments, noting which are joined by a pipe, and
+// collect $( ) / ` ` / <( ) bodies. Quotes and substitutions are atomic.
+function split(text) {
+  const segs = []; const subs = [];
+  let q = null, start = 0, i = 0;
+  const push = (end, sep) => { segs.push({ start, end, sep }); };
+  while (i < text.length) {
+    const c = text[i], n = text[i + 1];
+    if (q === "'") { if (c === "'") q = null; i++; continue; }
+    if (c === '\\') { i += 2; continue; }
+    if (c === '`') {
+      const e = text.indexOf('`', i + 1);
+      subs.push(text.slice(i + 1, e < 0 ? text.length : e));
+      i = e < 0 ? text.length : e + 1; continue;
+    }
+    if ((c === '$' || (!q && (c === '<' || c === '>'))) && n === '(') {
+      const e = closeParen(text, i + 2);
+      subs.push(text.slice(i + 2, Math.max(i + 2, e - 1)));
+      i = e; continue;
+    }
+    if (q === '"') { if (c === '"') q = null; i++; continue; }
+    if (c === "'" || c === '"') { q = c; i++; continue; }
+    if (c === ';' || c === '\n') { push(i, ';'); i++; start = i; continue; }
+    if (c === '|') {
+      if (n === '|') { push(i, ';'); i += 2; } else { push(i, '|'); i += n === '&' ? 2 : 1; }
+      start = i; continue;
+    }
+    if (c === '&') {
+      const p = text[i - 1];
+      if (n === '&') { push(i, ';'); i += 2; start = i; continue; }
+      if (p === '>' || p === '<' || n === '>') { i++; continue; }
+      push(i, ';'); i++; start = i; continue;
+    }
+    i++;
+  }
+  push(text.length, ';');
+  return { segs: segs.filter((s) => text.slice(s.start, s.end).trim()), subs };
+}
+
+/** Every command in `text`: [{raw, start, end, cmd, top}] and the pipelines, as joined strings. */
+export function commands(text) {
+  const out = []; const pipes = [];
+  const walk = (t, top, depth) => {
+    if (depth > MAX_DEPTH || out.length > MAX_SEGS) return;
+    const { segs, subs } = split(t);
+    let run = [];
+    const flush = () => { if (run.length > 1) pipes.push(run.join(' | ')); run = []; };
+    for (const s of segs) {
+      const raw = t.slice(s.start, s.end);
+      const { cmd, inner } = strip(raw);
+      out.push({ raw, start: s.start, end: s.end, cmd, top });
+      run.push(cmd);
+      if (s.sep !== '|') flush();
+      for (const x of inner) walk(x, false, depth + 1);
+    }
+    flush();
+    for (const x of subs) walk(x, false, depth + 1);
+  };
+  walk(String(text || ''), true, 0);
+  return { commands: out, pipelines: pipes };
+}
+
+const STRICT = { deny: 3, ask: 2, rewrite: 1 };
+const strictness = (r) => STRICT[r.action] ?? 2;   // an unknown action is treated as an ask
+
+function compile(r) {
+  try { return new RegExp(r.match, r.cs ? '' : 'i'); } catch { return null; }  // a bad pattern must not break the check
+}
+
+/**
+ * Every rule on every command; the strictest hit wins (deny > ask > rewrite),
+ * the earlier rule on a tie. Returns {rule, segs} (segs: the top-level commands
+ * a segment-scoped rule hit, which a rewrite edits) or null.
+ */
+function scan(rules, ev) {
   const text = String(ev.action || '');
-  // Which tool this is, and whether a rule covers it, is tools.mjs's to say:
-  // the kind (`shell`) for a rule in the core's vocabulary, the harness's own
-  // name for a rule written the old way. It still falls back to the prefix of
-  // the action ("Bash:...") when the caller did not name the tool -- a missing
-  // field used to make every capability rule quietly miss, which fails in the
-  // one direction a guard must never fail in.
+  const cache = new Map();   // command analysis per subject text
+  let best = null;
   for (const r of rules || []) {
     if (!toolMatches(r.tool, ev)) continue;
-    let re;
-    try { re = new RegExp(r.match, 'i'); } catch { continue; }  // a bad pattern must not break the check
+    const re = compile(r);
+    if (!re) continue;
     // A rule that names a field matches THAT field only (the canonical one,
     // else the harness's own key), never the whole input: ".env" inside a
     // report or a test fixture is not a credential access.
     const subject = r.field ? fieldText(r.field, ev) : text;
-    if (re.test(subject)) return r;
+    const shell = (!r.field || r.field === 'command') && toolMatches('shell', ev);
+    let segs = null;   // null: no hit
+    if (!shell) { if (re.test(subject)) segs = []; }
+    else {
+      const body = r.field ? subject : subject.replace(/^[\w.-]+:/, '');
+      if (!cache.has(body)) cache.set(body, commands(body));
+      const { commands: cmds, pipelines } = cache.get(body);
+      const hits = cmds.filter((c) => c.cmd && re.test(c.cmd));
+      if (hits.length) segs = r.scope === 'segment' && hits.some((c) => !c.top) ? [] : hits.filter((c) => c.top);
+      else if (r.scope !== 'segment' && (re.test(subject) || pipelines.some((p) => re.test(p)))) segs = [];
+    }
+    if (segs && (!best || strictness(r) > strictness(best.rule))) best = { rule: r, segs };
   }
-  return null;
+  return best;
+}
+
+/** The strictest rule that fires on any command in the action. Null when nothing matches. */
+export function matchRule(rules, ev) {
+  return scan(rules, ev)?.rule ?? null;
 }
 
 function fieldText(field, ev) {
@@ -156,15 +342,26 @@ function fieldText(field, ev) {
 // field translated to the harness's key, so what comes back is exactly what
 // the harness runs -- every other key it sent (a description, a timeout) kept
 // as it was. A caller that sends no raw input is rewritten in `ev.input`.
-function rewriteInput(rule, ev) {
+// A segment-scoped rule edits ONLY the commands it hit, never the rest of the
+// line, and not at all (an ask) when a hit is nested inside a -c string or
+// substitution, where the splice position is not the harness's text.
+function rewriteInput(rule, ev, segs) {
   if (!rule.replace || !rule.field) return null;
   const input = ev.raw ?? ev.input;
   const key = nativeField(rule.field, ev);
   const before = input?.[key];
   if (typeof before !== 'string') return null;
   let re;
-  try { re = new RegExp(rule.replace[0], 'gi'); } catch { return null; }
-  const after = before.replace(re, rule.replace[1]);
+  try { re = new RegExp(rule.replace[0], rule.cs ? 'g' : 'gi'); } catch { return null; }
+  let after;
+  if (rule.scope === 'segment') {
+    if (!segs?.length || before !== fieldText(rule.field, ev)) return null;
+    after = before;
+    for (const s of [...segs].sort((a, b) => b.start - a.start)) {
+      const piece = s.raw.replace(re, rule.replace[1]);
+      after = after.slice(0, s.start) + piece + after.slice(s.end);
+    }
+  } else after = before.replace(re, rule.replace[1]);
   return after === before ? null : { ...input, [key]: after };
 }
 
@@ -175,8 +372,9 @@ function rewriteInput(rule, ev) {
  *   is finished, and economics still gets its turn.
  */
 export function evaluate(rules, ev) {
-  const hit = matchRule(rules || DEFAULT_RULES, ev);
-  if (!hit) return null;
+  const found = scan(rules || DEFAULT_RULES, ev);
+  if (!found) return null;
+  const hit = found.rule;
   const of = { source: CAPABILITY, rule: hit.name, checked: [CAPABILITY], code: ruleCode(hit), ruleId: ruleId(hit) };
 
   if (hit.action === 'deny') {
@@ -187,7 +385,7 @@ export function evaluate(rules, ev) {
   }
 
   if (hit.action === 'rewrite') {
-    const input = rewriteInput(hit, ev);
+    const input = rewriteInput(hit, ev, found.segs);
     if (input) return Verdict.rewrite(input, `${hit.name} — ${hit.why}`, of);
     return Verdict.ask(`would ${hit.name}`, of);   // could not make it safer; ask instead
   }
