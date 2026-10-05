@@ -69,13 +69,30 @@ async function getMe(base, fetchImpl) {
   return { me: j?.data || j, headers };
 }
 
+/** Every membership of the signed-in person, from GET /auth/tenants: one item
+ * per workspace, {id, tenant_id, tenant: {id, name, ...}, role: {slug, ...}, kind}.
+ * /auth/me names only the workspace the token is IN — it has no memberships
+ * field at all (live, 2026-10-05), so reading it here listed one workspace and
+ * `switch <other>` answered "you are not a member" for every real membership. */
+async function getTenants(base, headers, fetchImpl) {
+  const r = await fetchImpl(`${base}${API}/auth/tenants`, { headers, signal: AbortSignal.timeout(10_000) });
+  if (!r.ok) throw new Error(`Enforcer refused /auth/tenants (HTTP ${r.status}). Run /enforcer:login.`);
+  const j = await r.json();
+  const list = j?.data?.tenants || j?.data?.items || j?.data || j;
+  return (Array.isArray(list) ? list : []).map(normalizeMembership).filter((m) => m.tenant_id);
+}
+
 /** Workspaces for `list`, each with `current` set from the stored JWT's tenant_id. */
 export async function listWorkspaces({ fetchImpl = fetch } = {}) {
   const doc = readCredentials();
   const base = baseOf(doc);
-  const { me } = await getMe(base, fetchImpl);
+  const { me, headers } = await getMe(base, fetchImpl);
   const cur = jwtClaims(readCredentials()?.enforcer?.oauth?.access_token).tenant_id || me?.tenant?.id;
-  return membershipsOf(me).map((m) => ({ ...m, current: m.tenant_id === cur }));
+  const rows = await getTenants(base, headers, fetchImpl);
+  // Older servers (or a token with no /auth/tenants) still get the /auth/me view.
+  const merged = rows.length ? rows : membershipsOf(me);
+  if (cur && !merged.some((m) => m.tenant_id === cur)) merged.push(...membershipsOf(me).filter((m) => m.tenant_id === cur));
+  return merged.map((m) => ({ ...m, current: m.tenant_id === cur }));
 }
 
 /** Switch to a workspace and adopt the token pair it returns. Returns the new membership. */

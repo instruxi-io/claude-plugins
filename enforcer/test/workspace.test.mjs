@@ -25,9 +25,16 @@ const fake = async (url, init = {}) => {
   const j = (o, status = 200) => ({ ok: status < 400, status, json: async () => o });
   if (u.pathname.endsWith('/auth/me')) {
     const t = current === 't-acme' ? { id: 't-acme', name: 'Acme' } : { id: 't-beta', name: 'Beta' };
-    return j({ data: { account_id: 'acc-' + current, tenant: t, role: { slug: 'admin' }, memberships: [
-      { tenant_id: 't-acme', tenant_name: 'Acme', tenant_code: 'ACME-1-AAAA', role: 'admin' },
-      { tenant_id: 't-beta', tenant_name: 'Beta', tenant_code: 'BETA-2-BBBB', role: 'member' }] } });
+    // Live /auth/me (2026-10-05) carries NO memberships field: only the
+    // workspace the token is in. The list must come from /auth/tenants.
+    return j({ data: { account_id: 'acc-' + current, tenant: t, role: { slug: 'admin' } } });
+  }
+  if (u.pathname.endsWith('/auth/tenants')) {
+    // Recorded shape of GET /auth/tenants: one account row per membership.
+    return j({ data: [
+      { id: 'acc-t-acme', tenant_id: 't-acme', kind: 'human', tenant: { id: 't-acme', name: 'Acme', status: 'active' }, role: { id: 'r1', slug: 'admin', name: 'Admin' } },
+      { id: 'acc-t-beta', tenant_id: 't-beta', kind: 'human', tenant: { id: 't-beta', name: 'Beta', status: 'active' }, role: { id: 'r2', slug: 'member', name: 'Member' } },
+    ] });
   }
   if (u.pathname.endsWith('/auth/tenant/switch')) {
     assert.equal(init.headers.Authorization, `Bearer ${A}`);
@@ -39,9 +46,10 @@ const fake = async (url, init = {}) => {
   return j({}, 404);
 };
 
-await ok('list shows every membership with the current one marked', async () => {
+await ok('list shows every membership (from /auth/tenants) with the current one marked', async () => {
   const rows = await listWorkspaces({ fetchImpl: fake });
-  assert.deepEqual(rows.map((r) => [r.name, r.current]), [['Acme', true], ['Beta', false]]);
+  assert.deepEqual(rows.map((r) => [r.name, r.role, r.current]), [['Acme', 'admin', true], ['Beta', 'member', false]]);
+  assert.ok(calls.some((c) => c.endsWith('/auth/tenants')), 'memberships must come from /auth/tenants');
 });
 await ok('resolve by name, code, id; refuses non-members', () => {
   const rows = [{ tenant_id: 't-1', name: 'Acme', code: 'ACME-1' }, { tenant_id: 't-2', name: 'Beta', code: 'BETA-2' }];
