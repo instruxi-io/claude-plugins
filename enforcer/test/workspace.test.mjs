@@ -83,4 +83,9 @@ await ok('switching to the current workspace changes nothing', async () => {
   assert.equal((await switchWorkspace('Beta', { fetchImpl: fake })).unchanged, true);
   assert.ok(!calls.slice(n).some((c) => c.startsWith('POST')));
 });
+await ok('a 403 from /auth/tenant/switch names enforcer:workspace.write and the re-login line', async () => {
+  const denied = (url, init) => (String(url).endsWith('/auth/tenant/switch') ? { ok: false, status: 403, json: async () => ({}) } : fake(url, init));
+  await assert.rejects(() => switchWorkspace('Acme', { fetchImpl: denied }),
+    (e) => /enforcer:workspace\.write/.test(e.message) && /\/enforcer:login --for work/.test(e.message) && /403/.test(e.message));
+});
 console.log(`${pass} passed`);

@@ -107,6 +107,10 @@ export async function switchWorkspace(query, { fetchImpl = fetch, now = Date.now
     method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' },
     body: JSON.stringify({ tenant_id: target.tenant_id }), signal: AbortSignal.timeout(10_000),
   });
+  if (r.status === 403) {
+    throw new Error('Enforcer refused the switch (HTTP 403): this sign-in lacks the enforcer:workspace.write scope. '
+      + 'Sign in again with it: /enforcer:login --for work');
+  }
   if (!r.ok) throw new Error(`Enforcer refused the switch (HTTP ${r.status}).`);
   const j = await r.json();
   const t = j?.data?.tokens || j?.data || j;

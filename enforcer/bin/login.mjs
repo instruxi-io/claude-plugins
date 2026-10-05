@@ -27,7 +27,8 @@ const out = (s) => process.stdout.write(s + '\n');
 
 /** Login scope presets: a work-loop session needs 6-7 scopes, not every one the server offers. */
 export const WORK_SCOPES = ['enforcer:read', 'policy:self', 'enforcer:graph-runs.write', 'enforcer:graph-observations.write',
-  'enforcer:graph-nodes.write', 'enforcer:graph-edges.write', 'enforcer:files-files.write'];
+  'enforcer:graph-nodes.write', 'enforcer:graph-edges.write', 'enforcer:files-files.write',
+  'enforcer:workspace.write' /* workspace switch/join; only requested when the server offers it */];
 export const PLAN_SCOPES = [...WORK_SCOPES, 'enforcer:graph-graphs.write', 'enforcer:graph-templates.write', 'enforcer:graph-epochs.write'];
 export const PRESETS = { work: WORK_SCOPES, plan: PLAN_SCOPES, admin: null /* everything offered */ };
 export const DEFAULT_PRESET = 'work';
@@ -252,6 +253,8 @@ async function main(rawArgv) {
     const offered = Array.isArray(meta.scopes_supported) ? meta.scopes_supported : [];
     out(`${base} offers a sign-in these scopes (--for admin asks for all of them; the default preset is work):`);
     for (const s of offered) out(`  ${s}`);
+    out('Presets (a scope is only requested when offered above):');
+    for (const [name, list] of Object.entries(PRESETS)) out(`  ${name}: ${list ? list.join(' ') : 'every scope offered'}`);
     out('Ask for fewer with: /enforcer:login --scope "enforcer:read policy:self"');
     return;
   }
