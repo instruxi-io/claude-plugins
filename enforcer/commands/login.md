@@ -3,6 +3,5 @@ description: Sign this machine in to Enforcer, once, for the Enforcer MCP server
 argument-hint: [<WORKSPACE-CODE>] [--for work|plan|admin] [--scope "<scopes>"] | api-key <key> | scopes | status | logout
 allowed-tools: Bash(node:*)
 ---
-Sign in to Enforcer and print the result verbatim. With no argument this opens a browser sign-in and waits for it to finish. With a workspace code (e.g. `ACME-1234-ABCD`, or `ENFORCER_TENANT_CODE` in settings) the sign-in page skips asking for it. `--for work` (default; the work loop's 7 scopes), `--for plan` (work plus graph/template/epoch writes) or `--for admin` (every scope offered) pick a preset; the default is the last preset used.  `--scope "enforcer:read policy:self"` asks for only those (each must be offered, or it refuses before opening the browser), and `scopes` lists what is offered.
-
+Invoke the `enforcer` skill's `login` procedure (skills/enforcer/login.md) with: $ARGUMENTS
 !`node "${CLAUDE_PLUGIN_ROOT}/bin/login.mjs" $ARGUMENTS`

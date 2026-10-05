@@ -1,10 +1,10 @@
 {
   "name": "@instruxi-io/claude-plugin-enforcer",
   "private": true,
-  "version": "0.7.1",
+  "version": "1.0.0-rc.1",
   "type": "module",
   "scripts": {
-    "test": "node test/login.test.mjs && node test/credentials.test.mjs && node test/setup-command.test.mjs && node test/workspace.test.mjs"
+    "test": "node test/login.test.mjs && node test/credentials.test.mjs && node test/setup-command.test.mjs && node test/workspace.test.mjs && node test/validate-plugin.test.mjs"
   },
   "engines": {
     "node": ">=18"

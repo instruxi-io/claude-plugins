@@ -8,9 +8,10 @@
   "plugins": [
     {
       "name": "enforcer",
-      "description": "Connects Claude Code to your Enforcer workspace: the enforcer MCP server, one sign-in (/enforcer:login) that every Instruxi plugin shares, /enforcer:setup, and a short skill on how Enforcer is organised. Brings enforcer-graph's hooks with it as a dependency.",
+      "description": "Connects your agent to your Enforcer workspace as an Agent Plugins 1.0 package (root plugin.json, mcp.json, skills) with a Claude Code fallback: the enforcer MCP server, one sign-in (/enforcer:login), /enforcer:setup, workspace switching. Brings enforcer-graph's hooks with it as a dependency.",
       "category": "platform",
-      "source": "./enforcer"
+      "source": "./enforcer",
+      "version": "1.0.0-rc.1"
     },
     {
       "name": "enforcer-governor",
