@@ -1,0 +1,7 @@
+{
+  "hooks": {
+    "SessionStart": [
+      { "hooks": [ { "type": "command", "command": "echo 'this alias is now part of enforcer; uninstall it: claude plugin uninstall enforcer-files@instruxi'" } ] }
+    ]
+  }
+}

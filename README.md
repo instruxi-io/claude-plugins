@@ -7,15 +7,15 @@ The Enforcer API documents itself through the MCP server: `enforcer_api_search`
 and `enforcer_api_describe` answer from the live spec, so there is no doc
 plugin to drift out of date.
 
-`enforcer` and `enforcer-graph` are the defaults; the rest are opt-in.
+`enforcer` is the only default; the rest are opt-in or deprecated aliases.
 
 | Plugin | Default | What it gives you | Source |
 |---|---|---|---|
 | `enforcer` | **on** | The `enforcer` MCP server and one sign-in, `/enforcer:login`, that every plugin here shares. A short skill on how Enforcer is organised. | this repo, `enforcer/` |
 | `enforcer-files` | deprecated | Now part of `enforcer` (skill `files`, `/enforcer:upload`, `/enforcer:download`). Alias for one release. | `enforcer/` |
-| `enforcer-graph` | **on** | Work a plan held in enforcer-graph: claim a node, keep its lease, report against its criteria. | this repo, `enforcer-graph/` |
+| `enforcer-graph` | deprecated | Now part of `enforcer` (the graph worker). Empty alias; uninstall it. | `aliases/enforcer-graph/` |
 | `jev-hooks` | opt-in, **Instruxi staff** | Jev-backed hooks: Bash and edit risk gates, subagent model routing, subagent verification, a stop self-check, loop detection, compaction triage. | `instruxi-io/jev-hooks`, default branch |
-| `enforcer-governor` | opt-in | Decides whether an agent action may run and keeps a tamper-evident record. Uses the `enforcer` sign-in. | `instruxi-io/enforcer-governor`, tag `v2.8.2` |
+| `enforcer-governor` | deprecated | Now part of `enforcer`. Do not install it separately. | `instruxi-io/enforcer-governor`, tag `v2.9.0` |
 
 ## Before you start
 
@@ -30,9 +30,8 @@ plugin to drift out of date.
 
 ```sh
 claude plugin marketplace add instruxi-io/claude-plugins
-claude plugin install enforcer@instruxi             # brings enforcer-graph (its hooks) with it
+claude plugin install enforcer@instruxi             # includes the graph worker hooks and the governor
 # enforcer-files is now part of enforcer; nothing more to install
-claude plugin install enforcer-governor@instruxi     # optional: govern agent actions
 ```
 
 ### Codex CLI
@@ -74,22 +73,13 @@ Then, in Claude Code, sign in once and let setup show you the rest:
 ```
 
 That is the whole customer setup: **one install, then `/enforcer:setup`**.
-`enforcer` declares `enforcer-graph` as a [plugin dependency](https://code.claude.com/docs/en/plugins/dependencies),
-so the install pulls in the graph hooks (`+ 1 dependency: enforcer-graph`) and
-Claude Code refuses to disable them while `enforcer` is on - you cannot end up
-with the MCP's graph tools but no hooks behind them. `/enforcer:setup` asks the
+`enforcer` carries the graph hooks itself, so you cannot end up with the MCP's
+graph tools but no hooks behind them. `/enforcer:setup` asks the
 server for the plan (the permission allow rules for the graph worker loop, the
 plugin commands, and the first policy rules for this repo's routes), shows it,
 and applies only what you confirm.
 
-**Already installed?** `claude plugin update enforcer@instruxi`, then
-`claude plugin install enforcer@instruxi` again (or `/reload-plugins`):
-`plugin update` alone does not install a dependency that is new, and until it is
-installed `claude plugin list` says `failed to load: Dependency
-"enforcer-graph@instruxi" is not installed` with the command to run. If you had turned `enforcer-graph` off, `claude plugin list`
-now shows `enforcer` as `failed to load: Dependency "enforcer-graph@instruxi" is
-disabled`: run `claude plugin enable enforcer-graph@instruxi`. An older install
-says so once at session start, with the update command.
+**Already installed?** `claude plugin update enforcer@instruxi`, then `/reload-plugins`. If you installed the old `enforcer-graph`, `enforcer-files` or `enforcer-governor` plugins, uninstall them: they are now part of `enforcer`.
 
 **Switch workspace vs sign in again.** If you already belong to several
 workspaces, move between them with `/enforcer:workspace list` and

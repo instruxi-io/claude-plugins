@@ -1,0 +1,6 @@
+{
+  "name": "enforcer-files",
+  "description": "DEPRECATED: now part of enforcer. Uninstall this alias.",
+  "version": "0.0.1",
+  "author": { "name": "Instruxi", "url": "https://instruxi.io" }
+}
