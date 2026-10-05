@@ -1,11 +1,11 @@
 ---
 name: graph
-description: Work a plan held in enforcer-graph — claim the next runnable node yourself, do it, keep the lease alive, report it against its acceptance criteria with captured command output as evidence. Use when a project has .claude/graph.json, when asked to "work the plan", "take the next node", "claim from the frontier", when a coordinator hands you a graph node to work as a subagent, when fanning a plan out to subagents, or when the enforcer-graph MCP tools (graph_next_work, graph_report, graph_heartbeat, graph_plan_status, graph_remember) are available.
+description: Work a plan held in the enforcer graph — claim the next runnable node yourself, do it, keep the lease alive, report it against its acceptance criteria with captured command output as evidence. Use when a project has .claude/graph.json, when asked to "work the plan", "take the next node", "claim from the frontier", when a coordinator hands you a graph node to work as a subagent, when fanning a plan out to subagents, or when the enforcer graph MCP tools (graph_next_work, graph_report, graph_heartbeat, graph_plan_status, graph_remember) are available.
 ---
 
 # Working a graph
 
-enforcer-graph holds a plan as a DAG. Nodes are tasks; each carries
+The enforcer graph holds a plan as a DAG. Nodes are tasks; each carries
 `data.acceptance`, the list of lines your report will be judged against. You
 never decide what to do next: the graph does, from the edges.
 
@@ -171,7 +171,7 @@ $ gh pr checks 212 --watch && gh pr merge 212 --squash
 $ gh pr view 212 --json state,mergedAt            # captured: MERGED
 graph_report status=succeeded pr=https://github.com/o/r/pull/212 report=
   1. Race test — MET. `go test -race -count=20 ./internal/runs/` exit 0,
-     "ok enforcer-graph/internal/runs".
+     "ok example/internal/runs".
   2. PR merged — MET. `gh pr view 212`: state MERGED, mergedAt 2026-09-30T02:11Z.
 ```
 
@@ -238,7 +238,7 @@ its own command, never chained with `&&` or `;` to a test, add or commit (the
 headless push rule matches only the whole command), then open the PR.
 
 To merge, run the plugin's lander, which needs no model in the loop:
-`"$(ls -d ~/.claude/plugins/cache/*/enforcer-graph/*/bin/land-pr.sh | tail -1)" <n>`.
+`"${CLAUDE_PLUGIN_ROOT}/bin/land-pr.sh" <n>`.
 It queues `gh pr merge <n> --squash --auto`, keeps the branch current, and exits
 0 merged (printing the evidence below), 2 CI failed, 3 conflicts, 4 timed out. When the base branch
 requires branches to be up to date, GitHub merges only once the PR is current
@@ -256,7 +256,7 @@ whole job.
 1. Read the frontier with `graph_plan_status`. Spawn at most one worker per
    frontier node, each in its own worktree. Do not claim anything yourself.
 2. Give each worker the graph id, the node key and id you expect it to get, its
-   acceptance lines, and this instruction: *"Load the `enforcer-graph:graph`
+   acceptance lines, and this instruction: *"Load the `enforcer:graph`
    skill. Claim with `graph_next_work` passing `node: <key>`, work the node you
    are handed, heartbeat through long steps, and `graph_report` it yourself
    before you return. Tell me the node key, run id, status and verdict."*
