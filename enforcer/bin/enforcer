@@ -3,7 +3,7 @@
 //   enforcer governor <decide|status|config|limit|verify>   the governor core
 //   enforcer hook <event> [handler]                          graph worker hooks (self-gated)
 import { spawnSync } from 'node:child_process';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, appendFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { homedir } from 'node:os';
@@ -44,6 +44,10 @@ if (area === 'hook' && HOOKS[sub]) {
   try { input = readFileSync(0, 'utf8'); } catch {}
   let ev = {};
   try { ev = JSON.parse(input || '{}') || {}; } catch {}
+  if (sub === 'session-start') { // announce the governor (ENFORCER_GOVERNOR=1) even with no graph context
+    if (process.env.CLAUDE_ENV_FILE) { try { appendFileSync(process.env.CLAUDE_ENV_FILE, 'export ENFORCER_GOVERNOR=1\n'); } catch {} }
+    process.env.ENFORCER_GOVERNOR = '1';
+  }
   if (!graphContextLive(ev)) process.exit(0); // no graph context: no output, no python
   const only = rest[0] ? rest[0].replace(/-/g, '_') : null;
   const handlers = HOOKS[sub].filter((h) => !only || h === only);

@@ -138,3 +138,12 @@ installed on this machine). grok 1.0.41 non-interactive listing, verbatim:
 $ grok mcp list
 No MCP servers configured. Run `grok mcp add --help` to get started.
 ```
+
+## Detecting the governor from other hook packs
+
+The governor lives inside enforcer (since 1.0.0). Its SessionStart hook (Claude, Codex and Grok
+shims, and `bin/enforcer hook session-start`) announces it with `ENFORCER_GOVERNOR=1`
+(exported via `CLAUDE_ENV_FILE` and carried in the hook output's `env`). Other hook packs
+(jev-hooks etc.) must read `ENFORCER_GOVERNOR`, never the plugin-cache directory: when the
+deprecated `enforcer-governor` cache vanished, jev-hooks 0.27 saw no governor, gated work
+itself and denied every headless worker.
