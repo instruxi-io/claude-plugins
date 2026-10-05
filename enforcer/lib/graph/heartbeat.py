@@ -20,7 +20,7 @@ def tick(sid):
         pass
     n += 1
     try:
-        open(p, "w").write(str(n))
+        lib.private_open(p, "w").write(str(n))
     except Exception:
         pass
     return n
