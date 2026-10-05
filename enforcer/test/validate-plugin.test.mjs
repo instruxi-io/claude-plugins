@@ -79,4 +79,28 @@ assert.deepEqual(kit.plugins.map((p) => p.id).sort(), ['enforcer@instruxi', 'jev
 assert.deepEqual(kit.plugins.filter((p) => p.default).map((p) => p.id), ['enforcer@instruxi']);
 console.log('ok   kit defaults: only enforcer and jev-hooks are selectable, only enforcer default');
 
+// no suite reads the real home directory: every node suite runs under the isolating preload,
+// python suites and run.sh under test/isolated.sh, and none asks the OS for the home itself.
+{
+  const dirs = [['test', 'package.json'], ['lib/governor/test', 'lib/governor/package.json']];
+  for (const [d, pj] of dirs) {
+    const script = rd(pj).scripts.test;
+    for (const f of readdirSync(new URL(`../${d}`, import.meta.url)).filter((n) => n.endsWith('.test.mjs'))) {
+      if (readFileSync(new URL('./run.sh', import.meta.url), 'utf8').includes(`node ${d}/${f}`)) continue; // run.sh isolates itself
+      assert.match(script, new RegExp(`--import \\S*tmp-cleanup\\.mjs ${d.split('/').pop()}/${f.replace('.', '\\.')}`), `${d}/${f} runs under the isolating preload`);
+    }
+  }
+  const top = rd('package.json').scripts.test;
+  assert.match(top, /isolated\.sh python3 -m unittest discover test/);
+  assert.match(top, /isolated\.sh python3 -m unittest discover -s lib\/graph/);
+  assert.match(top, /isolated\.sh bash test\/run\.sh/);
+  for (const d of ['test', 'lib/governor/test', 'lib/graph']) {
+    for (const f of readdirSync(new URL(`../${d}`, import.meta.url)).filter((n) => /(\.test\.mjs|^test_.*\.py)$/.test(n))) {
+      const src = readFileSync(new URL(`../${d}/${f}`, import.meta.url), 'utf8');
+      assert.ok(!/os\.homedir\(\)|\bhomedir\(\)|expanduser\(|Path\.home\(\)/.test(src), `${d}/${f} reads the real home directory`);
+    }
+  }
+  console.log('ok   no suite reads the real home directory');
+}
+
 console.log('\nOK');

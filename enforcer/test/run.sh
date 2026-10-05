@@ -2,7 +2,12 @@
 # Every hook against a local stub of the graph API. No key, no network, no Jev.
 set -u
 cd "$(dirname "$0")/.."
-PORT=${PORT:-18790}
+# never the developer's HOME, sign-in or harness environment
+if [ -z "${ISOLATED_TEST_RUN:-}" ]; then
+  ISOLATED_TEST_RUN=1 exec bash test/isolated.sh bash "$0" "$@"
+fi
+unset ISOLATED_TEST_RUN
+PORT=${PORT:-$(python3 -c "import socket;s=socket.socket();s.bind((\"127.0.0.1\",0));print(s.getsockname()[1])")}
 RUN_TMP="$(mktemp -d)"; export TMPDIR="$RUN_TMP"   # everything below lives here, removed on exit
 export STUB_LOG="$(mktemp)"
 export STUB_HEALTH_FILE="$(mktemp)"
@@ -251,6 +256,18 @@ sys.path.insert(0,'lib/graph')
 spec=importlib.util.spec_from_file_location('ae','lib/graph/attach_evidence.py')
 m=importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
 r=m.check_pr(sys.argv[1]); print(json.dumps(r) if r else '')" "$1"; }
+# A fake gh on PATH: no network, no GitHub sign-in, no real HOME.
+mkdir -p "$WORK/fakebin"
+cat > "$WORK/fakebin/gh" <<'GH'
+#!/bin/sh
+if [ "$3" = "11" ]; then
+  echo '{"state":"MERGED","title":"a merged change","mergedAt":"2026-01-01T00:00:00Z","url":"https://github.com/instruxi-io/enforcer-governor/pull/11"}'
+else
+  echo "GraphQL: Could not resolve to a PullRequest with the number of $3." >&2; exit 1
+fi
+GH
+chmod +x "$WORK/fakebin/gh"
+export PATH="$WORK/fakebin:$PATH"
 out=$(pr_json "https://github.com/instruxi-io/enforcer-graph/pull/999999")
 check "pr: a pull request that does not exist is recorded as NOT FOUND" 'echo "$out" | grep -q "NOT FOUND"'
 # A PUBLIC repo's merged PR, so this resolves in the public catalog's CI too
