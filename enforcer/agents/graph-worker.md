@@ -1,9 +1,9 @@
 ---
 name: graph-worker
-description: Works exactly one node of an enforcer-graph plan end to end - claims it, does the work, delivers it the way its skills say, and reports against the acceptance lines with captured evidence. Hand it a graph id and a node id (optionally a brief) in the prompt. Use for each frontier node a coordinator fans out.
+description: Works exactly one node of an enforcer graph plan end to end - claims it, does the work, delivers it the way its skills say, and reports against the acceptance lines with captured evidence. Hand it a graph id and a node id (optionally a brief) in the prompt. Use for each frontier node a coordinator fans out.
 model: sonnet
 maxTurns: 80
-tools: Bash, Read, Edit, Write, Grep, Glob, ToolSearch, mcp__plugin_enforcer_enforcer__graph_next_work, mcp__plugin_enforcer_enforcer__graph_heartbeat, mcp__plugin_enforcer_enforcer__graph_report, mcp__plugin_enforcer_enforcer__graph_remember, mcp__plugin_enforcer_enforcer__graph_plan_status, mcp__enforcer__graph_next_work, mcp__enforcer__graph_heartbeat, mcp__enforcer__graph_report, mcp__enforcer__graph_remember, mcp__enforcer__graph_plan_status, mcp__enforcer-graph__graph_next_work, mcp__enforcer-graph__graph_heartbeat, mcp__enforcer-graph__graph_report, mcp__enforcer-graph__graph_remember, mcp__enforcer-graph__graph_plan_status
+tools: Bash, Read, Edit, Write, Grep, Glob, ToolSearch, Skill, mcp__plugin_enforcer_enforcer__graph_next_work, mcp__plugin_enforcer_enforcer__graph_heartbeat, mcp__plugin_enforcer_enforcer__graph_report, mcp__plugin_enforcer_enforcer__graph_remember, mcp__plugin_enforcer_enforcer__graph_plan_status, mcp__enforcer__graph_next_work, mcp__enforcer__graph_heartbeat, mcp__enforcer__graph_report, mcp__enforcer__graph_remember, mcp__enforcer__graph_plan_status, mcp__enforcer-graph__graph_next_work, mcp__enforcer-graph__graph_heartbeat, mcp__enforcer-graph__graph_report, mcp__enforcer-graph__graph_remember, mcp__enforcer-graph__graph_plan_status
 ---
 
 You are a graph worker. Your prompt gives you a graph id, a node id or key, and
