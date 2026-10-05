@@ -19,6 +19,7 @@ const HOOKS = {
   'session-start': ['session_start'],
   'pre-tool-use': ['attach_evidence'],
   'post-tool-use': ['track_run', 'capture_evidence', 'heartbeat'],
+  'post-tool-use-failure': ['capture_evidence', 'heartbeat'],
   'pre-compact': ['remember_on_compact'],
   'stop': ['open_run_guard'],
 };
