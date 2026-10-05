@@ -17,7 +17,11 @@
       "name": "enforcer-governor",
       "description": "DEPRECATED: now part of enforcer. Install enforcer instead; this alias goes away after one release.",
       "category": "deprecated",
-      "source": "./enforcer"
+      "source": {
+        "source": "github",
+        "repo": "instruxi-io/enforcer-governor",
+        "ref": "v2.9.0"
+      }
     },
     {
       "name": "jev-hooks",
