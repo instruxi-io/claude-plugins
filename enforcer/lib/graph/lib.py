@@ -386,6 +386,9 @@ def state_base():
     else ~/.config/enforcer/sessions/<harness> (first use moves the old location)."""
     explicit = os.environ.get("ENFORCER_STATE_DIR") or claude_paths.plugin_data_env()
     if explicit:
+        # Claude Code always sets CLAUDE_PLUGIN_DATA, so migrate here too, or
+        # runs in flight under the legacy dir are stranded at upgrade.
+        migrate_dir(claude_paths.legacy_state_dir(), explicit)
         return explicit
     cfg = os.environ.get("ENFORCER_CONFIG_HOME") or os.path.join(os.path.expanduser("~"), ".config", "enforcer")
     d = os.path.join(cfg, "sessions", os.environ.get("ENFORCER_HARNESS") or "claude")

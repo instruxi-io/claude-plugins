@@ -46,7 +46,7 @@ per-harness extensions.**
 | Graph worker hooks | `bin/enforcer hook <event>` — evidence capture, heartbeat, open-run guard, remember-on-compact, version check — **self-gated**: they do nothing unless a graph context is live (`GRAPH_ID` set or a claimed run in the session state). | same three shims as above; one `hooks.json` per harness. |
 | Dispatcher | `bin/graph-dispatch --harness claude|codex|grok` — lease, salvage, triage, `data.base`, contested resources are harness-neutral already; only the launch command and the stream parser differ (`claude -p --output-format stream-json`, `codex exec --json`, `grok -p … --output-format json`). | per-harness launcher + parser modules with fixtures recorded from real runs. |
 | Graph-worker agent | Claude-only extra (`agents/graph-worker.md`); Codex skips agent handlers, Grok has `.grok/agents/` — a Grok agent file is generated from the same source. | |
-| State | `~/.config/enforcer/` — credentials (already), governor records, session state, dispatcher state — keyed by harness where it differs. No `~/.claude` path anywhere in the package. | migration on first run moves what exists. |
+| State | `~/.config/enforcer/` — governor records, session state, dispatcher state (credentials stay in `~/.enforcer/credentials.json`, shared by every plugin on the machine) — keyed by harness where it differs. No `~/.claude` path anywhere in the package. | migration on first run moves what exists. |
 
 ## Package layout
 

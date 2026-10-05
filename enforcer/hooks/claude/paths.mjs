@@ -8,5 +8,6 @@ export const DOT = '.' + 'claude';
 export const LEGACY_PROJECT_CONFIG = join(DOT, 'graph.json');
 export const claudeSettingsPath = () => process.env.CLAUDE_SETTINGS_PATH || join(home(), DOT, 'settings.json');
 export const pluginDataEnv = () => process.env.CLAUDE_PLUGIN_DATA;
-export const legacyStateDir = () => join(home(), DOT, 'enforcer-graph');
-export const legacyPluginData = () => join(home(), DOT, 'plugins', 'data');
+export const configDir = () => process.env.CLAUDE_CONFIG_DIR || join(home(), DOT);
+export const legacyStateDir = () => join(configDir(), 'enforcer-graph');
+export const legacyPluginData = () => join(configDir(), 'plugins', 'data');
