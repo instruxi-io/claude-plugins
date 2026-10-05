@@ -53,7 +53,16 @@ const MUTATES = /(^|[^0-9&<])>{1,2}(?!&)|\btee\b|\bsed\s+(-[a-zA-Z]*i|--in-place
 
 // The skill's own land-pr.sh invocation finds the script with a substitution;
 // it is one command, so it is folded to its name before the shape is checked.
-const LAND_LOOKUP = /^"?\$\(\s*ls\s+-d\s+[^()|;&]*\/land-pr\.sh\s*\|\s*tail\s+-1\s*\)"?/;
+const LAND_LOOKUP = /^"?\$\(\s*ls\s+-d\s+([^()|;&\s]*\/land-pr\.sh)\s*\|\s*tail\s+-1\s*\)"?/;
+// Where land-pr.sh may live: the plugin's own bin/, or its install cache.
+const CACHE_LAND = new RegExp('^(?:~|\\$HOME|\\$\\{HOME\\})\\/\\' + DOT + '\\/plugins\\/cache\\/[^\\/\\s]+\\/enforcer(?:-graph)?\\/[^\\/\\s]+\\/bin\\/land-pr\\.sh$');
+const trustedLand = (path, root) => {
+  if (typeof path !== 'string' || /\.\./.test(path)) return false;
+  if (CACHE_LAND.test(path.replace(/\*/g, 'x'))) return true;
+  const r = typeof root === 'string' && root ? root.replace(/\/+$/, '') : null;
+  return path === '$CLAUDE_PLUGIN_ROOT/bin/land-pr.sh' || path === '${CLAUDE_PLUGIN_ROOT}/bin/land-pr.sh' ||
+    (!!r && path === r + '/bin/land-pr.sh');
+};
 const META = /[;&|`\n<>]|\$\(/;
 
 const verdict = (action, ruleId, code, reason) => {
@@ -95,6 +104,37 @@ export function gitDir(cmd) {
 }
 
 const mentionsDelivery = (cmd) => /\bgit\s+(-C\s+\S+\s+)?push\b|\bgh\s+pr\s+create\b|land-pr\.sh/.test(cmd);
+// Everything a headless worker could deliver or exfiltrate through. Anything
+// here that is not an exactly recognised shape is refused.
+const mentionsDeliveryWide = (cmd) =>
+  /(^|[^\w.-])git\b[^|;&\n]*?\s(push|remote)\b|(^|[^\w.-])gh\b[^|;&\n]*?\b(pr\s+(create|merge)|api)\b|land-pr\.sh/.test(cmd) ||
+  mentionsDelivery(cmd);
+const shape = (why) => verdict('deny', 'graph.push', 'delivery_shape',
+  `a headless worker may only run the exact recognised delivery commands: ${why}`);
+
+const PR_FLAGS = new Set(['--title', '-t', '--body', '-b', '--base', '-B', '--head', '-H']);
+const prShapeOk = (args) => {
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a === '--fill') continue;
+    const eq = a.indexOf('=');
+    if (a.startsWith('--') && eq > 0) { if (!PR_FLAGS.has(a.slice(0, eq))) return false; continue; }
+    if (!PR_FLAGS.has(a)) return false;
+    if (i + 1 >= args.length) return false;
+    i++;
+  }
+  return true;
+};
+const landShapeOk = (args) => {
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (/^\d+$/.test(a)) continue;
+    if (/^--timeout=\d+$/.test(a)) continue;
+    if (a === '--timeout' && /^\d+$/.test(args[i + 1] || '')) { i++; continue; }
+    return false;
+  }
+  return true;
+};
 
 function push(args, ctx) {
   const { headless, branch } = ctx;
@@ -108,6 +148,7 @@ function push(args, ctx) {
     if (a.startsWith('+')) force = true;
     pos.push(a.replace(/^\+/, ''));
   }
+  if (headless && pos[0] !== undefined && pos[0] !== 'origin') return shape('push to origin only');
   const [, refspec, ...extra] = pos;
   const src = refspec?.includes(':') ? refspec.split(':')[0] : refspec;
   const dst = (refspec?.includes(':') ? refspec.split(':')[1] : refspec)?.replace(/^refs\/heads\//, '');
@@ -134,6 +175,7 @@ function push(args, ctx) {
 
 function prCreate(args, ctx) {
   const { headless, branch } = ctx;
+  if (headless && !prShapeOk(args)) return shape('pull request creation takes only --title --body --base --head --fill');
   const h = args.indexOf('--head') >= 0 ? args[args.indexOf('--head') + 1] : (args.find(a => a.startsWith('--head='))?.slice(7));
   const head = h || branch;
   if (!isGraph(branch) && !isGraph(h)) return headless
@@ -177,8 +219,12 @@ export function evaluate(ev) {
   const s = settings(ev, ctx, raw);
   if (s) return s;
 
-  const cmd = raw.replace(LAND_LOOKUP, 'land-pr.sh').replace(/\s+2>&1\s*$/, '').trim();
-  if (!mentionsDelivery(cmd)) return null;
+  let folded = false;
+  const cmd = raw.replace(LAND_LOOKUP, (m, p) => {
+    if (!trustedLand(p, ev.worker?.pluginRoot)) return m;
+    folded = true; return 'land-pr.sh';
+  }).replace(/\s+2>&1\s*$/, '').trim();
+  if (!(ctx.headless ? mentionsDeliveryWide(cmd) : mentionsDelivery(cmd))) return null;
   if (META.test(cmd)) return ctx.headless
     ? verdict('deny', 'graph.push', 'push_not_alone', 'a push, pull request or land must be the whole command, on its own')
     : null;
@@ -187,8 +233,16 @@ export function evaluate(ev) {
   const args = pushArgs(cmd);
   if (args) return push(args, ctx);
   if (w[0] === 'gh' && w[1] === 'pr' && w[2] === 'create') return prCreate(w.slice(3), ctx);
-  if (/(^|\/)land-pr\.sh$/.test(w[0] || '') || (w[0] === 'bash' && /(^|\/)land-pr\.sh$/.test(w[1] || ''))) return land(ctx);
-  return null;
+  const lp = /(^|\/)land-pr\.sh$/.test(w[0] || '') ? 0 : (w[0] === 'bash' && /(^|\/)land-pr\.sh$/.test(w[1] || '')) ? 1 : -1;
+  if (lp >= 0) {
+    if (ctx.headless) {
+      const trusted = (folded && lp === 0 && w[0] === 'land-pr.sh') || trustedLand(w[lp], ev.worker?.pluginRoot);
+      if (!trusted) return shape('land-pr.sh must resolve under the plugin root');
+      if (!landShapeOk(w.slice(lp + 1))) return shape('land-pr.sh takes a pull request number and --timeout');
+    }
+    return land(ctx);
+  }
+  return ctx.headless ? shape('not a recognised push, pull request or land') : null;
 }
 
 /**

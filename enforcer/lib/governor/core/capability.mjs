@@ -62,7 +62,7 @@ export const DEFAULT_RULES = [
   // denial (2026-10-05, dispatcher-worktree-include, three attempts).
   { id: 'secrets.access', authz: 'read',
     name: 'read or write credentials', tool: 'shell', field: 'command', action: 'ask',
-    match: '(?:^|[\\s;&|(`])(?:cat|less|more|head|tail|cp|mv|scp|rsync|source|\\.|tee|sed|awk|cut|base64|xxd|od|strings|curl|wget|printf|echo|vim?|nano|cmp|diff|gpg|openssl|python3?|node)\\s+(?:[^|;&\\n]*?[\\s\'"=/])?(?:\\.env(?:\\.[\\w-]+)?|id_rsa\\w*|[\\w.-]+\\.pem|credentials\\.json|\\.aws/|\\.ssh/)(?=[\\s\'"|;&)]|$)|[<>]{1,2}\\s*[^|;&\\s]*(?:\\.env(?:\\.[\\w-]+)?|id_rsa|\\.pem\\b|credentials\\.json|\\.aws/|\\.ssh/)' },
+    match: '(?:^|[\\s;&|(`])(?:cat|less|more|head|tail|cp|mv|scp|rsync|source|\\.|tee|sed|awk|cut|base64|xxd|od|strings|curl|wget|gh|printf|echo|vim?|nano|cmp|diff|gpg|openssl|python3?|node)\\s+(?:[^|;&\\n]*?[\\s\'"=/])?(?:\\.env(?:\\.[\\w-]+)?|id_rsa\\w*|[\\w.-]+\\.pem|credentials\\.json)(?=[\\s\'"|;&)]|$)|\\.(?:aws|ssh)/|[<>]{1,2}\\s*[^|;&\\s]*(?:\\.env(?:\\.[\\w-]+)?|id_rsa|\\.pem\\b|credentials\\.json|\\.aws/|\\.ssh/)' },
   { id: 'secrets.edit', authz: 'write',
     name: 'read or write credentials', tool: '', field: 'path', action: 'ask',
     match: '(?:^|/)(?:\\.env(?:\\.[\\w-]+)?|id_rsa\\w*|[\\w.-]+\\.pem|credentials\\.json)$|(?:^|/)\\.(?:aws|ssh)/' },
