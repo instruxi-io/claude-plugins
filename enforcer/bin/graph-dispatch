@@ -667,6 +667,7 @@ class Dispatcher:
         self.triaged_sig = {}  # failed node key -> its runs' signature when it was triaged (any node type)
         self.retry_sleep = 2.0
         self.lease_at = 0.0
+        self.verdict_noted = 0.0
         self.all_nodes = []  # the last pass's node list: triage resolves `existing` prerequisites against it
 
     def say(self, msg):
@@ -1534,6 +1535,17 @@ class Dispatcher:
                 self.release_lease()
         return self.loop()
 
+    def verifying_gate(self, nodes):
+        """Keys of `verifying` nodes while unfinished work remains behind them:
+        their verdict (a judge's vote, a person's approval) can release it, so
+        the dispatcher keeps polling instead of reporting 'nothing runnable'."""
+        ver = [n["key"] for n in nodes if n.get("status") == "verifying" and n.get("key") != LEASE_KEY]
+        if not ver:
+            return []
+        rest = [n for n in nodes if n.get("status") not in ("done", "failed", "cancelled", "verifying", "running")
+                and n.get("key") != LEASE_KEY and not (n.get("data") or {}).get("dispatcher_lease")]
+        return ver if rest else []
+
     def loop(self):
         a = self.args
         if a.dry_run:
@@ -1582,7 +1594,13 @@ class Dispatcher:
                 self.say("drained: stop file present and no worker running; exiting (peak %d)" % self.peak)
                 return 0
             busy = any(n.get("status") == "running" and not lapsed(n) for n in nodes)
-            if not self.workers and not launched and not busy:
+            waiting = [] if a.exit_when_idle else self.verifying_gate(nodes)
+            if waiting and not self.workers and not launched and not busy:
+                idle = 0
+                if time.time() - self.verdict_noted > 600:
+                    self.say("waiting on verdict for %s" % ", ".join(waiting))
+                    self.verdict_noted = time.time()
+            elif not self.workers and not launched and not busy:
                 idle += 1
                 if idle >= 2:
                     self.say("nothing runnable or running; exiting (peak %d concurrent)" % self.peak)
@@ -2087,6 +2105,9 @@ def parse_args(argv):
     p.add_argument("--max-attempts", type=int, default=2, help="launches per node per dispatcher session")
     p.add_argument("--types", default=DEFAULT_TYPES, help="node types to dispatch, or 'all'")
     p.add_argument("--interval", type=float, default=30, help="seconds between passes")
+    p.add_argument("--exit-when-idle", action="store_true",
+                   help="exit when nothing is runnable or running even if a verifying node still gates work "
+                        "(default: wait for its verdict)")
     p.add_argument("--heartbeat", type=float, default=120, help="seconds between merge-run heartbeats")
     p.add_argument("--land-timeout", type=int, default=3000)
     p.add_argument("--state-dir", help="logs and stop file (default ~/.config/enforcer/dispatch/<graph>)")

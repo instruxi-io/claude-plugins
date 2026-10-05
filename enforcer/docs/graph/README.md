@@ -238,6 +238,13 @@ and, for each ready node, up to `--workers` at once:
 - **Drain**: `touch <state>/STOP` (default state `~/.config/enforcer/dispatch/<graph>`):
   no new launches, running workers finish, exit 0. `--max-attempts` (2) bounds
   launches per node per session.
+- **Waits on verdicts.** A node in `verifying` (tenant gate: judges voting, or
+  an escalation waiting for a person) holds its dependents back. While one
+  exists and unfinished work remains, the dispatcher keeps polling at
+  `--interval` instead of exiting "nothing runnable", and logs
+  `waiting on verdict for <keys>` once per 10 minutes. It exits only when
+  nothing is runnable, running or verifying. `--exit-when-idle` restores the
+  old exit.
 - **Auth**: `GRAPH_AUTH_HELPER` (any command printing JSON headers; default the
   newest cached `enforcer-headers.mjs`) or `GRAPH_API_KEY`; base
   `GRAPH_BASE_URL`. Exit 0 done or drained, 1 auth/API, 2 blocked (below), 5 usage.
