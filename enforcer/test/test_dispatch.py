@@ -1082,6 +1082,35 @@ class HarnessUsageLimit(unittest.TestCase):
         self.assertTrue(gd.harness_limit_text({"result_text": "You've hit your weekly limit", "error_text": None}))
         self.assertIsNone(gd.harness_limit_text({"result_text": "the suite is red", "error_text": None}))
 
+    def test_limit_a_reported_success_mentioning_rate_limit_is_not_a_limit(self):
+        s = {"result_text": "handled the rate limit and 429s", "error_text": None, "reported": True,
+             "result": "success", "is_error": False, "num_turns": 40, "turns": 40}
+        self.assertIsNone(gd.harness_limit_text(s))
+        s2 = dict(s, reported=False, is_error=True, num_turns=1, result_text="You've hit your weekly limit")
+        self.assertTrue(gd.harness_limit_text(s2))
+
+    def test_limit_hold_is_capped_at_8_days(self):
+        import datetime as dt
+        now = dt.datetime(2026, 1, 1, tzinfo=dt.timezone.utc).timestamp()
+        t = gd.limit_reset_at("hit your weekly limit resets Dec 30, 8pm (UTC)", now=now)
+        self.assertLessEqual(t - now, 8 * 86400)
+        past = gd.limit_reset_at("resets Jan 1, 1am (UTC)", now=now + 7200)
+        self.assertLess(past - (now + 7200), 86400)
+
+    def test_limit_feb_29_does_not_raise(self):
+        import datetime as dt
+        now = dt.datetime(2026, 10, 5, tzinfo=dt.timezone.utc).timestamp()
+        gd.limit_reset_at("resets Feb 29, 8pm (UTC)", now=now)
+
+    def test_limit_multi_slash_zone_parses(self):
+        import datetime as dt
+        from zoneinfo import ZoneInfo
+        now = dt.datetime(2026, 10, 5, tzinfo=dt.timezone.utc).timestamp()
+        t = gd.limit_reset_at("resets Oct 7, 8pm (America/Argentina/Buenos_Aires)", now=now)
+        w = dt.datetime.fromtimestamp(t, ZoneInfo("America/Argentina/Buenos_Aires"))
+        self.assertEqual((w.day, w.hour), (7, 20))
+        self.assertIsNotNone(gd.limit_reset_at("resets Oct 7, 8pm (UTC)", now=now))
+
     def test_limit_spends_no_attempt_and_holds_launches(self):
         out = io.StringIO()
         api = TriageAPI([node("a", repo="r")])

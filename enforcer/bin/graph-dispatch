@@ -1801,13 +1801,25 @@ LAND_CODES = {0: "merged", 2: "CI failed", 3: "conflict with the base", 4: "time
 LIMIT_RE = re.compile(r"hit your (?:weekly|daily|monthly|session|usage) limit|usage limit (?:reached|exceeded)|"
                       r"rate[ -]?limit(?:ed|s)?\b|too many requests|out of (?:credits|quota)", re.I)
 RESET_RE = re.compile(r"resets?\s+(?:at\s+|on\s+)?(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+(\d{1,2}),?"
-                      r"\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?(?:\s*\(([A-Za-z_]+/[A-Za-z_+\-]+)\))?", re.I)
+                      r"\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?(?:\s*\(([A-Za-z][A-Za-z0-9_+\-]*(?:/[A-Za-z0-9_+\-]+)*)\))?", re.I)
+MAX_HOLD = 8 * 86400
 MONTHS = {m: i for i, m in enumerate(["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"], 1)}
 
 
 def harness_limit_text(s):
     """The limit message when a worker's result or stderr says the harness is
     out of quota, else None."""
+    # only a real harness error counts: an error result at its first turn, or a
+    # worker that never reported. A reported run that merely mentions rate
+    # limits (a node about 429 handling) is not limited.
+    turns = s.get("num_turns")
+    if turns is None:
+        turns = s.get("turns") or 0
+    errored = bool(s.get("is_error")) or str(s.get("result") or "").startswith("error")
+    if not ((errored and turns <= 1) or not s.get("reported")):
+        return None
+    if s.get("result") == "success" and not s.get("is_error"):
+        return None
     for t in (s.get("result_text"), s.get("error_text")):
         if t and LIMIT_RE.search(t):
             return t
@@ -1829,15 +1841,26 @@ def limit_reset_at(text, now=None):
         tz = None
     hour = int(m.group(3)) % 12 + (12 if (m.group(5) or "").lower() == "pm" else 0)
     now_ts = time.time() if now is None else now
+    backoff = now_ts + 1800
     base = _dt.datetime.fromtimestamp(now_ts, tz)
-    try:
-        when = base.replace(month=MONTHS[m.group(1).lower()[:3]], day=int(m.group(2)), hour=hour,
-                            minute=int(m.group(4) or 0), second=0, microsecond=0)
-    except ValueError:
+    month, day, minute = MONTHS[m.group(1).lower()[:3]], int(m.group(2)), int(m.group(4) or 0)
+
+    def at(year):
+        try:
+            return base.replace(year=year, month=month, day=day, hour=hour, minute=minute,
+                                second=0, microsecond=0).timestamp()
+        except ValueError:  # Feb 29 in a non-leap year, hour 24, ...
+            return None
+    when = at(base.year)
+    if when is None:
+        when = at(base.year + 1)
+    if when is None:
         return None
-    if when.timestamp() < now_ts:
-        when = when.replace(year=when.year + 1)
-    return when.timestamp()
+    if when < now_ts:
+        # just past: the reset has happened or the text is stale, back off
+        # rather than guess next year
+        return backoff
+    return min(when, now_ts + MAX_HOLD)
 
 
 def grok_events(path):
@@ -2000,6 +2023,8 @@ def summarize(path, harness="claude"):
             s["mcp"] = {m.get("name"): m.get("status") for m in e.get("mcp_servers") or [] if isinstance(m, dict)}
         elif t == "result":
             s["result"] = e.get("subtype")
+            s["is_error"] = bool(e.get("is_error"))
+            s["num_turns"] = e.get("num_turns") if isinstance(e.get("num_turns"), (int, float)) else None
             s["result_text"] = e.get("result") if isinstance(e.get("result"), str) else None
             s["usage"] = e.get("usage") if isinstance(e.get("usage"), dict) else {}
             if (e.get("num_turns") or 0) > 0 or s["turns"] > 0:
