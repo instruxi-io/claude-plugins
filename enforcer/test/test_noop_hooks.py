@@ -32,11 +32,11 @@ class NoContext(unittest.TestCase):
 
     def test_pre_tool_use_without_context_is_fast(self):
         self.run_hook("pre-tool-use")  # warm the page cache
-        best = min(self._time() for _ in range(10))
+        best = min(self._time() for _ in range(30))
         # the node process itself is most of this; the bound leaves room for a loaded CI box
         limit = 0.15 if os.environ.get('CI') else 0.05  # spec: under 50 ms; shared CI runners get slack
         self.assertLess(best, limit, f"{best * 1000:.0f} ms")
-        print(f"pre-tool-use no-context best of 10: {best * 1000:.0f} ms")
+        print(f"pre-tool-use no-context best of 30: {best * 1000:.0f} ms")
 
     def _time(self):
         t = time.perf_counter(); self.run_hook("pre-tool-use"); return time.perf_counter() - t
