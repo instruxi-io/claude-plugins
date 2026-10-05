@@ -526,9 +526,25 @@ def worktree_for(node, repo_root, state_dir, dry=False, graph_bases=None, regist
         return path, branch, "would add off " + base
     r = git(["worktree", "add", path, "-b", branch, base], src)
     if r.returncode != 0:  # the branch exists from an earlier attempt
-        r = git(["worktree", "add", path, branch], src)
-    if r.returncode != 0:
-        raise RuntimeError("worktree add failed: " + (r.stderr or r.stdout).strip()[:300])
+        note = "reused branch"
+        if git(["merge-base", "--is-ancestor", branch, base], src).returncode == 0 or \
+                gh_pr_state(branch, src) == "MERGED":
+            # already in the base, or its PR (same head sha) merged: start again from the base
+            git(["branch", "-D", branch], src)
+            r = git(["worktree", "add", path, "-b", branch, base], src)
+            note = "recreated off " + base
+        else:
+            r = git(["worktree", "add", path, branch], src)
+            if r.returncode == 0:
+                rb = git(["rebase", base], path)
+                if rb.returncode != 0:
+                    git(["rebase", "--abort"], path)
+                    note = "reused branch (rebase onto %s failed)" % base
+                else:
+                    note = "reused branch, rebased onto " + base
+        if r.returncode != 0:
+            raise RuntimeError("worktree add failed: " + (r.stderr or r.stdout).strip()[:300])
+        return path, branch, note
     return path, branch, "added off " + base
 
 
@@ -2349,16 +2365,43 @@ def worktree_safe_to_remove(path, branch, src, base_ref=None, pr_state=None):
 
 
 def gh_pr_state(branch, src):
-    """MERGED / OPEN / CLOSED for the branch's latest PR, None when gh cannot say."""
-    try:
-        r = subprocess.run(["gh", "pr", "view", branch, "--json", "state", "-q", ".state"],
-                           cwd=src, capture_output=True, text=True, timeout=30)
-    except (OSError, subprocess.TimeoutExpired):
+    """MERGED / OPEN / CLOSED for the PR whose head sha is the branch's current head
+    (an older PR of the same branch name is no match), None when gh cannot say."""
+    head = git(["rev-parse", "--verify", "-q", branch], src).stdout.strip()
+    if not head:
         return None
-    return r.stdout.strip() or None if r.returncode == 0 else None
+    try:
+        r = subprocess.run(["gh", "pr", "list", "--head", branch, "--state", "all",
+                            "--json", "state,headRefOid"],
+                           cwd=src, capture_output=True, text=True, timeout=30)
+        prs = json.loads(r.stdout) if r.returncode == 0 else []
+    except (OSError, subprocess.TimeoutExpired, ValueError):
+        return None
+    states = [p.get("state") for p in prs if isinstance(p, dict) and p.get("headRefOid") == head]
+    for want in ("OPEN", "MERGED", "CLOSED"):
+        if want in states:
+            return want
+    return None
 
 
-def prune_worktrees(repo_root, yes=False, registry=None, pr_state=None, out=None):
+def live_worker_keys(state_root):
+    """Node keys of workers recorded in any <state_root>/*/pids.json."""
+    keys = set()
+    try:
+        names = os.listdir(state_root)
+    except OSError:
+        return keys
+    for n in names:
+        try:
+            with open(os.path.join(state_root, n, "pids.json")) as f:
+                keys.update((json.load(f).get("workers") or {}).keys())
+        except (OSError, ValueError, AttributeError):
+            pass
+    return keys
+
+
+def prune_worktrees(repo_root, yes=False, registry=None, pr_state=None, out=None,
+                    live_keys=None, min_age=3600):
     """Remove each <repo>-<key> worktree (branch graph/<key>) that is safe to
     remove (with yes; else only say so) and list the rest. Returns (removed, kept)."""
     out = out or sys.stdout
@@ -2377,6 +2420,16 @@ def prune_worktrees(repo_root, yes=False, registry=None, pr_state=None, out=None
             key = br[len("refs/heads/graph/"):]
             if os.path.realpath(path) != os.path.realpath(os.path.join(repo_root, "%s-%s" % (repo, key))):
                 continue
+            if key in (live_keys or ()):
+                kept.append((path, "live worker (pids.json)"))
+                continue
+            try:
+                young = time.time() - os.path.getmtime(path) < min_age
+            except OSError:
+                young = False
+            if young:
+                kept.append((path, "modified within the last %d s" % min_age))
+                continue
             base = registry.get(repo)
             ok, why = worktree_safe_to_remove(path, br[len("refs/heads/"):], src,
                                               _origin_ref(base) if base else None, pr_state)
@@ -2387,6 +2440,9 @@ def prune_worktrees(repo_root, yes=False, registry=None, pr_state=None, out=None
                     continue
                 removed.append((path, why))
                 print("removed %s (%s)" % (path, why), file=out)
+                # a confirmed merge frees the branch name for a re-claim
+                if why.startswith("PR merged") or why.startswith("merged into"):
+                    git(["branch", "-D", br[len("refs/heads/"):]], src)
             elif ok:
                 removed.append((path, why))
                 print("would remove %s (%s)" % (path, why), file=out)
@@ -2404,11 +2460,14 @@ def prune_main(argv):
                                 description="remove clean worktrees whose branch is merged; list the rest for review")
     p.add_argument("--repo-root", default=os.path.expanduser("~/apps"))
     p.add_argument("--yes", action="store_true", help="remove them (default: dry run)")
+    p.add_argument("--state-root", help="dispatch state dirs holding pids.json (default ~/.config/enforcer/dispatch)")
     try:
         a = p.parse_args(argv)
     except SystemExit as e:
         return 5 if e.code else 0
-    prune_worktrees(a.repo_root, a.yes)
+    root = a.state_root or os.path.join(os.environ.get("ENFORCER_CONFIG_HOME") or os.path.expanduser("~/.config/enforcer"),
+                                        "dispatch")
+    prune_worktrees(a.repo_root, a.yes, live_keys=live_worker_keys(root))
     return 0
 
 
