@@ -923,16 +923,19 @@ class Dispatcher:
 
     # --- start-from ref
     def graph_bases(self):
+        # Cached only on a successful read: a transient failure must not make
+        # node_defaults.bases be ignored for the whole session.
         if not hasattr(self, "_gbases"):
-            self._gbases = {}
             try:
                 g = getattr(self.api, "graph", None)
                 nd = ((g(self.g) if g else None) or {}).get("node_defaults") or {}
                 b = nd.get("bases")
-                if isinstance(b, dict):
-                    self._gbases = {str(k): str(v) for k, v in b.items()}
-            except Exception:
-                pass
+                self._gbases = {str(k): str(v) for k, v in b.items()} if isinstance(b, dict) else {}
+            except Exception as e:
+                if time.time() - getattr(self, "_gbases_noted", 0) > 60:
+                    self.say("could not read graph node_defaults.bases (%s); using none this pass, will retry" % e)
+                    self._gbases_noted = time.time()
+                return {}
         return self._gbases
 
     def registry(self):
@@ -1622,8 +1625,10 @@ class Dispatcher:
         try:
             pids = {"dispatcher": os.getpid(), "host": socket.gethostname(),
                     "workers": {k: w.proc.pid for k, w in self.workers.items() if getattr(w, "proc", None)}}
-            with open(os.path.join(self.state, "pids.json"), "w") as f:
+            path = os.path.join(self.state, "pids.json")
+            with open(path + ".tmp", "w") as f:
                 json.dump(pids, f)
+            os.replace(path + ".tmp", path)
         except OSError:
             pass
 
@@ -1700,9 +1705,21 @@ class Dispatcher:
             if not a.dry_run:
                 os.makedirs(self.state, exist_ok=True)
                 self.reap_orphans()
+            if not a.dry_run:
+                try:
+                    if os.path.exists(a.stop_file):
+                        os.remove(a.stop_file)
+                        self.say("removed a stale stop file at startup: %s" % a.stop_file)
+                except OSError:
+                    pass
             rc = self._run()
             if rc in (1, 3) and self.workers:
                 self.shutdown("exit %d" % rc)  # never leave live workers orphaned
+            if not a.dry_run and not self.workers:
+                try:
+                    os.remove(os.path.join(self.state, "pids.json"))
+                except OSError:
+                    pass
             return rc
         except Terminated as t:
             self.shutdown(signal.Signals(t.signum).name)
@@ -1718,7 +1735,7 @@ class Dispatcher:
                 if not self.acquire_lease():
                     return 3
             except APIError as e:
-                self.say("could not take the dispatcher lease: %s" % e)
+                self.say("could not take the dispatcher lease: %s%s" % (e, NOT_FOUND_HINT if e.status == 404 else ""))
                 return 1
             try:
                 return self.loop()
@@ -1760,6 +1777,16 @@ class Dispatcher:
                 if self.stopping() and not self.workers:
                     self.say("drained while limited; exiting (peak %d)" % self.peak)
                     return 0
+                try:  # a multi-hour hold must keep the lease and pids fresh
+                    if time.time() - self.lease_at > LEASE_TTL / 3:
+                        if not self.renew_lease():
+                            return 3
+                        self.lease_at = time.time()
+                except APIError as e:
+                    self.say("API error renewing the lease during a hold: %s" % e)
+                    if e.status in (401, 403, 404, "auth"):
+                        return 1
+                self.write_pids()
                 time.sleep(min(max(a.interval, 1.0), max(self.limited_until - time.time(), 0.0) + 0.01, 300))
                 continue
             try:
@@ -1775,6 +1802,9 @@ class Dispatcher:
             except APIError as e:
                 self.say("API error (pass skipped, retrying): %s" % e)
                 if e.status in (401, 403, "auth"):
+                    return 1
+                if e.status == 404:
+                    self.say("HTTP 404: graph %s not found.%s; exiting 1" % (self.g, NOT_FOUND_HINT))
                     return 1
                 time.sleep(a.interval)
                 continue
@@ -1798,12 +1828,20 @@ class Dispatcher:
             elif not self.workers and not launched and not busy:
                 idle += 1
                 if idle >= 2:
+                    left = sorted(n["key"] for n in nodes if n.get("status") == "failed" and n.get("key") != LEASE_KEY)
+                    left += sorted(k for k in self.denied if k not in left)
+                    if left:
+                        self.say("nothing runnable or running; exiting 6: failed or denied nodes remain: %s (peak %d)"
+                                 % (", ".join(left), self.peak))
+                        return 6
                     self.say("nothing runnable or running; exiting (peak %d concurrent)" % self.peak)
                     return 0
             else:
                 idle = 0
             time.sleep(a.interval)
 
+
+NOT_FOUND_HINT = " Check the workspace (enforcer workspace) and graph id: a graph in another workspace is a 404"
 
 LAND_CODES = {0: "merged", 2: "CI failed", 3: "conflict with the base", 4: "timed out", 5: "usage or gh error"}
 

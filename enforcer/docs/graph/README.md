@@ -247,7 +247,15 @@ and, for each ready node, up to `--workers` at once:
   old exit.
 - **Auth**: `GRAPH_AUTH_HELPER` (any command printing JSON headers; default the
   newest cached `enforcer-headers.mjs`) or `GRAPH_API_KEY`; base
-  `GRAPH_BASE_URL`. Exit 0 done or drained, 1 auth/API, 2 blocked (below), 5 usage.
+  `GRAPH_BASE_URL`. Process exit code, by value:
+  - 0 everything done, or drained by the stop file;
+  - 1 auth failure, API error at startup, or 404 (wrong workspace or graph id);
+  - 2 blocked (below);
+  - 3 another dispatcher holds the graph lease (or it was lost);
+  - 4 harness usage limit with `--on-limit exit`;
+  - 5 usage error (bad arguments);
+  - 6 finished, but failed or denied nodes remain.
+  A stale stop file is removed at startup; `pids.json` is written atomically and removed on exit.
 
 ### Headless workers: the graph tools are refused in `claude -p` (2026-10-02)
 
