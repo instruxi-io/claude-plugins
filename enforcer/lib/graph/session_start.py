@@ -70,7 +70,7 @@ def unseen(items):
     new = [(k, t) for k, t in items if k not in seen]
     if new:
         try:
-            with open(p, "w") as f:
+            with lib.private_open(p, "w") as f:
                 json.dump(sorted(seen | {k for k, _ in new}), f)
         except Exception:
             pass
@@ -79,6 +79,7 @@ def unseen(items):
 
 def main():
     inp = lib.read_stdin()
+    lib.tighten_state()
     try:
         said = unseen(notices())
     except Exception:

@@ -260,6 +260,44 @@ def http(cfg, method, path, body=None):
 POINTER = "MOVED_TO"
 
 
+def private_dir(d):
+    """makedirs 0700, and chmod an existing dir that was created looser."""
+    os.makedirs(d, mode=0o700, exist_ok=True)
+    try:
+        if (os.stat(d).st_mode & 0o777) != 0o700:
+            os.chmod(d, 0o700)
+    except OSError:
+        pass
+    return d
+
+
+def private_open(path, mode="w"):
+    """open() that creates the file 0600 (and tightens an existing one)."""
+    flags = os.O_WRONLY | os.O_CREAT | (os.O_APPEND if "a" in mode else os.O_TRUNC)
+    fd = os.open(path, flags, 0o600)
+    try:
+        os.fchmod(fd, 0o600)
+    except OSError:
+        pass
+    return os.fdopen(fd, mode)
+
+
+def tighten_state():
+    """One-time sweep: existing state dirs 0700, their files 0600. Fails open."""
+    try:
+        private_dir(os.path.dirname(data_dir()))
+        for sub in ("runs", "evidence"):
+            d = os.path.join(state_base(), sub)
+            if os.path.isdir(d):
+                private_dir(d)
+                for n in os.listdir(d):
+                    f = os.path.join(d, n)
+                    if os.path.isfile(f):
+                        os.chmod(f, 0o600)
+    except Exception:
+        pass
+
+
 def migrate_dir(src, dst):
     """First-run migration: move every entry of `src` into `dst` (never over an
     existing one) and leave src/MOVED_TO naming `dst`. Once only; fails open.
@@ -269,13 +307,13 @@ def migrate_dir(src, dst):
         if (os.path.abspath(src) == os.path.abspath(dst) or not os.path.isdir(src)
                 or os.path.exists(os.path.join(src, POINTER))):
             return moved
-        os.makedirs(dst, exist_ok=True)
+        private_dir(dst)
         for name in os.listdir(src):
             t = os.path.join(dst, name)
             if not os.path.exists(t):
                 shutil.move(os.path.join(src, name), t)
                 moved.append(name)
-        with open(os.path.join(src, POINTER), "w") as f:
+        with private_open(os.path.join(src, POINTER), "w") as f:
             f.write(dst + "\n")
     except Exception:
         pass
@@ -297,7 +335,8 @@ def state_base():
 def data_dir():
     d = state_base()
     d = os.path.join(d, "runs")
-    os.makedirs(d, exist_ok=True)
+    private_dir(os.path.dirname(d))
+    private_dir(d)
     return d
 
 
@@ -342,7 +381,7 @@ def load_run(session_id):
 
 
 def save_run(session_id, run):
-    with open(run_path(session_id), "w") as f:
+    with private_open(run_path(session_id), "w") as f:
         json.dump(run, f)
 
 
@@ -533,7 +572,8 @@ def attach_files(items, cfg):
 def evidence_dir():
     d = state_base()
     d = os.path.join(d, "evidence")
-    os.makedirs(d, exist_ok=True)
+    private_dir(os.path.dirname(d))
+    private_dir(d)
     return d
 
 
@@ -545,7 +585,7 @@ def append_evidence(session_id, record):
     """Never raises. A capture that cannot be written is a capture that did not
     happen; it must not cost the session a tool call."""
     try:
-        with open(evidence_path(session_id), "a") as f:
+        with private_open(evidence_path(session_id), "a") as f:
             f.write(json.dumps(record) + "\n")
     except Exception:
         pass

@@ -26,7 +26,7 @@ def main():
                 if inp.get("session_id") and sid != inp.get("session_id"):
                     # session-keyed marker: the parent sees its subagents' live runs
                     try:
-                        open(os.path.join(lib.data_dir(), "%s.live" % inp["session_id"]), "w").close()
+                        lib.private_open(os.path.join(lib.data_dir(), "%s.live" % inp["session_id"]), "w").close()
                     except Exception:
                         pass
     elif name.endswith("graph_report"):
