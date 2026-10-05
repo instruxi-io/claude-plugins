@@ -222,6 +222,16 @@ def decide(inp):
     return out
 
 
+def reclaimed_notice(inp):
+    """The heartbeat hook saw 404/409: this run is no longer ours. Say so before the next graph call."""
+    run = lib.load_run(lib.actor_key(inp))
+    if run and run.get("reclaimed"):
+        return (f"enforcer-graph: the lease on node {run.get('key') or run.get('node_id')} was reclaimed "
+                f"(the heartbeat got 404/409). Stop; a report from this run will be refused. "
+                f"graph_remember any progress worth keeping, then graph_next_work.")
+    return None
+
+
 def main():
     inp = lib.read_stdin()
     tool = inp.get("tool_name") or ""
@@ -235,8 +245,15 @@ def main():
     if lib.stamps_client(tool) and MODE != "context":
         out = out or {"hookEventName": "PreToolUse"}
         out["updatedInput"] = lib.with_client(out.get("updatedInput", inp.get("tool_input")), inp)
+    notice = reclaimed_notice(inp) if lib.is_graph_tool(tool) else None
+    if notice:
+        out = out or {"hookEventName": "PreToolUse"}
+        out["additionalContext"] = (out.get("additionalContext", "") + "\n" + notice).strip()
     if out:
-        print(json.dumps({"hookSpecificOutput": out}))
+        res = {"hookSpecificOutput": out}
+        if notice:
+            res["systemMessage"] = notice
+        print(json.dumps(res))
 
 
 if __name__ == "__main__":

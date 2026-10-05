@@ -24,6 +24,7 @@ pass=0; fail=0
 check() { if eval "$2"; then echo "PASS  $1"; pass=$((pass+1)); else echo "FAIL  $1"; fail=$((fail+1)); fi; }
 hook() { printf '%s' "$2" | python3 "lib/graph/$1"; }
 runfile="$CLAUDE_PLUGIN_DATA/runs/$SID.json"
+stale() { python3 -c 'import json,sys;p=sys.argv[1];d=json.load(open(p));d["last_hb"]=1;json.dump(d,open(p,"w"))' "$CLAUDE_PLUGIN_DATA/runs/$1.json"; }  # lease third long spent
 
 # --- session start
 out=$(hook session_start.py "{\"session_id\":\"$SID\",\"cwd\":\"$WORK/proj\",\"hook_event_name\":\"SessionStart\",\"source\":\"startup\"}")
@@ -52,21 +53,22 @@ in=$(python3 -c 'import json,sys;print(json.dumps({"session_id":sys.argv[1],"too
 hook track_run.py "$in"
 : > "$STUB_LOG"
 for i in 1 2 3 4 5 6 7 8 9; do hook heartbeat.py "{\"session_id\":\"$SID\",\"cwd\":\"$WORK/proj\",\"tool_name\":\"Bash\",\"tool_input\":{}}" >/dev/null; done
-check "heartbeat: nine tool calls, no HTTP" '! grep -q heartbeat "$STUB_LOG"'
+check "heartbeat: nine tool calls within the lease, no HTTP" '! grep -q heartbeat "$STUB_LOG"'
+stale "$SID"
 start=$(date +%s%N)
 out=$(hook heartbeat.py "{\"session_id\":\"$SID\",\"cwd\":\"$WORK/proj\",\"tool_name\":\"Bash\",\"tool_input\":{}}")
 ms=$(( ($(date +%s%N) - start) / 1000000 ))
-check "heartbeat: tenth call heartbeats over HTTP" 'grep -q "/nodes/n1/runs/r1/heartbeat" "$STUB_LOG"'
+check "heartbeat: a call after lease/3 elapsed heartbeats over HTTP" 'grep -q "/nodes/n1/runs/r1/heartbeat" "$STUB_LOG"'
 check "heartbeat: silent on ok" '[ -z "$out" ]'
 check "heartbeat: under 200ms ($ms ms)" '[ "$ms" -lt 200 ]'
 out=$(hook heartbeat.py "{\"session_id\":\"$SID\",\"cwd\":\"$WORK/proj\",\"tool_name\":\"mcp__enforcer-graph__graph_plan_status\",\"tool_input\":{}}")
 check "heartbeat: graph tools do not count or heartbeat" '[ -z "$out" ]'
-for i in 1 2 3 4 5 6 7 8 9; do hook heartbeat.py "{\"session_id\":\"$SID\",\"cwd\":\"$WORK/proj\",\"tool_name\":\"Read\",\"tool_input\":{}}" >/dev/null; done
+stale "$SID"
 echo cancel_requested > "$STUB_LOG.hb"
 out=$(hook heartbeat.py "{\"session_id\":\"$SID\",\"cwd\":\"$WORK/proj\",\"tool_name\":\"Read\",\"tool_input\":{}}")
 check "heartbeat: cancel_requested says so in one line" 'echo "$out" | grep -q "systemMessage" && echo "$out" | grep -q "cancellation was requested for node api-contract"'
 check "heartbeat: cancel_requested keeps the run file" '[ -s "$runfile" ]'
-for i in 1 2 3 4 5 6 7 8 9; do hook heartbeat.py "{\"session_id\":\"$SID\",\"cwd\":\"$WORK/proj\",\"tool_name\":\"Read\",\"tool_input\":{}}" >/dev/null; done
+stale "$SID"
 echo reclaimed > "$STUB_LOG.hb"
 out=$(hook heartbeat.py "{\"session_id\":\"$SID\",\"cwd\":\"$WORK/proj\",\"tool_name\":\"Read\",\"tool_input\":{}}")
 check "heartbeat: reclaimed tells the model to stop" 'echo "$out" | grep -q "another harness now owns it"'
@@ -211,7 +213,7 @@ check "capture: the file is cleared when the run is reported" '[ ! -e "$evfile" 
 hook track_run.py "$claim_in"
 cap "$(bash_in 'ls' '{"stdout":"a","stderr":"","interrupted":false}')"
 echo reclaimed > "$STUB_LOG.hb"
-for i in 1 2 3 4 5 6 7 8 9; do hook heartbeat.py "{\"session_id\":\"$SID\",\"cwd\":\"$WORK/proj\",\"tool_name\":\"Read\",\"tool_input\":{}}" >/dev/null; done
+stale "$SID"
 hook heartbeat.py "{\"session_id\":\"$SID\",\"cwd\":\"$WORK/proj\",\"tool_name\":\"Read\",\"tool_input\":{}}" >/dev/null
 check "capture: a reclaimed lease clears the capture too" '[ ! -e "$evfile" ]'
 echo ok > "$STUB_LOG.hb"
@@ -234,7 +236,7 @@ hook track_run.py "$in_report"
 
 # --- fail open with the API down
 hook track_run.py "$(python3 -c 'import json,sys;print(json.dumps({"session_id":sys.argv[1],"tool_name":"mcp__enforcer-graph__graph_next_work","tool_input":{},"tool_response":sys.argv[2]}))' "$SID" "$card")"
-for i in 1 2 3 4 5 6 7 8 9; do hook heartbeat.py "{\"session_id\":\"$SID\",\"cwd\":\"$WORK/proj\",\"tool_name\":\"Read\",\"tool_input\":{}}" >/dev/null; done
+stale "$SID"
 out=$(GRAPH_BASE_URL=http://127.0.0.1:1 hook heartbeat.py "{\"session_id\":\"$SID\",\"cwd\":\"$WORK/proj\",\"tool_name\":\"Read\",\"tool_input\":{}}"); rc=$?
 check "heartbeat: API down is silent and exit 0" '[ -z "$out" ] && [ "$rc" -eq 0 ]'
 out=$(printf 'not json' | python3 lib/graph/session_start.py); rc=$?
@@ -438,7 +440,7 @@ import sys; sys.exit(0 if all(re.fullmatch(m, p+\"graph_\"+t) for p in (\"mcp__p
 SID2=client-hb; rf2="$CLAUDE_PLUGIN_DATA/runs/$SID2.json"
 in=$(python3 -c 'import json,sys;print(json.dumps({"session_id":sys.argv[1],"tool_name":"mcp__enforcer-graph__graph_next_work","tool_input":{},"tool_response":sys.argv[2]}))' "$SID2" "$card")
 hook track_run.py "$in"; : > "$STUB_LOG"; rm -f "$STUB_LOG.hb"
-for i in 1 2 3 4 5 6 7 8 9 10; do hook heartbeat.py "{\"session_id\":\"$SID2\",\"cwd\":\"$WORK/proj\",\"tool_name\":\"Bash\",\"tool_input\":{}}" >/dev/null; done
+stale "$SID2"; hook heartbeat.py "{\"session_id\":\"$SID2\",\"cwd\":\"$WORK/proj\",\"tool_name\":\"Bash\",\"tool_input\":{}}" >/dev/null
 check "client: the hook's own HTTP heartbeat sends X-Graph-Client" 'W="$want" python3 -c "
 import json,os,sys; r=[json.loads(l) for l in open(sys.argv[1]) if \"/heartbeat\" in l]
 sys.exit(0 if r and all(x.get(\"client\")==os.environ[\"W\"] for x in r) else 1)" "$STUB_LOG"'

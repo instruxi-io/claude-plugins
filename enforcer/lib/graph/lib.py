@@ -297,6 +297,27 @@ def http(cfg, method, path, body=None):
         return None
 
 
+def http_status(cfg, method, path, body=None):
+    """Like http() but returns (status, parsed body or None); status 0 when no
+    response came back. Never raises."""
+    import urllib.request, urllib.error
+    auth = auth_headers(cfg)
+    if not auth:
+        return 0, None
+    req = urllib.request.Request(f"{cfg['base_url']}/api/v1/graph{path}",
+                                 data=json.dumps(body).encode() if body is not None else None, method=method,
+                                 headers={**auth, "Content-Type": "application/json", "User-Agent": USER_AGENT,
+                                          "X-Graph-Client": CLIENT})
+    try:
+        with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT) as r:
+            out = json.loads(r.read() or b"null")
+            return r.status, (out if isinstance(out, dict) else None)
+    except urllib.error.HTTPError as e:
+        return e.code, None
+    except Exception:
+        return 0, None
+
+
 POINTER = "MOVED_TO"
 
 
