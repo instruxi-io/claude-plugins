@@ -15,6 +15,7 @@
 // URL, catch the redirect on 127.0.0.1, redeem the code with the PKCE verifier.
 // The refresh token is kept, so the sign-in outlives the one-hour access
 // token (credentials.mjs rotates it).
+import { isMain } from '../src/is-main.mjs';
 import { createServer } from 'node:http';
 import { createHash, randomBytes } from 'node:crypto';
 import { spawn } from 'node:child_process';
@@ -318,6 +319,6 @@ async function main(rawArgv) {
   process.exitCode = 2;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMain(import.meta.url)) {
   main(process.argv.slice(2)).catch((e) => { out(`Sign-in failed: ${e.message}`); process.exitCode = 1; });
 }
