@@ -58,9 +58,11 @@ const MUTATES = /(^|[^0-9&<])>{1,2}(?!&)|\btee\b|\bsed\s+(-[a-zA-Z]*i|--in-place
 const LAND_LOOKUP = /^"?\$\(\s*ls\s+-d\s+([^()|;&\s]*\/land-pr\.sh)\s*\|\s*tail\s+-1\s*\)"?/;
 // Where land-pr.sh may live: the plugin's own bin/, or its install cache.
 const CACHE_LAND = new RegExp('^(?:~|\\$HOME|\\$\\{HOME\\})\\/\\' + DOT + '\\/plugins\\/cache\\/[^\\/\\s]+\\/enforcer(?:-graph)?\\/[^\\/\\s]+\\/bin\\/land-pr\\.sh$');
+// ...spelled with the user's absolute home, as `ls` prints it.
+const CACHE_ABS = new RegExp('^(?:\\/home\\/[^\\/\\s]+|\\/Users\\/[^\\/\\s]+|\\/root)\\/\\' + DOT + '\\/plugins\\/cache\\/[^\\/\\s]+\\/enforcer(?:-graph)?\\/[^\\/\\s]+\\/bin\\/(land-pr\\.sh|enforcer)$');
 const trustedLand = (path, root) => {
   if (typeof path !== 'string' || /\.\./.test(path)) return false;
-  if (CACHE_LAND.test(path.replace(/\*/g, 'x'))) return true;
+  if (CACHE_LAND.test(path.replace(/\*/g, 'x')) || CACHE_ABS.test(path)) return true;
   const r = typeof root === 'string' && root ? root.replace(/\/+$/, '') : null;
   return path === '$CLAUDE_PLUGIN_ROOT/bin/land-pr.sh' || path === '${CLAUDE_PLUGIN_ROOT}/bin/land-pr.sh' ||
     (!!r && path === r + '/bin/land-pr.sh');
@@ -132,6 +134,7 @@ const landShapeOk = (args) => {
     const a = args[i];
     if (/^\d+$/.test(a)) continue;
     if (/^--timeout=\d+$/.test(a)) continue;
+    if (a === '-R' && /^[\w.-]+\/[\w.-]+$/.test(args[i + 1] || '')) { i++; continue; }
     if (a === '--timeout' && /^\d+$/.test(args[i + 1] || '')) { i++; continue; }
     return false;
   }
@@ -199,6 +202,20 @@ function land(ctx) {
   return verdict('allow', 'graph.land', 'graph_land_allowed', `headless worker landing ${branch}`);
 }
 
+/**
+ * The pinned lander, spelled exactly: `<land-pr.sh> <pr> [flags]` or
+ * `node <cache>/bin/enforcer land <pr> [flags]`, with no shell metacharacters
+ * and only the land flags. Recognised before the settings guard, which would
+ * otherwise deny the plugin-cache path it names.
+ */
+function exactLander(cmd, root) {
+  if (META.test(cmd)) return false;
+  const w = words(cmd);
+  if (/(^|\/)land-pr\.sh$/.test(w[0] || '') && trustedLand(w[0], root)) return /^\d+$/.test(w[1] || '') && landShapeOk(w.slice(1));
+  if (w[0] === 'node' && w[2] === 'land' && /\/bin\/enforcer$/.test(w[1] || '') && trustedLand(w[1], root)) return /^\d+$/.test(w[3] || '') && landShapeOk(w.slice(3));
+  return false;
+}
+
 function settings(ev, ctx, cmd) {
   const path = isFileWrite(ev) ? String(ev.input?.path ?? ev.raw?.file_path ?? ev.raw?.notebook_path ?? '') : null;
   const hit = path != null ? SETTINGS.test(path) : (SETTINGS.test(cmd) && !(PLAIN_READ.test(cmd.trim()) && !META.test(cmd) && !MUTATES.test(cmd)));
@@ -224,6 +241,10 @@ export function evaluate(ev) {
     if (!trustedLand(p, ev.worker?.pluginRoot)) return m;
     folded = true; return 'land-pr.sh';
   }).replace(/\s+2>&1\s*$/, '').trim();
+  if (exactLander(cmd, ev.worker?.pluginRoot)) return land(ctx);
+  // the lander chained to anything else: the delivery rule names it before the settings guard does
+  if (ctx.headless && META.test(cmd) && /(^|\/)land-pr\.sh$/.test(words(cmd)[0] || '') && trustedLand(words(cmd)[0], ev.worker?.pluginRoot))
+    return verdict('deny', 'graph.push', 'push_not_alone', 'a push, pull request or land must be the whole command, on its own');
   const s = settings(ev, ctx, cmd);
   if (s) return s;
   if (!(ctx.headless ? mentionsDeliveryWide(cmd) : mentionsDelivery(cmd))) return null;
