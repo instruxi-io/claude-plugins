@@ -103,11 +103,11 @@ export function gitDir(cmd) {
   return w[0] === 'git' && w[1] === '-C' ? w[2] : null;
 }
 
-const mentionsDelivery = (cmd) => /\bgit\s+(-C\s+\S+\s+)?push\b|\bgh\s+pr\s+create\b|land-pr\.sh/.test(cmd);
+const mentionsDelivery = (cmd) => /\bgit\s+(-C\s+\S+\s+)?push\b|\bgh\s+pr\s+create\b|land-pr\.sh|(^|\s)enforcer\s+land\b/.test(cmd);
 // Everything a headless worker could deliver or exfiltrate through. Anything
 // here that is not an exactly recognised shape is refused.
 const mentionsDeliveryWide = (cmd) =>
-  /(^|[^\w.-])git\b[^|;&\n]*?\s(push|remote)\b|(^|[^\w.-])gh\b[^|;&\n]*?\b(pr\s+(create|merge)|api)\b|land-pr\.sh/.test(cmd) ||
+  /(^|[^\w.-])git\b[^|;&\n]*?\s(push|remote)\b|(^|[^\w.-])gh\b[^|;&\n]*?\b(pr\s+(create|merge)|api)\b|land-pr\.sh|(^|\s)enforcer\s+land\b/.test(cmd) ||
   mentionsDelivery(cmd);
 const shape = (why) => verdict('deny', 'graph.push', 'delivery_shape',
   `a headless worker may only run the exact recognised delivery commands: ${why}`);
@@ -220,7 +220,8 @@ export function evaluate(ev) {
   if (s) return s;
 
   let folded = false;
-  const cmd = raw.replace(LAND_LOOKUP, (m, p) => {
+  // the skill's `${CLAUDE_PLUGIN_ROOT:?message}` guard expands as the plain variable
+  const cmd = raw.replace(/\$\{CLAUDE_PLUGIN_ROOT:\?[^}]*\}/, '${CLAUDE_PLUGIN_ROOT}').replace(LAND_LOOKUP, (m, p) => {
     if (!trustedLand(p, ev.worker?.pluginRoot)) return m;
     folded = true; return 'land-pr.sh';
   }).replace(/\s+2>&1\s*$/, '').trim();
@@ -233,6 +234,10 @@ export function evaluate(ev) {
   const args = pushArgs(cmd);
   if (args) return push(args, ctx);
   if (w[0] === 'gh' && w[1] === 'pr' && w[2] === 'create') return prCreate(w.slice(3), ctx);
+  if (w[0] === 'enforcer' && w[1] === 'land') {
+    if (ctx.headless && !(/^\d+$/.test(w[2] || '') && landShapeOk(w.slice(2)))) return shape('enforcer land takes a pull request number and --timeout');
+    return land(ctx);
+  }
   const lp = /(^|\/)land-pr\.sh$/.test(w[0] || '') ? 0 : (w[0] === 'bash' && /(^|\/)land-pr\.sh$/.test(w[1] || '')) ? 1 : -1;
   if (lp >= 0) {
     if (ctx.headless) {

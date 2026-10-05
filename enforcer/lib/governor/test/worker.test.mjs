@@ -40,6 +40,21 @@ ok('still allowed: the exact shapes', () => {
   assert.equal(evaluate(ev('"$(ls -d ~/' + DOT + '/plugins/cache/*/enforcer-graph/*/bin/land-pr.sh | tail -1)" 42 --timeout 3000')).action, 'allow');
 });
 
+ok('enforcer land 12 is graph.land', () => {
+  const v = evaluate(ev('enforcer land 12 --timeout 3000'));
+  assert.equal(v.action, 'allow');
+  assert.equal(v.ruleId, 'graph.land');
+  assert.equal(evaluate(ev('enforcer land 12')).ruleId, 'graph.land');
+  assert.equal(evaluate(ev('enforcer land 12 --admin')).code, 'delivery_shape');
+  assert.equal(evaluate(ev('enforcer land')).code, 'delivery_shape');
+});
+
+ok('the CLAUDE_PLUGIN_ROOT guard form is the pinned lander', () => {
+  const v = evaluate(ev('"${CLAUDE_PLUGIN_ROOT:?set by the dispatcher; or run `enforcer land <n>`}/bin/land-pr.sh" 7 --timeout 3000'));
+  assert.equal(v.action, 'allow');
+  assert.equal(v.ruleId, 'graph.land');
+});
+
 ok('a person present: unchanged (no new denial)', () => {
   assert.equal(evaluate(ev('git remote -v', { headless: false, branch: 'x' })), null);
 });

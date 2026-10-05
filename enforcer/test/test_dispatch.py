@@ -26,6 +26,14 @@ def node(key, type="task", status="active", **data):
             "work_state": "looking_for_work", "data": data}
 
 
+class PluginRootEnv(unittest.TestCase):
+    def test_plugin_root_in_worker_env(self):
+        env = gd.worker_env("g1")
+        self.assertEqual(env["CLAUDE_PLUGIN_ROOT"], gd.plugin_dirs([])[0])
+        self.assertEqual(env["ENFORCER_PLUGIN_ROOT"], gd.plugin_dirs([])[0])
+        self.assertEqual(env["GRAPH_ID"], "g1")
+
+
 class PluginDirs(unittest.TestCase):
     """Two directories carrying the same plugin name load once (the first wins):
     since the fold-in this plugin IS `enforcer`, so the cached enforcer copy the

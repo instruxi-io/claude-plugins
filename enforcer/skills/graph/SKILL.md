@@ -238,7 +238,9 @@ its own command, never chained with `&&` or `;` to a test, add or commit (the
 headless push rule matches only the whole command), then open the PR.
 
 To merge, run the plugin's lander, which needs no model in the loop:
-`"${CLAUDE_PLUGIN_ROOT}/bin/land-pr.sh" <n>`.
+`"${CLAUDE_PLUGIN_ROOT:?set by the dispatcher; or run `enforcer land <n>`}/bin/land-pr.sh" <n>`.
+The dispatcher exports `CLAUDE_PLUGIN_ROOT` (Claude Code itself sets it only for hooks and MCP, not your Bash tool);
+`enforcer land <n>` is the harness-independent form of the same command.
 It queues `gh pr merge <n> --squash --auto`, keeps the branch current, and exits
 0 merged (printing the evidence below), 2 CI failed, 3 conflicts, 4 timed out. When the base branch
 requires branches to be up to date, GitHub merges only once the PR is current
