@@ -1,15 +1,63 @@
 #!/usr/bin/env node
-// enforcer CLI. `enforcer governor <decide|status|config|limit|verify>` delegates to the governor core.
+// enforcer CLI.
+//   enforcer governor <decide|status|config|limit|verify>   the governor core
+//   enforcer hook <event> [handler]                          graph worker hooks (self-gated)
 import { spawnSync } from 'node:child_process';
+import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+import { homedir } from 'node:os';
 
 const here = (p) => fileURLToPath(new URL(p, import.meta.url));
 const [area, sub, ...rest] = process.argv.slice(2);
+
 const GOV = ['decide', 'status', 'config', 'limit', 'verify'];
-if (area !== 'governor' || !GOV.includes(sub)) {
-  process.stderr.write(`usage: enforcer governor <${GOV.join('|')}> [args]   (decide reads the event JSON on stdin)\n`);
-  process.exit(2);
+// event -> python handlers (lib/graph/<handler>.py), run in order
+const HOOKS = {
+  'session-start': ['session_start'],
+  'pre-tool-use': ['attach_evidence'],
+  'post-tool-use': ['track_run', 'capture_evidence', 'heartbeat'],
+  'pre-compact': ['remember_on_compact'],
+  'stop': ['open_run_guard'],
+};
+
+function graphContextLive(ev) {
+  if (process.env.GRAPH_ID) return true;
+  const sid = ev.session_id;
+  // session state: a claimed run is recorded here (state-relocation moves this path)
+  const data = process.env.CLAUDE_PLUGIN_DATA || join(homedir(), '.claude', 'enforcer-graph');
+  if (sid && existsSync(join(data, 'runs', `${sid}.json`))) return true;
+  // a project that configures a graph
+  let d = ev.cwd || process.cwd();
+  for (;;) {
+    if (existsSync(join(d, '.claude', 'graph.json'))) return true;
+    const up = dirname(d);
+    if (up === d) return false;
+    d = up;
+  }
 }
-const script = sub === 'decide' ? here('../lib/governor/bin/governor') : here('../lib/governor/core/report.mjs');
-const r = spawnSync(process.execPath, [script, sub, ...rest], { stdio: 'inherit' });
-process.exit(r.status ?? 1);
+
+if (area === 'hook' && HOOKS[sub]) {
+  let input = '';
+  try { input = readFileSync(0, 'utf8'); } catch {}
+  let ev = {};
+  try { ev = JSON.parse(input || '{}') || {}; } catch {}
+  if (!graphContextLive(ev)) process.exit(0); // no graph context: no output, no python
+  const only = rest[0] ? rest[0].replace(/-/g, '_') : null;
+  const handlers = HOOKS[sub].filter((h) => !only || h === only);
+  let code = 0;
+  for (const h of handlers) {
+    const r = spawnSync('python3', [here(`../lib/graph/${h}.py`)], { input, stdio: ['pipe', 'inherit', 'inherit'] });
+    if (r.status) code = r.status;
+  }
+  process.exit(code);
+}
+
+if (area === 'governor' && GOV.includes(sub)) {
+  const script = sub === 'decide' ? here('../lib/governor/bin/governor') : here('../lib/governor/core/report.mjs');
+  const r = spawnSync(process.execPath, [script, sub, ...rest], { stdio: 'inherit' });
+  process.exit(r.status ?? 1);
+}
+
+process.stderr.write(`usage: enforcer governor <${GOV.join('|')}> [args]\n       enforcer hook <${Object.keys(HOOKS).join('|')}> [handler]\n`);
+process.exit(2);

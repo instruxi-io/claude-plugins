@@ -2,7 +2,7 @@
 from the reporting agent's own transcript since its claim."""
 import json, os, subprocess, sys, tempfile, unittest
 
-HOOKS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "hooks")
+HOOKS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lib", "graph")
 sys.path.insert(0, HOOKS)
 import lib
 

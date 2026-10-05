@@ -8,7 +8,7 @@
   "plugins": [
     {
       "name": "enforcer",
-      "description": "Connects your agent to your Enforcer workspace as an Agent Plugins 1.0 package (root plugin.json, mcp.json, skills) with a Claude Code fallback: the enforcer MCP server, one sign-in (/enforcer:login), /enforcer:setup, workspace switching. Brings enforcer-graph's hooks with it as a dependency.",
+      "description": "Connects your agent to your Enforcer workspace as an Agent Plugins 1.0 package (root plugin.json, mcp.json, skills) with a Claude Code fallback: the enforcer MCP server, one sign-in (/enforcer:login), /enforcer:setup, workspace switching. Includes the graph worker and the governor.",
       "category": "platform",
       "source": "./enforcer",
       "version": "1.0.0-rc.1"
@@ -34,9 +34,9 @@
     },
     {
       "name": "enforcer-graph",
-      "description": "Work a plan held in enforcer-graph: claim the next runnable node, keep its lease alive, and report against its acceptance criteria. Installed automatically with enforcer.",
-      "category": "planning",
-      "source": "./enforcer-graph"
+      "description": "DEPRECATED: now part of enforcer. Install enforcer instead; this alias goes away after one release.",
+      "category": "deprecated",
+      "source": "./enforcer"
     },
     {
       "name": "enforcer-files",

@@ -34,13 +34,13 @@ const read = (p) => readFileSync(join(root, p), 'utf8');
 const sources = []; // [where, name]
 
 // 1. The allow rules a person copies (and /enforcer:setup offers).
-for (const rule of JSON.parse(read('enforcer-graph/settings.example.json')).permissions.allow) {
-  sources.push(['enforcer-graph/settings.example.json', rule]);
+for (const rule of JSON.parse(read('enforcer/docs/graph/settings.example.json')).permissions.allow) {
+  sources.push(['enforcer/docs/graph/settings.example.json', rule]);
 }
 // 2. The worker agent's tool allowlist (frontmatter `tools:`).
-const agent = read('enforcer-graph/agents/graph-worker.md').match(/^tools:\s*(.+)$/m)?.[1] ?? '';
+const agent = read('enforcer/agents/graph-worker.md').match(/^tools:\s*(.+)$/m)?.[1] ?? '';
 for (const t of agent.split(',').map((s) => s.trim()).filter((s) => s.startsWith('mcp__'))) {
-  sources.push(['enforcer-graph/agents/graph-worker.md tools', t]);
+  sources.push(['enforcer/agents/graph-worker.md tools', t]);
 }
 // 3. Command frontmatter `allowed-tools:` in every local plugin.
 for (const cmd of ['enforcer/commands/setup.md']) {
@@ -49,11 +49,11 @@ for (const cmd of ['enforcer/commands/setup.md']) {
   for (const t of at.split(/[,\s]+/).filter((s) => s.startsWith('mcp__'))) sources.push([`${cmd} allowed-tools`, t]);
 }
 // 4. Hook matchers: each alternative of a graph_(a|b|c) group is a tool name.
-const hooks = JSON.parse(read('enforcer-graph/hooks/hooks.json')).hooks;
+const hooks = JSON.parse(read('enforcer/hooks/hooks.json')).hooks;
 for (const [event, groups] of Object.entries(hooks)) {
   for (const g of groups) {
     const m = (g.matcher ?? '').match(/__graph_\(([^)]+)\)$/);
-    if (m) for (const t of m[1].split('|')) sources.push([`enforcer-graph/hooks/hooks.json ${event}`, `${PREFIXES[0]}graph_${t}`]);
+    if (m) for (const t of m[1].split('|')) sources.push([`enforcer/hooks/hooks.json ${event}`, `${PREFIXES[0]}graph_${t}`]);
   }
 }
 

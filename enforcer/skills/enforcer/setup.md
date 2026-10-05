@@ -20,7 +20,7 @@ Arguments: `$ARGUMENTS` (`rules` = only the policy rules part; `--activate` = th
 Show the person, in this order and without abbreviating:
 
 - **Claude Code permissions** - every rule in `claude_code_graph_setup.permissions_allow`, as the exact JSON lines that would be added to `permissions.allow` in this project's `.claude/settings.json`, and which of them are already there (read the file if it exists). Say these let the graph worker loop (`graph_next_work`, `graph_heartbeat`, `graph_report`, ...) run without a prompt per call, and that resets, tiers, judging and sharing still ask.
-- **Plugin commands** - `claude_code_graph_setup.plugin_commands`, as commands for THEM to run in their own shell. One install is enough now: `claude plugin install enforcer@instruxi` brings enforcer-graph's hooks with it, so a separate `enforcer-graph` install is only needed on a Claude Code too old for plugin dependencies. Do not run these yourself: they change their Claude Code setup.
+- **Plugin commands** - `claude_code_graph_setup.plugin_commands`, as commands for THEM to run in their own shell. One install is enough now: `claude plugin install enforcer@instruxi` brings the graph worker hooks and the governor with it; no separate install is needed. Do not run these yourself: they change their Claude Code setup.
 - **Policy rules** (unless there were no routes) - each `propose[].reads_as` sentence with its `where`, and the `reach` line (whose rules these become).
 
 Then ask one question: **"Apply this? (yes / only the permissions / only the rules / no)"** and STOP. End your turn there and wait for their answer. Do not treat silence, a question back, or your own judgment as a yes.

@@ -20,7 +20,7 @@ export ENFORCER_BASE_URL="http://127.0.0.1:$PORT" ENFORCER_HOME="$WORK/eh"   # v
 SID=s1
 pass=0; fail=0
 check() { if eval "$2"; then echo "PASS  $1"; pass=$((pass+1)); else echo "FAIL  $1"; fail=$((fail+1)); fi; }
-hook() { printf '%s' "$2" | python3 "hooks/$1"; }
+hook() { printf '%s' "$2" | python3 "lib/graph/$1"; }
 runfile="$CLAUDE_PLUGIN_DATA/runs/$SID.json"
 
 # --- session start
@@ -215,9 +215,9 @@ check "capture: a reclaimed lease clears the capture too" '[ ! -e "$evfile" ]'
 echo ok > "$STUB_LOG.hb"
 
 # --- both new hooks fail open
-out=$(printf 'not json' | python3 hooks/capture_evidence.py); rc=$?
+out=$(printf 'not json' | python3 lib/graph/capture_evidence.py); rc=$?
 check "capture_evidence: garbage stdin is silent and exit 0" '[ -z "$out" ] && [ "$rc" -eq 0 ]'
-out=$(printf 'not json' | python3 hooks/attach_evidence.py); rc=$?
+out=$(printf 'not json' | python3 lib/graph/attach_evidence.py); rc=$?
 check "attach_evidence: garbage stdin is silent and exit 0" '[ -z "$out" ] && [ "$rc" -eq 0 ]'
 out=$(CLAUDE_PLUGIN_DATA=/proc/nonexistent/data hook capture_evidence.py "$(bash_in 'ls' '{"stdout":"a","stderr":"","interrupted":false}')"); rc=$?
 check "capture_evidence: an unwritable data dir is silent and exit 0" '[ -z "$out" ] && [ "$rc" -eq 0 ]'
@@ -235,15 +235,15 @@ hook track_run.py "$(python3 -c 'import json,sys;print(json.dumps({"session_id":
 for i in 1 2 3 4 5 6 7 8 9; do hook heartbeat.py "{\"session_id\":\"$SID\",\"cwd\":\"$WORK/proj\",\"tool_name\":\"Read\",\"tool_input\":{}}" >/dev/null; done
 out=$(GRAPH_BASE_URL=http://127.0.0.1:1 hook heartbeat.py "{\"session_id\":\"$SID\",\"cwd\":\"$WORK/proj\",\"tool_name\":\"Read\",\"tool_input\":{}}"); rc=$?
 check "heartbeat: API down is silent and exit 0" '[ -z "$out" ] && [ "$rc" -eq 0 ]'
-out=$(printf 'not json' | python3 hooks/session_start.py); rc=$?
+out=$(printf 'not json' | python3 lib/graph/session_start.py); rc=$?
 check "any hook: garbage stdin is silent and exit 0" '[ -z "$out" ] && [ "$rc" -eq 0 ]'
 
 # --- a claimed pull request is resolved, not taken on trust (2026-09-20)
 # A URL for a PR that does not exist used to be stored and shown as a result.
 pr_json() { python3 -c "
 import sys,importlib.util,json
-sys.path.insert(0,'hooks')
-spec=importlib.util.spec_from_file_location('ae','hooks/attach_evidence.py')
+sys.path.insert(0,'lib/graph')
+spec=importlib.util.spec_from_file_location('ae','lib/graph/attach_evidence.py')
 m=importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
 r=m.check_pr(sys.argv[1]); print(json.dumps(r) if r else '')" "$1"; }
 out=$(pr_json "https://github.com/instruxi-io/enforcer-graph/pull/999999")
@@ -270,13 +270,13 @@ import json,os
 open(os.environ['CLAUDE_PLUGIN_DATA']+'/runs/sess-rem.json','w').write(json.dumps({'graph_id':'g','node_id':'n','run_id':'r','key':'k'}))"
 rem_in=$(python3 -c "
 import json;print(json.dumps({'session_id':'sess-rem','tool_name':'mcp__enforcer-graph__graph_remember','tool_input':{'graph':'g','node_id':'n','body':'The default lease is 300 seconds.'}}))")
-out=$(printf '%s' "$rem_in" | python3 hooks/attach_evidence.py)
+out=$(printf '%s' "$rem_in" | python3 lib/graph/attach_evidence.py)
 n=$(echo "$out" | python3 -c "import json,sys;d=json.load(sys.stdin);print(len(d['hookSpecificOutput'].get('updatedInput',{}).get('evidence',[])))" 2>/dev/null || echo 0)
 check "remember: only the most recent records are attached, not the whole run (got $n of 8)" '[ "$n" -le 3 ] && [ "$n" -ge 1 ]'
 check "remember: the fact itself is passed through untouched" 'echo "$out" | grep -q "The default lease is 300 seconds"'
 rep_in=$(python3 -c "
 import json;print(json.dumps({'session_id':'sess-rem','tool_name':'mcp__enforcer-graph__graph_report','tool_input':{'graph':'g','node_id':'n','run_id':'r','status':'succeeded','report':'done'}}))")
-outr=$(printf '%s' "$rep_in" | python3 hooks/attach_evidence.py)
+outr=$(printf '%s' "$rep_in" | python3 lib/graph/attach_evidence.py)
 nr=$(echo "$outr" | python3 -c "import json,sys;d=json.load(sys.stdin);print(len(d['hookSpecificOutput'].get('updatedInput',{}).get('evidence',[])))" 2>/dev/null || echo 0)
 check "report: still gets the whole captured run, not the recency window (got $nr)" '[ "$nr" -gt 3 ]'
 rm -rf "$CLAUDE_PLUGIN_DATA/evidence" "$CLAUDE_PLUGIN_DATA/runs"
@@ -293,10 +293,10 @@ rm -rf "$CLAUDE_PLUGIN_DATA/evidence" "$CLAUDE_PLUGIN_DATA/runs"
 AK() { python3 -c "import hashlib,sys;print(hashlib.sha256(('agent_id:'+sys.argv[1]).encode()).hexdigest()[:32])" "$1"; }
 sclaim() { # $1=agent_id $2=node/run suffix
   printf '{"session_id":"%s","agent_id":"%s","cwd":"%s","hook_event_name":"PostToolUse","tool_name":"mcp__enforcer-graph__graph_next_work","tool_input":{"graph":"g1"},"tool_response":{"state":"claimed","graph_id":"g1","node":{"node_id":"n-%s","key":"k-%s"},"run":{"run_id":"r-%s","lease_expires_at":"2099-01-01T00:00:00Z"}}}' \
-    "$SID" "$1" "$WORK/proj" "$2" "$2" "$2" | python3 hooks/track_run.py >/dev/null; }
+    "$SID" "$1" "$WORK/proj" "$2" "$2" "$2" | python3 lib/graph/track_run.py >/dev/null; }
 scap() { # $1=agent_id $2=command
   printf '{"session_id":"%s","agent_id":"%s","cwd":"%s","hook_event_name":"PostToolUse","tool_name":"Bash","tool_input":{"command":"%s"},"tool_response":{"stdout":"ok","stderr":""}}' \
-    "$SID" "$1" "$WORK/proj" "$2" | python3 hooks/capture_evidence.py >/dev/null; }
+    "$SID" "$1" "$WORK/proj" "$2" | python3 lib/graph/capture_evidence.py >/dev/null; }
 evlines() { f="$CLAUDE_PLUGIN_DATA/evidence/$(AK "$1").jsonl"; [ -f "$f" ] && wc -l < "$f" | tr -d ' ' || echo 0; }
 
 sclaim agent-A a
@@ -313,7 +313,7 @@ na=$(evlines agent-A); nb=$(evlines agent-B)
 check "agent A captured only its own two records (got $na)" '[ "$na" -eq 2 ]'
 check "agent B captured only its own one record (got $nb)" '[ "$nb" -eq 1 ]'
 
-rep=$(printf '{"session_id":"%s","agent_id":"agent-A","cwd":"%s","hook_event_name":"PreToolUse","tool_name":"mcp__enforcer-graph__graph_report","tool_input":{"graph":"g1","node_id":"n-a","run_id":"r-a","status":"succeeded","report":"done"}}' "$SID" "$WORK/proj" | python3 hooks/attach_evidence.py)
+rep=$(printf '{"session_id":"%s","agent_id":"agent-A","cwd":"%s","hook_event_name":"PreToolUse","tool_name":"mcp__enforcer-graph__graph_report","tool_input":{"graph":"g1","node_id":"n-a","run_id":"r-a","status":"succeeded","report":"done"}}' "$SID" "$WORK/proj" | python3 lib/graph/attach_evidence.py)
 nea=$(echo "$rep" | python3 -c "import json,sys;d=json.load(sys.stdin);print(len(d['hookSpecificOutput'].get('updatedInput',{}).get('evidence',[])))" 2>/dev/null || echo 0)
 check "A's report carries A's 2 records and none of B's (got $nea)" '[ "$nea" -eq 2 ]'
 check "A's report does not carry B's command" 'echo "$rep" | grep -q "go test ./a" && ! echo "$rep" | grep -q "go test ./b"'
@@ -329,7 +329,7 @@ creds() { # $1 access token, $2 expires_at
   printf '{"enforcer":{"base_url":"http://127.0.0.1:%s","oauth":{"access_token":"%s","refresh_token":"rt-1","expires_at":"%s","token_endpoint":"http://127.0.0.1:%s/token","client_id":"mcp_test","scope":"enforcer:read"}}}\n' "$PORT" "$1" "$2" "$PORT" > "$EH/credentials.json"
 }
 mkdir -p "$WORK/oproj/.claude"; printf '{"graph_id":"g1"}\n' > "$WORK/oproj/.claude/graph.json"
-ohook() { printf '%s' "$2" | env -u GRAPH_API_KEY -u ENFORCER_API_KEY ENFORCER_HOME="$EH" python3 "hooks/$1"; }
+ohook() { printf '%s' "$2" | env -u GRAPH_API_KEY -u ENFORCER_API_KEY ENFORCER_HOME="$EH" python3 "lib/graph/$1"; }
 start="{\"session_id\":\"$SID\",\"cwd\":\"$WORK/oproj\",\"hook_event_name\":\"SessionStart\",\"source\":\"startup\"}"
 
 creds stub-token 2099-01-01T00:00:00.000Z
@@ -371,11 +371,11 @@ for s in ("plugin_enforcer_enforcer","enforcer","enforcer-graph"):
     for t in ("next_work","report","heartbeat"): assert re.fullmatch(post,"mcp__%s__graph_%s"%(s,t))
 assert not re.fullmatch(pre,"mcp__other__graph_report") and not re.fullmatch(post,"mcp__enforcer__enforcer_whoami")
 PY'
-check "heartbeat: skips graph tools under the plugin server name too" 'python3 -c "import sys;sys.path.insert(0,\"hooks\");import lib;assert lib.is_graph_tool(\"mcp__plugin_enforcer_enforcer__graph_report\") and not lib.is_graph_tool(\"Bash\")"'
+check "heartbeat: skips graph tools under the plugin server name too" 'python3 -c "import sys;sys.path.insert(0,\"lib/graph\");import lib;assert lib.is_graph_tool(\"mcp__plugin_enforcer_enforcer__graph_report\") and not lib.is_graph_tool(\"Bash\")"'
 check "attach: the attach hook's timeout covers the upload budget and the PR check" 'python3 -c "
 import json
 d=json.load(open(\"hooks/hooks.json\"))[\"hooks\"][\"PreToolUse\"]
-t=[h[\"timeout\"] for m in d for h in m[\"hooks\"] if \"attach_evidence\" in h[\"command\"]][0]
+t=[h[\"timeout\"] for m in d for h in m[\"hooks\"] if \"hook pre-tool-use\" in h[\"command\"]][0]
 assert t >= 25, t"'
 
 # --- full outputs beyond the clip go to the user's enforcer-files (adapter-files)
@@ -428,7 +428,7 @@ check "client: other graph tools are left alone" '[ -z "$out" ]'
 out=$(GRAPH_EVIDENCE_MODE=context hook attach_evidence.py "{\"session_id\":\"client-c\",\"tool_name\":\"mcp__plugin_enforcer_enforcer__graph_next_work\",\"tool_input\":{\"graph\":\"g1\"}}")
 check "client: context mode (rewrites not applied) does not pretend to stamp" '! echo "$out" | grep -q updatedInput'
 check "client: hooks.json routes next_work, heartbeat and report through the stamping hook" 'python3 -c "
-import json,re; m=[h[\"matcher\"] for h in json.load(open(\"hooks/hooks.json\"))[\"hooks\"][\"PreToolUse\"] if any(\"attach_evidence\" in x[\"command\"] for x in h[\"hooks\"])][0]
+import json,re; m=[h[\"matcher\"] for h in json.load(open(\"hooks/hooks.json\"))[\"hooks\"][\"PreToolUse\"] if any(\"hook pre-tool-use\" in x[\"command\"] for x in h[\"hooks\"])][0]
 import sys; sys.exit(0 if all(re.fullmatch(m, p+\"graph_\"+t) for p in (\"mcp__plugin_enforcer_enforcer__\",\"mcp__enforcer__\",\"mcp__enforcer-graph__\") for t in (\"next_work\",\"heartbeat\",\"report\")) else 1)"'
 SID2=client-hb; rf2="$CLAUDE_PLUGIN_DATA/runs/$SID2.json"
 in=$(python3 -c 'import json,sys;print(json.dumps({"session_id":sys.argv[1],"tool_name":"mcp__enforcer-graph__graph_next_work","tool_input":{},"tool_response":sys.argv[2]}))' "$SID2" "$card")
@@ -446,7 +446,7 @@ printf '{"name":"enforcer-graph","version":"9.1.0"}' > "$MK/enforcer-graph/.clau
 printf '{"name":"enforcer","version":"0.5.0"}' > "$MK/enforcer/.claude-plugin/plugin.json"
 printf '{"instruxi":{"installLocation":"%s"}}' "$MK" > "$CLAUDE_CONFIG_DIR/plugins/known_marketplaces.json"
 printf '{"version":2,"plugins":{"enforcer-graph@instruxi":[{"scope":"user","version":"0.15.0"},{"scope":"local","version":"0.13.0"},{"scope":"project","version":"9.1.0"}]}}' > "$CLAUDE_CONFIG_DIR/plugins/installed_plugins.json"
-python3 -c 'import json;print(json.dumps({"version":"0.9.14","tools":json.load(open("hooks/known_tools.json"))}))' > "$STUB_HEALTH_FILE"
+python3 -c 'import json;print(json.dumps({"version":"0.9.14","tools":json.load(open("lib/graph/known_tools.json"))}))' > "$STUB_HEALTH_FILE"
 ss() { hook session_start.py "{\"session_id\":\"$SID\",\"cwd\":\"/\",\"hook_event_name\":\"SessionStart\",\"source\":\"startup\"}"; }
 out=$(ss); raw="$out"; out=$(echo "$raw" | python3 -c "import json,sys; print(json.load(sys.stdin)['systemMessage'])")
 check "version check: one line per stale install, with scope and the update command" '[ "$(echo "$out" | grep -c "^enforcer-graph .* installed (")" = 2 ] && echo "$out" | grep -q "enforcer-graph 0.15.0 installed (user) — 9.1.0 available: claude plugin update enforcer-graph@instruxi" && echo "$out" | grep -q "enforcer-graph 0.13.0 installed (local) — 9.1.0 available"'
@@ -458,10 +458,10 @@ check "version check: each notice is said once" '[ -z "$out" ]'
 printf '{"version":2,"plugins":{"enforcer-graph@instruxi":[{"version":"9.1.0","auto":true}],"enforcer@instruxi":[{"version":"0.5.0"}]}}' > "$CLAUDE_CONFIG_DIR/plugins/installed_plugins.json"
 rm -f "$CLAUDE_PLUGIN_DATA/notices.json"; out=$(ss)
 check "version check: aligned (no credential), nothing to say" '[ -z "$out" ]'
-python3 -c 'import json;print(json.dumps({"version":"0.9.14","tools":json.load(open("hooks/known_tools.json"))+["workspace_list","workspace_switch","zeta"]}))' > "$STUB_HEALTH_FILE"
+python3 -c 'import json;print(json.dumps({"version":"0.9.14","tools":json.load(open("lib/graph/known_tools.json"))+["workspace_list","workspace_switch","zeta"]}))' > "$STUB_HEALTH_FILE"
 rm -f "$CLAUDE_PLUGIN_DATA/notices.json"; out=$(ss | python3 -c "import json,sys; print(json.load(sys.stdin)['systemMessage'])")
 check "version check: MCP tools the plugin does not know are one line" '[ "$(echo "$out" | grep -c "^MCP ")" = 1 ] && echo "$out" | grep -q "MCP 0.9.14 serves tools this plugin (.*) does not know: workspace_\*, zeta"'
-python3 -c 'import json;print(json.dumps({"version":"0.9.14","tools":json.load(open("hooks/known_tools.json"))}))' > "$STUB_HEALTH_FILE"
+python3 -c 'import json;print(json.dumps({"version":"0.9.14","tools":json.load(open("lib/graph/known_tools.json"))}))' > "$STUB_HEALTH_FILE"
 JWT=$(python3 -c 'import base64,json;e=lambda d:base64.urlsafe_b64encode(json.dumps(d).encode()).decode().rstrip("=");print(e({"alg":"none"})+"."+e({"tenant":"Acme","tenant_id":"t-1","role":"admin"})+".x")')
 printf '{"enforcer":{"oauth":{"access_token":"%s","expires_at":"2099-01-01T00:00:00Z"}}}' "$JWT" > "$ENFORCER_HOME/credentials.json"
 rm -f "$CLAUDE_PLUGIN_DATA/notices.json"; out=$(ss)
@@ -473,7 +473,7 @@ rm -rf "$CLAUDE_CONFIG_DIR/plugins" "$ENFORCER_HOME"
 MS=mrg
 mrun() { printf '%s' "$1" > "$CLAUDE_PLUGIN_DATA/runs/$MS.json"; }
 mbash() { python3 -c 'import json,sys;print(json.dumps({"session_id":sys.argv[1],"tool_name":"Bash","tool_input":{"command":sys.argv[2]},"tool_response":{"stdout":sys.argv[3],"stderr":"","interrupted":False}}))' "$MS" "$1" "$2"; }
-mrep() { printf '%s' "$1" | python3 -c 'import json,sys;print(json.dumps({"session_id":sys.argv[1],"tool_name":"mcp__enforcer-graph__graph_report","tool_input":{"report":"x","evidence":json.loads(sys.stdin.read())}}))' "$MS" | python3 hooks/attach_evidence.py; }
+mrep() { printf '%s' "$1" | python3 -c 'import json,sys;print(json.dumps({"session_id":sys.argv[1],"tool_name":"mcp__enforcer-graph__graph_report","tool_input":{"report":"x","evidence":json.loads(sys.stdin.read())}}))' "$MS" | python3 lib/graph/attach_evidence.py; }
 rm -f "$CLAUDE_PLUGIN_DATA/evidence/$MS.jsonl"
 mrun '{"graph_id":"g","node_id":"n","run_id":"rA","key":"a"}'
 cap "$(mbash 'echo cap-one' 'cap-one')"; cap "$(mbash 'echo cap-two' 'cap-two')"
@@ -513,7 +513,7 @@ e=json.load(sys.stdin)[\"hookSpecificOutput\"][\"updatedInput\"][\"evidence\"]
 sys.exit(0 if any(x.get(\"kind\")==\"artifact\" and x.get(\"url\")==\"https://github.com/instruxi-io/claude-plugins/pull/31\" for x in e) else 1)"'
 # scoping: a claim starts a clean capture, and another run's records are never attached
 cap "$(mbash 'echo other-nodes-work' 'x')"
-printf '%s' '{"session_id":"mrg","tool_name":"mcp__enforcer-graph__graph_next_work","tool_input":{"graph":"g"},"tool_response":{"state":"claimed","graph_id":"g","node":{"node_id":"nB","key":"b"},"run":{"run_id":"rB","lease_expires_at":"2099-01-01T00:00:00Z"}}}' | python3 hooks/track_run.py
+printf '%s' '{"session_id":"mrg","tool_name":"mcp__enforcer-graph__graph_next_work","tool_input":{"graph":"g"},"tool_response":{"state":"claimed","graph_id":"g","node":{"node_id":"nB","key":"b"},"run":{"run_id":"rB","lease_expires_at":"2099-01-01T00:00:00Z"}}}' | python3 lib/graph/track_run.py
 cap "$(mbash 'echo mine-only' 'mine')"
 out=$(mrep '[]')
 check "scope: results from before this run's claim are not attached" 'echo "$out" | python3 -c "

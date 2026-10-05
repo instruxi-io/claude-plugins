@@ -35,7 +35,7 @@ def _load(path):
 def marketplace_name():
     """The marketplace this copy was installed from: an installed plugin lives at
     <config>/plugins/cache/<marketplace>/<plugin>/<version>."""
-    root = os.environ.get("CLAUDE_PLUGIN_ROOT") or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    root = os.environ.get("CLAUDE_PLUGIN_ROOT") or os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     parts = os.path.normpath(root).split(os.sep)
     if len(parts) >= 4 and parts[-4] == "cache":
         return parts[-3]

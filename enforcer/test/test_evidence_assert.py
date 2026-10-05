@@ -2,7 +2,7 @@
 import json, os, sys, tempfile, unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-HOOKS = os.path.join(os.path.dirname(HERE), "hooks")
+HOOKS = os.path.join(os.path.dirname(HERE), "lib", "graph")
 sys.path.insert(0, HOOKS)
 os.environ["CLAUDE_PLUGIN_DATA"] = tempfile.mkdtemp()
 os.environ.pop("GRAPH_API_KEY", None)
