@@ -253,14 +253,40 @@ def affinity_order(candidates, warm, model_of):
     return first + rest
 
 
+def plugin_name_of(d):
+    """The plugin's manifest name: plugin.json at the root (Agent Plugins), else the
+    Claude manifest under claude_paths.MANIFEST_DIR; None when neither exists."""
+    for rel in ("plugin.json", os.path.join(claude_paths.MANIFEST_DIR, "plugin.json")):
+        try:
+            with open(os.path.join(d, rel)) as f:
+                n = json.load(f).get("name")
+            if n:
+                return str(n)
+        except (OSError, ValueError):
+            continue
+    return None
+
+
 def plugin_dirs(extra):
-    """This plugin, then each --plugin-dir, once per directory (by real path)."""
-    out, seen = [], set()
+    """This plugin, then each --plugin-dir, once per directory (by real path) AND
+    once per plugin NAME (first wins). Since 1.0.0 this plugin IS `enforcer`, so
+    the cached enforcer plugin the default --plugin-dir used to add is the same
+    plugin twice: Claude Code loaded both copies ("enforcer@inline" 1.0.1 and
+    1.0.0), two governors answered every tool call, one of them `ask`, and in a
+    headless worker `ask` is a denial — every Bash, Edit and graph_report was
+    refused and the dispatcher went BLOCKED (2026-10-05 17:17)."""
+    out, seen, names = [], set(), set()
     for d in [PLUGIN_DIR] + list(extra or []):
         r = os.path.realpath(d)
-        if r not in seen:
-            seen.add(r)
-            out.append(d)
+        if r in seen:
+            continue
+        n = plugin_name_of(d)
+        if n and n in names:
+            continue
+        seen.add(r)
+        if n:
+            names.add(n)
+        out.append(d)
     return out
 
 
