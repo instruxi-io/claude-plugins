@@ -527,4 +527,5 @@ printf '%s\n' '{"kind":"command","cmd":"stale-from-rA","exit":0,"output":"z","_r
 out=$(mrep '[]')
 check "scope: a record tagged with another run is never attached" 'echo "$out" | grep -qv stale-from-rA && echo "$out" | grep -q mine-only'
 
+node test/hooks.test.mjs >/dev/null 2>&1; check "hooks gate: actor key + graph tools ungated (node)" "[ \$? -eq 0 ]"
 echo; echo "$pass passed, $fail failed"; [ "$fail" -eq 0 ]

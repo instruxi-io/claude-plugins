@@ -23,10 +23,21 @@ def main():
                                    "key": node.get("key"), "title": node.get("title"), "lease_expires_at": run.get("lease_expires_at"),
                                    "acceptance_evidence": [h for h in (out.get("acceptance_evidence") or (out.get("criteria_hints")) or []) if isinstance(h, dict)],
                                    "claimed_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"})
+                if inp.get("session_id") and sid != inp.get("session_id"):
+                    # session-keyed marker: the parent sees its subagents' live runs
+                    try:
+                        open(os.path.join(lib.data_dir(), "%s.live" % inp["session_id"]), "w").close()
+                    except Exception:
+                        pass
     elif name.endswith("graph_report"):
         # The run is over whether the server accepted the report or refused it as
         # not ours any more; either way there is nothing left to heartbeat.
         lib.clear_run(sid)
+        if inp.get("session_id") and sid != inp["session_id"]:
+            try:
+                os.remove(os.path.join(lib.data_dir(), "%s.live" % inp["session_id"]))
+            except Exception:
+                pass
     elif name.endswith("graph_heartbeat"):
         if out.get("state") in ("reclaimed", "finished"):
             lib.clear_run(sid)
