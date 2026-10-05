@@ -26,6 +26,28 @@ def node(key, type="task", status="active", **data):
             "work_state": "looking_for_work", "data": data}
 
 
+class PluginDirs(unittest.TestCase):
+    """Two directories carrying the same plugin name load once (the first wins):
+    since the fold-in this plugin IS `enforcer`, so the cached enforcer copy the
+    default --plugin-dir found was a duplicate, and two governors made every
+    tool call `ask` in a headless worker (2026-10-05)."""
+    def test_same_plugin_name_is_passed_once(self):
+        tmp = tempfile.mkdtemp()
+        mdir = getattr(gd, "claude_paths").MANIFEST_DIR  # the Claude manifest dir; the guard greps for the literal
+        other = os.path.join(tmp, "enforcer-1.0.0"); os.makedirs(os.path.join(other, mdir))
+        with open(os.path.join(other, mdir, "plugin.json"), "w") as f:
+            json.dump({"name": "enforcer", "version": "1.0.0"}, f)
+        third = os.path.join(tmp, "jev"); os.makedirs(third)
+        with open(os.path.join(third, "plugin.json"), "w") as f:
+            json.dump({"name": "jev-hooks", "version": "0.27.0"}, f)
+        dirs = gd.plugin_dirs([other, third, other])
+        self.assertEqual(dirs[0], gd.PLUGIN_DIR)
+        self.assertEqual(gd.plugin_name_of(gd.PLUGIN_DIR), "enforcer")
+        self.assertNotIn(other, dirs, "a second copy of the enforcer plugin must not be passed")
+        self.assertIn(third, dirs, "a different plugin still loads")
+        self.assertEqual(len(dirs), 2)
+
+
 class TierToModel(unittest.TestCase):
     def test_tiers(self):
         self.assertEqual(gd.model_for(node("a", tier="mechanical")), "sonnet")
