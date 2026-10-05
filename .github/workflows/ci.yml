@@ -12,16 +12,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - name: enforcer plugin tests
-        working-directory: enforcer
-        run: npm test
-      - name: enforcer graph worker tests
+      - name: enforcer plugin tests (package, governor, graph worker)
         working-directory: enforcer
         env:
-          GH_TOKEN: ${{ github.token }}   # one test resolves a public PR with `gh`
-        run: |
-          python3 -m unittest discover test
-          bash test/run.sh
+          GH_TOKEN: ${{ github.token }}   # one graph test resolves a public PR with `gh`
+        run: npm test
       - name: enforcer-files plugin tests
         working-directory: enforcer-files
         run: npm test
