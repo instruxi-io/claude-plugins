@@ -1,0 +1,15 @@
+#!/usr/bin/env node
+// enforcer CLI. `enforcer governor <decide|status|config|limit|verify>` delegates to the governor core.
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+
+const here = (p) => fileURLToPath(new URL(p, import.meta.url));
+const [area, sub, ...rest] = process.argv.slice(2);
+const GOV = ['decide', 'status', 'config', 'limit', 'verify'];
+if (area !== 'governor' || !GOV.includes(sub)) {
+  process.stderr.write(`usage: enforcer governor <${GOV.join('|')}> [args]   (decide reads the event JSON on stdin)\n`);
+  process.exit(2);
+}
+const script = sub === 'decide' ? here('../lib/governor/bin/governor') : here('../lib/governor/core/report.mjs');
+const r = spawnSync(process.execPath, [script, sub, ...rest], { stdio: 'inherit' });
+process.exit(r.status ?? 1);

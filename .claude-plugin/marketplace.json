@@ -15,13 +15,9 @@
     },
     {
       "name": "enforcer-governor",
-      "description": "Decides whether an agent action is allowed before it runs, and keeps a tamper-evident record of every decision. Brings the enforcer MCP server.",
-      "category": "governance",
-      "source": {
-        "source": "github",
-        "repo": "instruxi-io/enforcer-governor",
-        "ref": "v2.9.0"
-      }
+      "description": "DEPRECATED: now part of enforcer. Install enforcer instead; this alias goes away after one release.",
+      "category": "deprecated",
+      "source": "./enforcer"
     },
     {
       "name": "jev-hooks",
