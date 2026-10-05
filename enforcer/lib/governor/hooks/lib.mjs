@@ -6,6 +6,28 @@ import { readFileSync } from 'node:fs';
 import { headlessFrom } from '../core/worker.mjs';
 import { loadConfig } from '../src/store.mjs';
 
+// Codex names its tools apply_patch and shell (command may be an argv array).
+// Map them to Edit and Bash so the Edit/Write and Bash rules match.
+export function codexNormalize(ev) {
+  if (!ev || typeof ev !== 'object' || typeof ev.tool_name !== 'string') return ev;
+  const ti = ev.tool_input && typeof ev.tool_input === 'object' ? ev.tool_input : null;
+  if (ev.tool_name === 'apply_patch') {
+    ev.tool_name = 'Edit';
+    const text = ti ? String(ti.command ?? ti.input ?? ti.patch ?? '') : String(ev.tool_input ?? '');
+    const m = text.match(/^\*\*\* (?:Update|Add|Delete) File: (.+)$/m);
+    ev.tool_input = { ...(ti || {}), ...(ti?.file_path || !m ? {} : { file_path: m[1].trim() }) };
+  } else if (ev.tool_name === 'shell' || ev.tool_name === 'local_shell') {
+    ev.tool_name = 'Bash';
+    const c = ti?.command;
+    if (Array.isArray(c)) {
+      const a = c.map(String);
+      const wrapped = a.length >= 3 && /(^|\/)(ba|z|da)?sh$/.test(a[0]) && /^-\w*c$/.test(a[1]);
+      ev.tool_input = { ...ti, command: wrapped ? a.slice(2).join(' ') : a.join(' ') };
+    }
+  }
+  return ev;
+}
+
 // `allowed` names the events this hook answers. A harness may route others here
 // (Codex also sends PermissionRequest, PostCompact, Interrupt): those are not
 // ours, so the only right answer is nothing at all, exit 0.
@@ -18,7 +40,7 @@ export function input(...allowed) {
   } catch { ev = {}; Object.defineProperty(ev, 'badStdin', { value: true }); return ev; }
   if (!ev || typeof ev !== 'object' || Array.isArray(ev)) { ev = {}; Object.defineProperty(ev, 'badStdin', { value: true }); return ev; }
   if (allowed.length && ev && typeof ev.hook_event_name === 'string' && !allowed.includes(ev.hook_event_name)) process.exit(0);
-  return ev;
+  return codexNormalize(ev);
 }
 
 // `top` carries the universal fields -- systemMessage above all. They belong

@@ -5,8 +5,16 @@
     {
       "name": "enforcer",
       "description": "Enforcer for your agent: the MCP connection, one sign-in, workspace files, the graph worker and the governor.",
-      "source": "./enforcer",
-      "version": "1.0.1"
+      "source": {
+        "source": "local",
+        "path": "./enforcer"
+      },
+      "version": "1.0.4",
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
     }
   ]
 }

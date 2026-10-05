@@ -19,7 +19,13 @@
     "com.openai": {
       "hooks": "./hooks/hooks.json",
       "interface": {
-        "displayName": "Enforcer"
+        "displayName": "Enforcer",
+        "shortDescription": "Enforcer for your agent: MCP connection, sign-in, files, graph worker and governor.",
+        "longDescription": "Connects Codex to your Enforcer workspace: the enforcer MCP server, one sign-in, workspace files, the graph worker and the governor that gates risky tool calls.",
+        "developerName": "Instruxi",
+        "category": "Productivity",
+        "capabilities": ["Interactive", "Write"],
+        "websiteURL": "https://instruxi.io"
       }
     }
   }

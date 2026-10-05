@@ -3,7 +3,7 @@
 // not recorded from a live Codex run).
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { readFileSync, readdirSync, mkdtempSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -41,5 +41,18 @@ const plugin = JSON.parse(readFileSync(join(root, 'plugin.json'), 'utf8'));
 assert.equal(plugin.extensions['com.openai'].hooks, './hooks/hooks.json');
 assert.ok(plugin.extensions['com.openai'].interface.displayName); ok('plugin.json carries extensions.com.openai');
 const mk = JSON.parse(readFileSync(join(root, '../.agents/plugins/marketplace.json'), 'utf8'));
-assert.ok(mk.plugins.some((p) => p.name === 'enforcer' && p.source === './enforcer')); ok('.agents/plugins/marketplace.json lists enforcer');
+const me = mk.plugins.find((p) => p.name === 'enforcer');
+assert.deepEqual(me.source, { source: 'local', path: './enforcer' });
+assert.equal(me.version, plugin.version);
+assert.ok(me.policy && me.category);
+const cm = JSON.parse(readFileSync(join(root, '../.' + 'claude-plugin/marketplace.json'), 'utf8'));
+assert.equal(cm.plugins.find((p) => p.name === 'enforcer').version, plugin.version);
+ok('marketplace source is {source:local,path} with version equal to plugin.json');
+
+const { codexNormalize } = await import('../lib/governor/hooks/lib.mjs');
+let e = codexNormalize({ tool_name: 'apply_patch', tool_input: { command: '*** Begin Patch\n*** Update File: /a/b.txt\n@@\n' } });
+assert.equal(e.tool_name, 'Edit'); assert.equal(e.tool_input.file_path, '/a/b.txt'); ok('apply_patch maps to Edit');
+e = codexNormalize({ tool_name: 'shell', tool_input: { command: ['bash', '-lc', 'ls -la /tmp'] } });
+assert.equal(e.tool_name, 'Bash'); assert.equal(e.tool_input.command, 'ls -la /tmp'); ok('shell maps to Bash');
+assert.ok(existsSync(join(root, 'harness/codex/mcp.json'))); ok('harness/codex ships inside the package');
 console.log(`\ncodex-shims: ${n} checks passed`);
