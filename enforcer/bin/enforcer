@@ -77,11 +77,12 @@ if (area === 'governor' && GOV.includes(sub)) {
   process.exit(r.status ?? 1);
 }
 
-if (area === 'harness' && sub === 'install' && rest[0] === 'grok') {
-  const { install } = await import('../src/grok-install.mjs');
-  install({ dryRun: rest.includes('--dry-run') });
-  process.exit(0);
+if (area === 'harness' && (sub === 'install' || sub === 'uninstall') && rest[0] === 'grok') {
+  const g = await import('../src/grok-install.mjs');
+  const opts = { dryRun: rest.includes('--dry-run'), yes: rest.includes('--yes') || rest.includes('-y') };
+  const r = await (sub === 'install' ? g.install(opts) : g.uninstall(opts));
+  process.exit(r.ok ? 0 : 1);
 }
 
-process.stderr.write(`usage: enforcer governor <${GOV.join('|')}> [args]\n       enforcer harness install grok [--dry-run]\n       enforcer hook <${Object.keys(HOOKS).join('|')}> [handler]\n`);
+process.stderr.write(`usage: enforcer governor <${GOV.join('|')}> [args]\n       enforcer harness <install|uninstall> grok [--dry-run] [--yes]\n       enforcer hook <${Object.keys(HOOKS).join('|')}> [handler]\n`);
 process.exit(2);
