@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.0.5
+
+Governor gate:
+- Governor hooks fail closed (#76); default rules tokenise, strip wrappers, strictest wins (#81); settings guard denies anything but a plain read (#86).
+- Headless worker denies unrecognised delivery shapes (#71); CLAUDE_PLUGIN_ROOT exported to workers (#91).
+- Aliases become empty stubs, kit defaults off, README fixes (#74).
+
+Evidence:
+- Secrets redacted at capture time (#72); state, evidence and run files 0600 in 0700 dirs (#77).
+- Evidence gate keyed by actor so subagents are captured (#70); failing commands captured (#80).
+
+Other:
+- CLI main guard works from any install path (#69); login logout revokes refresh token (#92); heartbeat by elapsed time (#89); `enforcer doctor` (#88); Codex marketplace shape and harness (#93).
+
 ## 1.0.4
 
 - The governor announces itself: SessionStart (Claude, Codex, Grok shims and `bin/enforcer hook session-start`) sets `ENFORCER_GOVERNOR=1`.
