@@ -576,6 +576,64 @@ class DoneAPI(FakeAPI):
                 and not os.path.exists(os.path.join(self.done, n["key"]))]
 
 
+class VerdictAPI(DoneAPI):
+    """v is verifying and gates b; after `flip` passes v goes done and b joins the frontier."""
+    def __init__(self, nodes, done, flip=4):
+        super().__init__(nodes, done)
+        self.passes, self.flip = 0, flip
+
+    def nodes(self, g):
+        self.passes += 1
+        if self.passes == self.flip:
+            for n in self._nodes:
+                if n["key"] == "v":
+                    n["status"] = "done"
+                if n["key"] == "b":
+                    n["status"] = "active"
+        return self._nodes
+
+
+class WaitOnVerifying(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.state = os.path.join(self.tmp, "s")
+        os.makedirs(os.path.join(self.state, "logs"))
+        self.done = os.path.join(self.tmp, "done")
+        os.makedirs(self.done)
+        self.calls = os.path.join(self.tmp, "calls.jsonl")
+        self.cbin = os.path.join(self.tmp, "claude-warm")
+        with open(self.cbin, "w") as f:
+            f.write(FAKE_WARM_CLAUDE)
+        os.chmod(self.cbin, 0o755)
+        os.environ["FAKE_CALLS"], os.environ["FAKE_DONE"] = self.calls, self.done
+
+    def run_dispatch(self, **kw):
+        out = io.StringIO()
+        api = VerdictAPI([node("v", status="verifying"), node("b", status="pending")], self.done)
+        a = args(workers=1, state_dir=self.state, stop_file=os.path.join(self.state, "STOP"),
+                 interval=0.05, claude=self.cbin, **kw)
+        rc = gd.Dispatcher(api, a, out).run()
+        launches = []
+        if os.path.exists(self.calls):
+            with open(self.calls) as f:
+                launches = [json.loads(l) for l in f]
+        return rc, out.getvalue(), launches, api
+
+    def test_waits_for_verdict_then_launches_dependent(self):
+        rc, text, launches, api = self.run_dispatch()
+        self.assertEqual(rc, 0, text)
+        self.assertIn("waiting on verdict for v", text)
+        self.assertEqual([l["key"] for l in launches], ["b"], text)
+        self.assertNotIn("nothing runnable or running; exiting (peak 0", text)
+
+    def test_exit_when_idle_keeps_old_behaviour(self):
+        rc, text, launches, api = self.run_dispatch(exit_when_idle=True)
+        self.assertEqual(rc, 0, text)
+        self.assertIn("nothing runnable or running; exiting", text)
+        self.assertNotIn("waiting on verdict", text)
+        self.assertEqual(launches, [])
+
+
 class WarmWorkers(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
