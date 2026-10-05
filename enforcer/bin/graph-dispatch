@@ -594,12 +594,42 @@ def worker_prompt(graph, node, path, branch, previous=None):
 
 HARNESSES = ("claude", "codex", "grok")
 
+# What each harness can do. `supported` False: refused at parse time.
+# `experimental`: needs --experimental. `models`: model-name prefixes the
+# harness knows; any other model (a Claude alias such as sonnet) is not passed.
+HARNESS_CAPS = {
+    "claude": {"supported": True, "experimental": False, "models": None},
+    "grok": {"supported": True, "experimental": True, "models": ("grok",)},
+    "codex": {"supported": False, "experimental": False, "models": ("gpt", "o1", "o3", "o4", "codex"),
+              "why": "its `codex exec --json` event stream has no parser (no recorded sample), so workers "
+                     "would be launched and orphaned at the first reap"},
+}
+
+
+def harness_knows_model(harness, model):
+    pre = HARNESS_CAPS.get(harness, {}).get("models")
+    return bool(model) and (pre is None or str(model).startswith(pre))
+
+
+def harness_refusal(harness, experimental):
+    """The refusal message for a harness that cannot run workers, else None."""
+    cap = HARNESS_CAPS.get(harness) or {}
+    if not cap.get("supported", True):
+        return "--harness %s is not supported: %s" % (harness, cap.get("why", "no capability"))
+    if cap.get("experimental") and not experimental:
+        return "--harness %s is experimental: pass --experimental to use it" % harness
+    return None
+
+
+class HarnessRefused(Exception):
+    pass
+
 
 def launch_grok(prompt, model, args, key):
     """grok -p <prompt> --output-format json: one JSON object at the end of the run."""
     cmd = [getattr(args, "grok", None) or os.environ.get("GROK_BIN", "grok"), "-p", prompt,
-           "--output-format", "json"]
-    if model:
+           "--output-format", "streaming-messages-json"]
+    if harness_knows_model("grok", model):
         cmd += ["--model", model]
     return cmd
 
@@ -607,7 +637,7 @@ def launch_grok(prompt, model, args, key):
 def launch_codex(prompt, model, args, key):
     """codex exec --json <prompt>: JSONL events. The parser is a stub until a real sample exists."""
     cmd = [getattr(args, "codex", None) or os.environ.get("CODEX_BIN", "codex"), "exec", "--json"]
-    if model:
+    if harness_knows_model("codex", model):
         cmd += ["--model", model]
     return cmd + [prompt]
 
@@ -1662,14 +1692,23 @@ def limit_reset_at(text, now=None):
 
 
 def grok_events(path):
-    """`grok -p --output-format json` prints one JSON object (the final result).
+    """`grok -p --output-format streaming-messages-json` prints Claude-shaped
+    NDJSON (init, assistant with tool_use, user with tool_result, result), so
+    it parses like claude's. The older `--output-format json` single object
+    (no "type" key) is still read, below.
     Yield the Claude-shaped events summarize reads: init, one assistant turn, result."""
     try:
         with open(path, errors="replace") as f:
             o = json.loads(f.read())
-    except (OSError, ValueError):
+    except OSError:
+        return
+    except ValueError:  # several lines: NDJSON
+        yield from _claude_events(path)
         return
     if not isinstance(o, dict):
+        return
+    if "type" in o:  # a one-event file is still NDJSON
+        yield from _claude_events(path)
         return
     sid = o.get("sessionId")
     yield {"type": "system", "subtype": "init", "session_id": sid, "message": {}}
@@ -1694,6 +1733,10 @@ def _events(path, harness="claude"):
     if harness != "claude":
         yield from HARNESS_PARSERS[harness](path)
         return
+    yield from _claude_events(path)
+
+
+def _claude_events(path):
     try:
         with open(path) as f:
             for line in f:
@@ -2137,10 +2180,15 @@ def parse_args(argv):
                    help="minutes from a session's first launch after which it is retired (default 120)")
     p.add_argument("--harness", choices=HARNESSES, default="claude",
                    help="agent CLI that runs the workers (default claude)")
+    p.add_argument("--experimental", action="store_true",
+                   help="allow an experimental harness (grok)")
     p.add_argument("--grok", default=os.environ.get("GROK_BIN", "grok"))
     p.add_argument("--codex", default=os.environ.get("CODEX_BIN", "codex"))
     p.add_argument("--claude", default=os.environ.get("CLAUDE_BIN", "claude"))
     a = p.parse_args(argv)
+    why = harness_refusal(a.harness, a.experimental)
+    if why:
+        raise HarnessRefused(why)
     if a.workers < 1:
         p.error("--workers must be >= 1")
     if not a.state_dir:
@@ -2160,6 +2208,9 @@ def main(argv=None):
         return prune_main((argv if argv is not None else sys.argv[1:])[1:])
     try:
         a = parse_args(argv if argv is not None else sys.argv[1:])
+    except HarnessRefused as e:
+        print("graph-dispatch: %s" % e, file=sys.stderr)
+        return 2
     except SystemExit as e:
         return 5 if e.code else 0
     helper = os.environ.get("GRAPH_AUTH_HELPER") or (None if os.environ.get("GRAPH_API_KEY") else default_helper())
