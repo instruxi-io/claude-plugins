@@ -18,9 +18,15 @@ def plugin_version():
     """This plugin's own version, read from its manifest beside the hooks, so the
     client string cannot drift from what is installed. "unknown" when unreadable."""
     try:
-        here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        with open(os.path.join(here, ".claude-plugin", "plugin.json")) as f:
-            return str(json.load(f).get("version") or "unknown")
+        # One version for the whole package: the root plugin.json (lib/graph/ -> package root).
+        here = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        for rel in ("plugin.json", os.path.join(".claude-plugin", "plugin.json")):
+            try:
+                with open(os.path.join(here, rel)) as f:
+                    return str(json.load(f).get("version") or "unknown")
+            except OSError:
+                continue
+        return "unknown"
     except Exception:
         return "unknown"
 

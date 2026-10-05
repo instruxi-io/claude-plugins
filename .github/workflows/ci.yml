@@ -15,11 +15,13 @@ jobs:
       - name: enforcer plugin tests
         working-directory: enforcer
         run: npm test
-      - name: enforcer-graph plugin tests
-        working-directory: enforcer-graph
+      - name: enforcer graph worker tests
+        working-directory: enforcer
         env:
           GH_TOKEN: ${{ github.token }}   # one test resolves a public PR with `gh`
-        run: bash test/run.sh
+        run: |
+          python3 -m unittest discover test
+          bash test/run.sh
       - name: enforcer-files plugin tests
         working-directory: enforcer-files
         run: npm test
@@ -59,23 +61,18 @@ jobs:
               process.exit(1);
             }
             console.log("vendored manifest matches the live one");'
-      # Customers must not end up with the MCP tools but no graph hooks: the
-      # enforcer plugin (the MCP server) depends on enforcer-graph (the hooks),
-      # so one install brings both and Claude Code refuses to disable the hooks
-      # while enforcer is enabled.
-      - name: one install of enforcer brings the graph hooks
+      # The graph hooks ship inside enforcer (self-gated), so one install brings them.
+      - name: enforcer ships the graph hooks
         run: |
           node -e '
-            const fs = require("fs");
-            const e = JSON.parse(fs.readFileSync("enforcer/.claude-plugin/plugin.json", "utf8"));
-            if (!(e.dependencies || []).some((d) => (typeof d === "string" ? d : d.name).split("@")[0] === "enforcer-graph")) {
-              console.error("FAIL enforcer/.claude-plugin/plugin.json must list enforcer-graph in dependencies"); process.exit(1);
+            const h = JSON.parse(require("fs").readFileSync("enforcer/hooks/hooks.json", "utf8")).hooks;
+            for (const e of ["PreToolUse","PostToolUse","PreCompact","SessionStart","Stop"]) {
+              if (!JSON.stringify(h[e] || []).includes("bin/enforcer\\\" hook")) { console.error("FAIL no bin/enforcer hook for " + e); process.exit(1); }
             }
-            if (!fs.existsSync("enforcer-graph/hooks/hooks.json")) { console.error("FAIL enforcer-graph has no hooks"); process.exit(1); }
-            console.log("enforcer -> enforcer-graph dependency ok");'
+            console.log("enforcer hooks.json routes the graph events through bin/enforcer hook");'
       - name: manifests are valid JSON
         run: |
-          for f in .claude-plugin/marketplace.json kit.json enforcer/.claude-plugin/plugin.json enforcer/.mcp.json enforcer-graph/.claude-plugin/plugin.json enforcer-graph/hooks/hooks.json enforcer-graph/settings.example.json enforcer-files/.claude-plugin/plugin.json test/fixtures/mcp-tool-names.json; do
+          for f in .claude-plugin/marketplace.json kit.json enforcer/.claude-plugin/plugin.json enforcer/.mcp.json enforcer/hooks/hooks.json enforcer/docs/graph/settings.example.json enforcer-files/.claude-plugin/plugin.json test/fixtures/mcp-tool-names.json; do
             node -e 'JSON.parse(require("fs").readFileSync(process.argv[1]))' "$f" && echo "$f ok"
           done
       # A local source that stops resolving breaks every new install while
@@ -86,7 +83,7 @@ jobs:
             const fs = require("fs"), path = require("path");
             const m = JSON.parse(fs.readFileSync(".claude-plugin/marketplace.json", "utf8"));
             for (const p of m.plugins) {
-              if (typeof p.source !== "string") continue;
+              if (typeof p.source !== "string" || /^DEPRECATED/.test(p.description)) continue;
               const f = path.join(p.source, ".claude-plugin", "plugin.json");
               if (!fs.existsSync(f)) { console.error(`FAIL ${p.name}: no ${f}`); process.exit(1); }
               const own = JSON.parse(fs.readFileSync(f, "utf8"));

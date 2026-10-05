@@ -19,7 +19,7 @@ import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-HOOKS = os.path.join(os.path.dirname(HERE), "hooks")
+HOOKS = os.path.join(os.path.dirname(HERE), "lib", "graph")
 sys.path.insert(0, HOOKS)
 import lib  # noqa: E402
 

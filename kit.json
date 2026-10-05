@@ -6,12 +6,12 @@
     {
       "id": "enforcer@instruxi",
       "default": true,
-      "summary": "The enforcer MCP server, the shared Enforcer sign-in, and (as a dependency) enforcer-graph's hooks. Run /enforcer:login, then /enforcer:setup"
+      "summary": "The enforcer MCP server, the shared Enforcer sign-in, the graph worker's hooks, skill and dispatcher, and the governor. Run /enforcer:login, then /enforcer:setup"
     },
     {
       "id": "enforcer-graph@instruxi",
       "default": true,
-      "summary": "Work and write plans held in enforcer-graph. Installed with enforcer as its dependency; listed for Claude Code versions without plugin dependencies"
+      "summary": "Work and write plans held in enforcer-graph. Deprecated alias: now part of enforcer"
     },
     {
       "id": "enforcer-files@instruxi",

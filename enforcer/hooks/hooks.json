@@ -9,6 +9,16 @@
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/claude/governor-pre-tool-use.mjs\""
           }
         ]
+      },
+      {
+        "matcher": "mcp__(plugin_enforcer_enforcer|enforcer|enforcer-graph)__graph_(next_work|report|remember|heartbeat)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/enforcer\" hook pre-tool-use",
+            "timeout": 30
+          }
+        ]
       }
     ],
     "PostToolUse": [
@@ -20,6 +30,31 @@
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/claude/governor-post-tool-use.mjs\""
           }
         ]
+      },
+      {
+        "matcher": "mcp__(plugin_enforcer_enforcer|enforcer|enforcer-graph)__graph_(next_work|report|heartbeat)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/enforcer\" hook post-tool-use track-run",
+            "timeout": 3
+          }
+        ]
+      },
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/enforcer\" hook post-tool-use capture-evidence",
+            "timeout": 3
+          },
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/enforcer\" hook post-tool-use heartbeat",
+            "timeout": 3
+          }
+        ]
       }
     ],
     "SessionStart": [
@@ -28,6 +63,16 @@
           {
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/claude/governor-session-start.mjs\""
+          }
+        ]
+      },
+      {
+        "matcher": "startup|resume|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/enforcer\" hook session-start",
+            "timeout": 5
           }
         ]
       }
@@ -68,6 +113,29 @@
           {
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/claude/governor-subagent-stop.mjs\""
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "manual|auto",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/enforcer\" hook pre-compact",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/enforcer\" hook stop",
+            "timeout": 3
           }
         ]
       }

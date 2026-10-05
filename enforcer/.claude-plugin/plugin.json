@@ -1,7 +1,7 @@
 {
   "name": "enforcer",
   "displayName": "Enforcer",
-  "description": "Connects Claude Code to your Enforcer workspace: the Enforcer MCP server, one sign-in that every Instruxi plugin shares, and /enforcer:setup. Depends on enforcer-graph, so the graph tools never run without its hooks.",
+  "description": "Connects Claude Code to your Enforcer workspace: the Enforcer MCP server, one sign-in, /enforcer:setup, the graph worker (skill, agent, self-gating hooks, dispatcher) and the governor.",
   "version": "1.0.0-rc.1",
   "author": {
     "name": "Instruxi",
@@ -14,8 +14,5 @@
     "mcp",
     "identity",
     "authorization"
-  ],
-  "dependencies": [
-    "enforcer-graph"
   ]
 }

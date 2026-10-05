@@ -2,7 +2,7 @@
 //   enforcer/src/credentials.mjs        (the enforcer plugin; MCP header helper, /enforcer:login)
 //   enforcer-files/src/credentials.mjs  (byte-identical; CI `cmp`s it)
 //   enforcer-governor src/credentials.mjs (folded in at enforcer/lib/governor)
-//   enforcer-graph/hooks/lib.py         (Python)
+//   enforcer/lib/graph/lib.py         (Python)
 // A format change in one signs the others out. This writes the file with each
 // implementation and reads it with every other, including a token REFRESHED by
 // one and read by another (refresh tokens rotate: a reader that misses the
@@ -32,7 +32,7 @@ const G = await import(pathToFileURL(join(governorDir, 'src/credentials.mjs')).h
 // synchronous child would block the event loop it needs to answer.
 const py = async () => JSON.parse((await promisify(execFile)('python3', ['-c', `
 import json, sys
-sys.path.insert(0, ${JSON.stringify(join(root, 'enforcer-graph/hooks'))})
+sys.path.insert(0, ${JSON.stringify(join(root, 'enforcer/lib/graph'))})
 import lib
 print(json.dumps(lib.auth_headers({"api_key": ""})))`], { env: process.env })).stdout);
 
