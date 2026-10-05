@@ -36,13 +36,13 @@
       "name": "enforcer-graph",
       "description": "DEPRECATED: now part of enforcer. Install enforcer instead (`claude plugin install enforcer@instruxi`); this alias goes away after one release.",
       "category": "deprecated",
-      "source": "./enforcer"
+      "source": "./aliases/enforcer-graph"
     },
     {
       "name": "enforcer-files",
       "description": "DEPRECATED: now part of enforcer. Install enforcer instead (`claude plugin install enforcer@instruxi`); this alias goes away after one release.",
       "category": "deprecated",
-      "source": "./enforcer"
+      "source": "./aliases/enforcer-files"
     }
   ]
 }
