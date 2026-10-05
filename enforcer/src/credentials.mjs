@@ -27,6 +27,9 @@ export const SHARED_FILE = () => join(SHARED_DIR(), 'credentials.json');
 const LEGACY_FILE = join(process.env.GOVERNOR_HOME || join(home(), '.enforcer-governor'), 'credentials.json');
 export const DEFAULT_BASE_URL = 'https://api.instruxi.dev';
 
+/** The legacy credential file's path when it still holds a credential, else null. */
+export const legacyCredentialFile = () => { const l = readJson(LEGACY_FILE)?.enforcer; return l && (l.api_key || l.oauth?.access_token) ? LEGACY_FILE : null; };
+
 const readJson = (f) => { try { return JSON.parse(readFileSync(f, 'utf8')); } catch { return null; } };
 
 /** The stored credential document, shared file first. Null when there is none. */
