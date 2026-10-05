@@ -47,14 +47,18 @@ export function membershipsOf(me) {
 }
 
 /** Match `<name|code|tenant_id>` against memberships: exact id/code, then name, case-insensitive. Throws on none or ambiguity. */
-export function resolveWorkspace(rows, query) {
+export function resolveWorkspace(rows, query, { fuzzy = false } = {}) {
   const q = String(query || '').trim().toLowerCase();
   if (!q) throw new Error('name a workspace: switch <name|code|tenant_id>');
   const hit = (f) => rows.filter((m) => f(m));
   let found = hit((m) => m.tenant_id?.toLowerCase() === q || m.code?.toLowerCase() === q);
   if (!found.length) found = hit((m) => m.name?.toLowerCase() === q);
-  if (!found.length) found = hit((m) => m.name?.toLowerCase().includes(q));
+  const partial = hit((m) => m.name?.toLowerCase().includes(q));
+  if (!found.length && fuzzy) found = partial;
   if (found.length > 1) throw new Error(`"${query}" matches ${found.length} workspaces (${found.map((m) => m.name || m.tenant_id).join(', ')}); use the code or id`);
+  if (!found.length && partial.length) {
+    throw new Error(`"${query}" is not an exact workspace code, id or name; partial matches: ${partial.map((m) => m.name || m.tenant_id).join(', ')}. Use the exact one, or pass --fuzzy to accept a unique partial match.`);
+  }
   if (!found.length) {
     throw new Error(`you are not a member of "${query}". Switching only moves between workspaces you belong to; for a new one, sign in with its code (/enforcer:login <WORKSPACE-CODE>) or accept an invite.`);
   }
@@ -77,7 +81,7 @@ async function getMe(base, fetchImpl) {
  * `switch <other>` answered "you are not a member" for every real membership. */
 async function getTenants(base, headers, fetchImpl) {
   const r = await fetchImpl(`${base}${API}/auth/tenants`, { headers, signal: AbortSignal.timeout(10_000) });
-  if (!r.ok) throw new Error(`Enforcer refused /auth/tenants (HTTP ${r.status}). Run /enforcer:login.`);
+  if (!r.ok) return []; // listWorkspaces falls back to the /auth/me view
   const j = await r.json();
   const list = j?.data?.tenants || j?.data?.items || j?.data || j;
   return (Array.isArray(list) ? list : []).map(normalizeMembership).filter((m) => m.tenant_id);
@@ -89,7 +93,8 @@ export async function listWorkspaces({ fetchImpl = fetch } = {}) {
   const base = baseOf(doc);
   const { me, headers } = await getMe(base, fetchImpl);
   const cur = jwtClaims(readCredentials()?.enforcer?.oauth?.access_token).tenant_id || me?.tenant?.id;
-  const rows = await getTenants(base, headers, fetchImpl);
+  let rows = [];
+  try { rows = await getTenants(base, headers, fetchImpl); } catch { /* unreachable /auth/tenants: use /auth/me */ }
   // Older servers (or a token with no /auth/tenants) still get the /auth/me view.
   const merged = rows.length ? rows : membershipsOf(me);
   if (cur && !merged.some((m) => m.tenant_id === cur)) merged.push(...membershipsOf(me).filter((m) => m.tenant_id === cur));
@@ -97,9 +102,9 @@ export async function listWorkspaces({ fetchImpl = fetch } = {}) {
 }
 
 /** Switch to a workspace and adopt the token pair it returns. Returns the new membership. */
-export async function switchWorkspace(query, { fetchImpl = fetch, now = Date.now } = {}) {
+export async function switchWorkspace(query, { fetchImpl = fetch, now = Date.now, fuzzy = false } = {}) {
   const rows = await listWorkspaces({ fetchImpl });
-  const target = resolveWorkspace(rows, query);
+  const target = resolveWorkspace(rows, query, { fuzzy });
   const doc = readCredentials();
   const base = baseOf(doc);
   if (target.current) return { ...target, unchanged: true };
@@ -109,8 +114,10 @@ export async function switchWorkspace(query, { fetchImpl = fetch, now = Date.now
     body: JSON.stringify({ tenant_id: target.tenant_id }), signal: AbortSignal.timeout(10_000),
   });
   if (r.status === 403) {
-    throw new Error('Enforcer refused the switch (HTTP 403): this sign-in lacks the enforcer:workspace.write scope. '
-      + 'Sign in again with it: /enforcer:login --for work');
+    const body = await r.json().catch(() => ({}));
+    const why = body?.error?.message || body?.message || (typeof body?.error === 'string' ? body.error : '') || 'no reason given';
+    throw new Error(`Enforcer refused the switch (HTTP 403): ${why}. `
+      + 'If the sign-in lacks the enforcer:workspace.write scope, sign in again with it: /enforcer:login --for work');
   }
   if (!r.ok) throw new Error(`Enforcer refused the switch (HTTP ${r.status}).`);
   const j = await r.json();
@@ -154,8 +161,9 @@ async function main([cmd = 'current', ...rest]) {
     return;
   }
   if (cmd === 'switch') {
-    const t = await switchWorkspace(rest.join(' '));
-    out(t.unchanged ? `Already in ${t.name || t.tenant_id}.` : `Switched to ${t.name || t.tenant_id}. Every Enforcer plugin on this machine now acts in it.`);
+    const fuzzy = rest.includes('--fuzzy');
+    const t = await switchWorkspace(rest.filter((a) => a !== '--fuzzy').join(' '), { fuzzy });
+    out(t.unchanged ? `Already in ${t.name || t.tenant_id}.` : `Switched to ${t.name || t.tenant_id}. New Enforcer processes on this machine act in it; the MCP connection in this session still holds the previous workspace until you run /mcp reconnect or restart.`);
     out(describe(await currentWorkspace()));
     return;
   }
