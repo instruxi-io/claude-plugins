@@ -583,7 +583,7 @@ class SalvageDenied(unittest.TestCase):
         d, ok, text = self.run_salvage()
         self.assertTrue(ok, text)
         c = self.calls()
-        self.assertIn("gh pr create --head graph/a", c)
+        self.assertIn("gh pr create --base main --head graph/a", c)
         self.assertIn("final report", c)
         self.assertIn("land 7 --timeout", c)
         self.assertIn("--resume sess-1", c)
@@ -593,6 +593,24 @@ class SalvageDenied(unittest.TestCase):
         import subprocess
         r = subprocess.run(["git", "ls-remote", "--heads", "origin", "graph/a"], cwd=self.wt, capture_output=True, text=True)
         self.assertIn("refs/heads/graph/a", r.stdout)
+
+    def test_salvage_honours_data_base(self):
+        self.git(self.wt, "push", "-q", "origin", "HEAD:staging")
+        self.git(self.wt, "fetch", "-q")
+        self.setup_branch()
+        d = gd.Dispatcher(FakeAPI([]), args(state_dir=self.state, claude=self.claude), io.StringIO())
+        n = node("a")
+        n["data"] = dict(n.get("data") or {}, base="staging")
+        w = gd.Worker(n, os.path.join(self.tmp, "w.log"))
+        w.path, w.model, w.max_turns = self.wt, "sonnet", 10
+        w.session = gd.Session("sess-1", "r", "sonnet")
+        s = {"denied_tools": ["Bash"], "result_text": "r", "card_skills": ["deliver-via-github-pr"],
+             "denied_inputs": [{"tool_name": "Bash", "tool_input": {"command": "git push -u origin graph/a"}}]}
+        self.assertTrue(d.salvage(w, s))
+        self.assertIn("gh pr create --base staging --head graph/a", self.calls())
+        for x in list(d.workers.values()):
+            if x.proc:
+                x.proc.wait()
 
     def test_no_salvage_without_the_delivery_skill(self):
         self.setup_branch()

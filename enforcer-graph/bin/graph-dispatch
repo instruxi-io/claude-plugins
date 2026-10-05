@@ -1127,7 +1127,14 @@ class Dispatcher:
         if rc or st:
             return skip("worktree is dirty or unreadable")
         base = None
-        for ref in ("origin/HEAD", "origin/main", "origin/master"):
+        dbase = ((w.node.get("data") or {}).get("base") or "").strip()
+        if dbase:  # the node's own base, as the worktree step honours it
+            dbase = dbase if dbase.startswith("origin/") else "origin/" + dbase
+            if self._sh(["git", "rev-parse", "--verify", "-q", dbase], path)[0] == 0:
+                base = dbase
+            else:
+                return skip("data.base %s not found on origin" % dbase)
+        for ref in (() if base else ("origin/HEAD", "origin/main", "origin/master")):
             if self._sh(["git", "rev-parse", "--verify", "-q", ref], path)[0] == 0:
                 base = ref
                 break
@@ -1140,7 +1147,11 @@ class Dispatcher:
         if rc:
             return skip("push failed: %s" % clip(out, 200))
         body = (s["result_text"] or "(no final report)") + "\n\n" + ATTRIBUTION
-        rc, out = self._sh(["gh", "pr", "create", "--head", branch, "--title", w.node.get("title") or key,
+        if base == "origin/HEAD":
+            rc, h = self._sh(["git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD"], path)
+            base = h if rc == 0 and h else "origin/main"
+        pr_base = base[len("origin/"):] if base.startswith("origin/") else base
+        rc, out = self._sh(["gh", "pr", "create", "--base", pr_base, "--head", branch, "--title", w.node.get("title") or key,
                             "--body", body], path)
         m = re.search(r"/pull/(\d+)", out) if rc == 0 else None
         if not m:
