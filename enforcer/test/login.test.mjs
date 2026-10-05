@@ -151,6 +151,12 @@ await ok('presets: work, plan, admin pick exactly their scopes; --for parses; un
   assert.deepEqual(Object.keys(PRESETS), ['work', 'plan', 'admin']);
 });
 
+await ok('presets request enforcer:workspace.write for work, plan and admin when the server offers it', () => {
+  const meta = { scopes_supported: [...OFFERED, 'enforcer:workspace.write'] };
+  for (const preset of ['work', 'plan', 'admin']) assert.ok(presetScope(meta, preset).split(' ').includes('enforcer:workspace.write'), preset);
+  assert.ok(!presetScope({ scopes_supported: OFFERED }, 'work').includes('workspace.write'));
+});
+
 await ok('the authorize URL carries the preset scope, and the token records the preset', async () => {
   const meta = { scopes_supported: OFFERED };
   const scopes = {};
