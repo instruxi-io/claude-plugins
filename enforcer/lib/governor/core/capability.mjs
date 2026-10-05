@@ -53,9 +53,19 @@ export const DEFAULT_RULES = [
   { id: 'git.rewrite_history', authz: 'write',
     name: 'rewrite git history', tool: 'shell', action: 'ask',
     match: 'reset\\s+--hard|filter-branch' },
+  // Credentials: a shell command that READS OR WRITES a credentials file (the
+  // path is an operand of a reading/writing verb or a redirection), or an
+  // edit/write whose TARGET is one. Not a mention: until 1.0.3 this rule
+  // matched the characters ".env" anywhere in any tool's input, so a worker
+  // whose task was "copy .env into worktrees" was asked on every command,
+  // every edit and even its graph_report — and a headless worker's ask is a
+  // denial (2026-10-05, dispatcher-worktree-include, three attempts).
   { id: 'secrets.access', authz: 'read',
-    name: 'read or write credentials', tool: '', action: 'ask',
-    match: '\\.env\\b|id_rsa|\\.pem\\b|credentials\\.json|\\.aws/|\\.ssh/' },
+    name: 'read or write credentials', tool: 'shell', field: 'command', action: 'ask',
+    match: '(?:^|[\\s;&|(`])(?:cat|less|more|head|tail|cp|mv|scp|rsync|source|\\.|tee|sed|awk|cut|base64|xxd|od|strings|curl|wget|printf|echo|vim?|nano|cmp|diff|gpg|openssl|python3?|node)\\s+(?:[^|;&\\n]*?[\\s\'"=/])?(?:\\.env(?:\\.[\\w-]+)?|id_rsa\\w*|[\\w.-]+\\.pem|credentials\\.json|\\.aws/|\\.ssh/)(?=[\\s\'"|;&)]|$)|[<>]{1,2}\\s*[^|;&\\s]*(?:\\.env(?:\\.[\\w-]+)?|id_rsa|\\.pem\\b|credentials\\.json|\\.aws/|\\.ssh/)' },
+  { id: 'secrets.edit', authz: 'write',
+    name: 'read or write credentials', tool: '', field: 'path', action: 'ask',
+    match: '(?:^|/)(?:\\.env(?:\\.[\\w-]+)?|id_rsa\\w*|[\\w.-]+\\.pem|credentials\\.json)$|(?:^|/)\\.(?:aws|ssh)/' },
   { id: 'deploy.publish', authz: 'write',
     name: 'publish or deploy', tool: 'shell', action: 'ask',
     match: 'npm\\s+publish|vercel\\s+.*--prod|kubectl\\s+(apply|delete)|terraform\\s+apply' },
@@ -89,9 +99,21 @@ export function matchRule(rules, ev) {
     if (!toolMatches(r.tool, ev)) continue;
     let re;
     try { re = new RegExp(r.match, 'i'); } catch { continue; }  // a bad pattern must not break the check
-    if (re.test(text)) return r;
+    // A rule that names a field matches THAT field only (the canonical one,
+    // else the harness's own key), never the whole input: ".env" inside a
+    // report or a test fixture is not a credential access.
+    const subject = r.field ? fieldText(r.field, ev) : text;
+    if (re.test(subject)) return r;
   }
   return null;
+}
+
+function fieldText(field, ev) {
+  const canon = ev?.input?.[field];
+  if (typeof canon === 'string') return canon;
+  const key = nativeField(field, ev);
+  const raw = ev?.raw?.[key];
+  return typeof raw === 'string' ? raw : '';
 }
 
 // Build the replacement input for a rewrite rule. Returns null when the edit

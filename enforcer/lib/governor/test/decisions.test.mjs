@@ -72,6 +72,30 @@ for (const [id, code, name, cmd, native] of CAP) {
     { decision: 'ask', code, rule: id, tool: 'Bash', summary: `would ${name}` }));
 }
 
+// secrets: access means a shell verb or redirection ON a credentials path, or an
+// edit whose target is one. A mention — in a heredoc, a report, a fixture — is not.
+const ALLOWED_AS = (tool) => ({ ...ALLOWED, tool });
+ok('secrets.access: a heredoc that merely mentions .env is allowed', () =>
+  assert.deepEqual(record(bash("python3 - <<'EOF'\nprint('copy .env and node_modules into the worktree')\nEOF")), ALLOWED));
+ok('secrets.access: grep for the string .env is allowed (nothing is read or written)', () =>
+  assert.deepEqual(record(bash("grep -rn '\\.env' docs/ | head")), ALLOWED));
+ok('secrets.access: cp of a .env file asks', () =>
+  assert.deepEqual(record(bash('cp .env ../other/.env')), { decision: 'ask', code: 'secret_in_command', rule: 'secrets.access', tool: 'Bash', summary: 'would read or write credentials' }));
+ok('secrets.access: redirecting into .env asks', () =>
+  assert.deepEqual(record(bash('echo TOKEN=x >> .env.local')), { decision: 'ask', code: 'secret_in_command', rule: 'secrets.access', tool: 'Bash', summary: 'would read or write credentials' }));
+const editWith = (path, content) => ({ tool: 'edit', name: 'Edit', action: 'Edit:' + path + '\n' + content, input: { path, content },
+  raw: { file_path: path, new_string: content }, fields: { path: 'file_path', content: 'new_string' }, worker: { headless: false, branch: 'feature/x' } });
+ok('secrets.edit: editing a test that mentions .env is allowed (the target is not a credentials file)', () =>
+  assert.deepEqual(record(editWith('/repo/enforcer/test/test_dispatch.py', "assert copied('.env')")), ALLOWED_AS('Edit')));
+ok('secrets.edit: editing .env itself asks', () =>
+  assert.deepEqual(record(editWith('/repo/.env', 'TOKEN=x')), { decision: 'ask', code: 'secret_in_command', rule: 'secrets.edit', tool: 'Edit', summary: 'would read or write credentials' }));
+ok('secrets: a graph_report whose text mentions .env is allowed (an MCP call carries text, not a file)', () => {
+  const name = 'mcp__plugin_enforcer_enforcer__graph_report';
+  const ev = { tool: 'mcp', name, action: name + ':' + JSON.stringify({ report: '1. MET: .env copied into the worktree' }),
+    input: { report: '1. MET: .env copied into the worktree' }, raw: { report: '1. MET: .env copied into the worktree' }, worker: HEADLESS };
+  assert.deepEqual(record(ev), ALLOWED_AS(name));
+});
+
 ok('git.force_push: allow (a lease is already the safe form)', () =>
   assert.deepEqual(record(bash('git push --force-with-lease origin feature/x')), ALLOWED));
 ok('git.force_push: ask (with a person present the push is rewritten, and a rewrite is put to them as an ask)', () =>

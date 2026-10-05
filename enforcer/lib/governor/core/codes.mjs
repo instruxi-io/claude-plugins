@@ -19,7 +19,7 @@ export const CODES = Object.freeze({
   force_push: 'a force-push (--force, -f or a +refspec)',
   destructive_delete: 'rm -rf of a whole tree',
   destructive_git: 'history rewrite: reset --hard or filter-branch',
-  secret_in_command: 'the action reads or writes credentials (.env, keys, credentials.json, ~/.aws, ~/.ssh)',
+  secret_in_command: 'the action reads or writes a credentials file (.env, keys, credentials.json, ~/.aws, ~/.ssh): a shell command on such a path or an edit of one — naming it in text is not access',
   deploy_publish: 'publish or deploy (npm publish, vercel --prod, kubectl apply/delete, terraform apply)',
   custom_rule: 'a rule from config.json with no code of its own',
 
@@ -67,6 +67,7 @@ const RULE_CODES = Object.freeze({
   'fs.delete_tree': 'destructive_delete',
   'git.rewrite_history': 'destructive_git',
   'secrets.access': 'secret_in_command',
+  'secrets.edit': 'secret_in_command',
   'deploy.publish': 'deploy_publish',
 });
 
