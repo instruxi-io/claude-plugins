@@ -174,6 +174,7 @@ The record is written three places: as the `decision` field, last, on the hash-c
 | `push_needs_approval_surface` | a push or pull request no rule allows, in a session with nobody to ask |
 | `branch_mismatch` | pushing a branch other than the one the worktree has checked out |
 | `outside_worktree` | the working directory is not a git worktree on a graph/<key> branch |
+| `delivery_shape` | a headless worker ran a delivery command (push, remote, pull request create/merge, api, land-pr.sh) that is not exactly a recognised shape |
 | `governor_settings_edit` | an edit to plugin or governor settings |
 | `tenant_policy` | the organisation's Enforcer policy decided |
 | `agent_stopped` | the agent was stopped by a person or for looping, and stays stopped until resumed |

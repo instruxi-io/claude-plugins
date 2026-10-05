@@ -81,6 +81,15 @@ export function gate(ev, cfg = {}, deps = {}) {
   // into a prompt nobody will answer. A tenant can still refuse what they allow.
   if (cfg.rulesOn !== false) {
     const w = compose(worker(ev), deps.central);
+    // A worker allow does not skip the capability rules, and a worker shape
+    // refusal yields to a capability code that names the harm (a credentials
+    // file in the command). Nobody can answer an ask headless, so it is a deny.
+    if (w && (w.action === 'allow' || w.code === 'delivery_shape')) {
+      const c = compose(capability(rules, ev), deps.central);
+      if (c && c.action !== 'allow') {
+        return ev.worker?.headless && c.action === 'ask' ? new Verdict({ ...c, action: 'deny' }) : c;
+      }
+    }
     if (w) return w;
   }
   const cap = compose(capability(rules, ev), deps.central);
