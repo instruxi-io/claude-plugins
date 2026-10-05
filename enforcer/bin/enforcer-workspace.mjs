@@ -8,6 +8,7 @@
 // The sign-in JWT is bound to ONE tenant. Switching asks Enforcer for a token
 // pair for another tenant the person belongs to (POST /auth/tenant/switch) and
 // writes it into ~/.enforcer/credentials.json, keeping scope/resources/client.
+import { isMain } from '../src/is-main.mjs';
 import { readCredentials, saveCredentials, authHeaders, DEFAULT_BASE_URL } from '../src/credentials.mjs';
 
 const API = '/api/v1/enforcer';
@@ -163,6 +164,6 @@ async function main([cmd = 'current', ...rest]) {
   process.exitCode = 2;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMain(import.meta.url)) {
   main(process.argv.slice(2)).catch((e) => { out(`Workspace: ${e.message}`); process.exitCode = 1; });
 }

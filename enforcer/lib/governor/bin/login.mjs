@@ -12,6 +12,8 @@
 // URL, catch the redirect on 127.0.0.1, redeem the code with the PKCE verifier.
 // The refresh token is kept, so the sign-in outlives the one-hour access
 // token (credentials.mjs rotates it).
+import { realpathSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { createServer } from 'node:http';
 import { createHash, randomBytes } from 'node:crypto';
 import { spawn } from 'node:child_process';
@@ -234,6 +236,7 @@ async function main(argv) {
   process.exitCode = 2;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+const isMain = (u) => { try { return realpathSync(fileURLToPath(u)) === realpathSync(process.argv[1]); } catch { return false; } };
+if (isMain(import.meta.url)) {
   main(process.argv.slice(2)).catch((e) => { out(`Sign-in failed: ${e.message}`); process.exitCode = 1; });
 }

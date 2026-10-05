@@ -15,6 +15,7 @@
 //   presigned (S3)        ask for a short-lived URL, PUT the bytes straight to
 //                         storage, then record the upload so it is listable;
 //   proxy (GCS, Storj)    send the bytes to enforcer-files as a multipart form.
+import { isMain } from '../src/is-main.mjs';
 import { createWriteStream, readFileSync, statSync } from 'node:fs';
 import { basename, resolve } from 'node:path';
 import { Readable } from 'node:stream';
@@ -138,6 +139,6 @@ async function main(argv) {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMain(import.meta.url)) {
   main(process.argv.slice(2)).catch((e) => { out(`enforcer-files: ${e.message}`); process.exitCode = 1; });
 }
