@@ -99,10 +99,21 @@ def with_usage(args, usage, legacy=True):
     return args
 
 
+def override_entries(ov):
+    """[{line:int, reason:str}] from evidence_override (one dict or a list), or None when malformed."""
+    items = ov if isinstance(ov, list) else [ov]
+    out = []
+    for e in items:
+        if not isinstance(e, dict) or isinstance(e.get("line"), bool) or not isinstance(e.get("line"), int):
+            return None
+        out.append({"line": e["line"], "reason": str(e.get("reason") or "")})
+    return out or None
+
+
 def evidence_block(inp, evidence):
     """A deny for a succeeded report whose evidence misses a hinted kind, else None.
     Hints come from the run state (saved at claim). Override: evidence_override
-    true plus evidence_override_reason, recorded on the report's data."""
+    {line, reason} naming the unmet acceptance line, recorded as data.overrides."""
     ti = inp.get("tool_input") or {}
     if ti.get("status") != "succeeded":
         return None
@@ -110,15 +121,26 @@ def evidence_block(inp, evidence):
     gaps = lib.evidence_gaps(hints, evidence)
     if not gaps:
         return None
-    if ti.get("evidence_override") is True:
-        if str(ti.get("evidence_override_reason") or "").strip():
-            return None
-        return {"hookEventName": "PreToolUse", "permissionDecision": "deny",
-                "permissionDecisionReason": "enforcer-graph: evidence_override needs an evidence_override_reason."}
+    ov = ti.get("evidence_override")
+    if ov:
+        def deny(why):
+            return {"hookEventName": "PreToolUse", "permissionDecision": "deny",
+                    "permissionDecisionReason": "enforcer-graph: " + why}
+        entries = override_entries(ov)
+        unmet = sorted(n for n, _, _ in gaps)
+        if entries is None:
+            return deny("evidence_override must be {line: <acceptance line index>, reason: ...} (or a list of them); "
+                        f"a bare true or a missing line is refused. Unmet lines: {unmet}")
+        if any(not e["reason"].strip() for e in entries):
+            return deny("evidence_override needs a reason for every line.")
+        missing = [n for n in unmet if n not in {e["line"] for e in entries}]
+        if missing:
+            return deny(f"evidence_override does not cover unmet lines {missing}.")
+        return None
     msg = "; ".join(f"criterion {n} ({c}) {fix}" for n, c, fix in gaps)
     return {"hookEventName": "PreToolUse", "permissionDecision": "deny",
             "permissionDecisionReason": "enforcer-graph: report blocked, the evidence misses what the card's hints ask for: " + msg +
-            ". Run it, then report again; or pass evidence_override: true with evidence_override_reason."}
+            ". Run it, then report again; or pass evidence_override: {line: <index>, reason: ...}."}
 
 
 def decide(inp):
@@ -183,6 +205,20 @@ def decide(inp):
         # with 8 passed records lost them to 2 captured ones and was rejected).
         passed = (inp.get("tool_input") or {}).get("evidence")
         evidence = lib.merge_evidence(evidence, passed, cap=lib.EVIDENCE_CAP)
+    # Decide BEFORE any upload: a denied report must leave no files behind.
+    if is_report:
+        blocked = evidence_block(inp, evidence)
+        if blocked:
+            return blocked
+        ov = (inp.get("tool_input") or {}).get("evidence_override")
+        entries = override_entries(ov) if ov else None
+        if entries:
+            inp = dict(inp); ti = dict(inp.get("tool_input") or {})
+            ti.pop("evidence_override", None)
+            data = dict(ti.get("data") or {}) if isinstance(ti.get("data"), dict) else {}
+            data["overrides"] = entries
+            ti["data"] = data
+            inp["tool_input"] = ti
     # A command whose output was longer than the clip: its whole output goes
     # to the USER's enforcer-files under the user's credential, and the item
     # carries the id. Unset files_base_url, an upload failure, a timeout: the
@@ -198,18 +234,6 @@ def decide(inp):
         for it in evidence:
             if isinstance(it, dict):
                 it.pop("raw", None)
-    if is_report:
-        blocked = evidence_block(inp, evidence)
-        if blocked:
-            return blocked
-        if (inp.get("tool_input") or {}).get("evidence_override") is True:
-            inp = dict(inp); ti = dict(inp.get("tool_input") or {})
-            reason = str(ti.pop("evidence_override_reason", "") or "")
-            ti.pop("evidence_override", None)
-            data = dict(ti.get("data") or {}) if isinstance(ti.get("data"), dict) else {}
-            data["evidence_override"] = {"reason": reason}
-            ti["data"] = data
-            inp["tool_input"] = ti
     out = {"hookEventName": "PreToolUse"}
     if MODE == "context":
         out["additionalContext"] = HANDOFF.format(js=json.dumps(evidence, indent=None))
