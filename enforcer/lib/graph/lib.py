@@ -642,14 +642,58 @@ def evidence_path(session_id):
     return os.path.join(evidence_dir(), f"{session_id or 'unknown'}.jsonl")
 
 
+RAW_RUN_CAP = 50 * 1024 * 1024   # the most one run's capture file may hold
+SESSION_MAX_AGE_S = 7 * 24 * 3600
+
+
 def append_evidence(session_id, record):
     """Never raises. A capture that cannot be written is a capture that did not
-    happen; it must not cost the session a tool call."""
+    happen; it must not cost the session a tool call. One O_APPEND write under an
+    exclusive flock, so concurrent hooks never interleave a line. Past
+    RAW_RUN_CAP the record's raw output is dropped and a marker left; a record
+    that still does not fit is skipped."""
     try:
-        with private_open(evidence_path(session_id), "a") as f:
-            f.write(json.dumps(record) + "\n")
+        import fcntl
+        path = evidence_path(session_id)
+        fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            size = os.fstat(fd).st_size
+            line = json.dumps(record) + "\n"
+            if size + len(line) > RAW_RUN_CAP and isinstance(record, dict) and "raw" in record:
+                record = dict(record)
+                record.pop("raw", None)
+                record["raw_truncated"] = "run raw cap of %d bytes reached" % RAW_RUN_CAP
+                line = json.dumps(record) + "\n"
+            if size + len(line) > RAW_RUN_CAP:
+                return
+            os.write(fd, line.encode())
+        finally:
+            os.close(fd)   # releases the lock
     except Exception:
         pass
+
+
+def sweep_sessions(max_age_s=SESSION_MAX_AGE_S, now=None):
+    """Remove capture and run files of sessions untouched for max_age_s. Never raises."""
+    now = now or time.time()
+    removed = 0
+    for d in (evidence_dir(), data_dir()):
+        try:
+            names = os.listdir(d)
+        except Exception:
+            continue
+        for n in names:
+            if not n.endswith((".jsonl", ".json", ".count")):
+                continue
+            f = os.path.join(d, n)
+            try:
+                if os.path.isfile(f) and now - os.path.getmtime(f) > max_age_s:
+                    os.remove(f)
+                    removed += 1
+            except Exception:
+                pass
+    return removed
 
 
 def load_evidence(session_id, run_id=None):
