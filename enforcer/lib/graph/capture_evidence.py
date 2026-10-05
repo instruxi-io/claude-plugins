@@ -103,6 +103,7 @@ def main():
     if not captured and (not name.startswith("mcp__") or lib.is_graph_tool(name)):
         return
     sid = lib.actor_key(inp)
+    lib.mark_attested(sid, inp.get("session_id"))  # the hooks ran end to end: hooks=on is now honest
     run = lib.load_run(sid)
     if not run:
         return  # no run held: nothing to attach this to, so nothing to record

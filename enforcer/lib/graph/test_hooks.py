@@ -53,5 +53,33 @@ class PostToolUseFailure(unittest.TestCase):
         lib.clear_run(key)
 
 
+class Attest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        os.environ["ENFORCER_STATE_DIR"] = self.tmp
+
+    def test_attest_hooks_off_python3_when_python3_is_missing(self):
+        orig = lib.shutil.which
+        lib.shutil.which = lambda n: None
+        try:
+            lib.mark_attested("s")
+            self.assertTrue(lib.client_for({"session_id": "s"}).endswith("hooks=off:python3"))
+        finally:
+            lib.shutil.which = orig
+
+    def test_attest_hooks_off_until_a_capture_marker_exists(self):
+        inp = {"session_id": "s-new"}
+        self.assertTrue(lib.client_for(inp).endswith("hooks=off:no-capture-yet"))
+        lib.mark_attested("s-new")
+        self.assertTrue(lib.client_for(inp).endswith("hooks=on"))
+
+    def test_attest_doctor_fails_without_python3(self):
+        env = dict(os.environ, PATH="/nonexistent", ENFORCER_STATE_DIR=self.tmp)
+        r = subprocess.run([__import__("shutil").which("node"), CLI, "doctor"], capture_output=True, text=True, env=env)
+        self.assertNotEqual(r.returncode, 0, r.stdout)
+        self.assertRegex(r.stdout, r"fail\s+python3 present")
+        self.assertRegex(r.stdout, r"ok\s+node version")
+
+
 if __name__ == "__main__":
     unittest.main()
