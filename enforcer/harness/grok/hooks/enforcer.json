@@ -1,0 +1,38 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      { "hooks": [{ "type": "command", "command": "node \"__ENFORCER_ROOT__/hooks/grok/shim.mjs\" governor-pre-tool-use.mjs", "timeout": 30 }] },
+      { "matcher": "enforcer__graph_(next_work|report|remember|heartbeat)", "hooks": [{ "type": "command", "command": "node \"__ENFORCER_ROOT__/hooks/grok/shim.mjs\" hook pre-tool-use", "timeout": 30 }] }
+    ],
+    "PostToolUse": [
+      { "hooks": [{ "type": "command", "command": "node \"__ENFORCER_ROOT__/hooks/grok/shim.mjs\" governor-post-tool-use.mjs", "timeout": 30 }] },
+      { "matcher": "enforcer__graph_(next_work|report|heartbeat)", "hooks": [{ "type": "command", "command": "node \"__ENFORCER_ROOT__/hooks/grok/shim.mjs\" hook post-tool-use track-run", "timeout": 30 }] },
+      { "hooks": [
+        { "type": "command", "command": "node \"__ENFORCER_ROOT__/hooks/grok/shim.mjs\" hook post-tool-use capture-evidence", "timeout": 30 },
+        { "type": "command", "command": "node \"__ENFORCER_ROOT__/hooks/grok/shim.mjs\" hook post-tool-use heartbeat", "timeout": 30 }
+      ] }
+    ],
+    "SessionStart": [
+      { "hooks": [{ "type": "command", "command": "node \"__ENFORCER_ROOT__/hooks/grok/shim.mjs\" governor-session-start.mjs", "timeout": 30 }] },
+      { "hooks": [{ "type": "command", "command": "node \"__ENFORCER_ROOT__/hooks/grok/shim.mjs\" hook session-start", "timeout": 30 }] }
+    ],
+    "SessionEnd": [
+      { "hooks": [{ "type": "command", "command": "node \"__ENFORCER_ROOT__/hooks/grok/shim.mjs\" governor-session-end.mjs", "timeout": 30 }] }
+    ],
+    "UserPromptSubmit": [
+      { "hooks": [{ "type": "command", "command": "node \"__ENFORCER_ROOT__/hooks/grok/shim.mjs\" governor-user-prompt-submit.mjs", "timeout": 30 }] }
+    ],
+    "SubagentStart": [
+      { "hooks": [{ "type": "command", "command": "node \"__ENFORCER_ROOT__/hooks/grok/shim.mjs\" governor-subagent-start.mjs", "timeout": 30 }] }
+    ],
+    "SubagentStop": [
+      { "hooks": [{ "type": "command", "command": "node \"__ENFORCER_ROOT__/hooks/grok/shim.mjs\" governor-subagent-stop.mjs", "timeout": 30 }] }
+    ],
+    "PreCompact": [
+      { "hooks": [{ "type": "command", "command": "node \"__ENFORCER_ROOT__/hooks/grok/shim.mjs\" hook pre-compact", "timeout": 30 }] }
+    ],
+    "Stop": [
+      { "hooks": [{ "type": "command", "command": "node \"__ENFORCER_ROOT__/hooks/grok/shim.mjs\" hook stop", "timeout": 30 }] }
+    ]
+  }
+}
