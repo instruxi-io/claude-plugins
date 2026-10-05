@@ -66,4 +66,32 @@ for (const c of [`python3 -c "open('${SP}','w').write('{}')"`, `dd of=${SP} if=/
 ok('plain read of a settings file: no opinion', () => { assert.equal(evaluate(ev('cat ' + SP)), null); });
 ok('read chained to a write is denied', () => { assert.equal(evaluate(ev('cat ' + SP + ' ; rm ' + SP))?.code, 'settings_write'); });
 
+// The pinned lander is recognised before the settings guard (verbatim from the field probe).
+const CACHE = '/home/u/' + DOT + '/plugins/cache/instruxi/enforcer/1.0.5';
+ok('cache-path land-pr.sh is graph.land', () => {
+  const v = evaluate(ev(CACHE + '/bin/land-pr.sh 101 --timeout 3000'));
+  assert.equal(v.code, 'graph_land_allowed'); assert.equal(v.ruleId, 'graph.land');
+});
+ok('node <cache>/bin/enforcer land is graph.land', () => {
+  const v = evaluate(ev('node ' + CACHE + '/bin/enforcer land 101'));
+  assert.equal(v.code, 'graph_land_allowed'); assert.equal(v.ruleId, 'graph.land');
+});
+ok('CLAUDE_PLUGIN_ROOT land-pr.sh is graph.land', () => {
+  assert.equal(evaluate(ev('"${CLAUDE_PLUGIN_ROOT}/bin/land-pr.sh" 101')).code, 'graph_land_allowed');
+});
+ok('enforcer land is graph.land', () => {
+  assert.equal(evaluate(ev('enforcer land 101')).code, 'graph_land_allowed');
+});
+ok('land-pr.sh chained with && is push_not_alone', () => {
+  assert.equal(evaluate(ev(CACHE + '/bin/land-pr.sh 1 && rm -rf x'))?.code, 'push_not_alone');
+});
+ok('writing into the plugin cache is settings_write', () => {
+  assert.equal(evaluate(ev('cp x ' + CACHE + '/bin/land-pr.sh'))?.code, 'settings_write');
+  assert.equal(evaluate(ev('echo > ' + CACHE + '/hooks/hooks.json'))?.code, 'settings_write');
+});
+ok('cache lander with a foreign flag or home is not exempt', () => {
+  assert.notEqual(evaluate(ev(CACHE + '/bin/land-pr.sh 1 --admin'))?.code, 'graph_land_allowed');
+  assert.notEqual(evaluate(ev('/tmp/x/' + DOT + '/plugins/cache/a/enforcer/1/bin/land-pr.sh 1'))?.code, 'graph_land_allowed');
+});
+
 console.log(`\n  ${pass} passed`);
