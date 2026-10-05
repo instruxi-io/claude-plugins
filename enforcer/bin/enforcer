@@ -61,5 +61,11 @@ if (area === 'governor' && GOV.includes(sub)) {
   process.exit(r.status ?? 1);
 }
 
-process.stderr.write(`usage: enforcer governor <${GOV.join('|')}> [args]\n       enforcer hook <${Object.keys(HOOKS).join('|')}> [handler]\n`);
+if (area === 'harness' && sub === 'install' && rest[0] === 'grok') {
+  const { install } = await import('../src/grok-install.mjs');
+  install({ dryRun: rest.includes('--dry-run') });
+  process.exit(0);
+}
+
+process.stderr.write(`usage: enforcer governor <${GOV.join('|')}> [args]\n       enforcer harness install grok [--dry-run]\n       enforcer hook <${Object.keys(HOOKS).join('|')}> [handler]\n`);
 process.exit(2);
