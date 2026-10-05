@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Session boundaries. SessionEnd closes the record with what the session
 // actually cost -- a summary an audit can read without replaying every line.
+import { appendFileSync } from 'node:fs';
 import { input, emit, done } from './lib.mjs';
 import { agentOf } from '../adapters/claude-code/events.mjs';
 import { DEFAULTS } from '../src/policy.mjs';
@@ -39,4 +40,11 @@ if (EVENT === 'SessionStart') await gov.session.start(ev.session_id ? { agent: e
 if (EVENT === 'SessionEnd') { try { sweep({ ...DEFAULTS, ...loadConfig() }); } catch {} }
 
 if (EVENT === 'SessionEnd') done();
+// Announce the governor to every other hook pack (jev-hooks etc.): they must read
+// ENFORCER_GOVERNOR, never the plugin cache. Claude Code's documented mechanism is
+// CLAUDE_ENV_FILE; Codex and Grok run this same shim, and the value is also in the output.
+if (EVENT === 'SessionStart') {
+  if (process.env.CLAUDE_ENV_FILE) { try { appendFileSync(process.env.CLAUDE_ENV_FILE, 'export ENFORCER_GOVERNOR=1\n'); } catch {} }
+  emit(EVENT, { env: { ENFORCER_GOVERNOR: '1' } });
+}
 emit(EVENT, {});

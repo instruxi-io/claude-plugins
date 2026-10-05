@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.4
+
+- The governor announces itself: SessionStart (Claude, Codex, Grok shims and `bin/enforcer hook session-start`) sets `ENFORCER_GOVERNOR=1`.
+
 ## 1.0.0 — enforcer
 
 One plugin, `enforcer`, as an Agent Plugins 1.0 package that installs in Claude Code, Codex CLI and Grok Build. Claude Code stays the reference harness.
