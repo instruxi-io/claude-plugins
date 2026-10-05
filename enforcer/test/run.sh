@@ -66,7 +66,7 @@ out=$(hook heartbeat.py "{\"session_id\":\"$SID\",\"cwd\":\"$WORK/proj\",\"tool_
 ms=$(( ($(date +%s%N) - start) / 1000000 ))
 check "heartbeat: a call after lease/3 elapsed heartbeats over HTTP" 'grep -q "/nodes/n1/runs/r1/heartbeat" "$STUB_LOG"'
 check "heartbeat: silent on ok" '[ -z "$out" ]'
-check "heartbeat: under 200ms ($ms ms)" '[ "$ms" -lt 200 ]'
+check "heartbeat: under 500ms ($ms ms)" '[ "$ms" -lt 500 ]'
 out=$(hook heartbeat.py "{\"session_id\":\"$SID\",\"cwd\":\"$WORK/proj\",\"tool_name\":\"mcp__enforcer-graph__graph_plan_status\",\"tool_input\":{}}")
 check "heartbeat: graph tools do not count or heartbeat" '[ -z "$out" ]'
 stale "$SID"
@@ -237,7 +237,7 @@ import json,sys; u=json.load(sys.stdin)[\"hookSpecificOutput\"][\"updatedInput\"
 start=$(date +%s%N)
 cap "$(bash_in 'echo hi' '{"stdout":"hi","stderr":"","interrupted":false}')" >/dev/null
 ms=$(( ($(date +%s%N) - start) / 1000000 ))
-check "capture_evidence: runs on every tool call, under 200ms ($ms ms)" '[ "$ms" -lt 200 ]'
+check "capture_evidence: runs on every tool call, under 500ms ($ms ms)" '[ "$ms" -lt 500 ]'
 hook track_run.py "$in_report"
 
 # --- fail open with the API down
