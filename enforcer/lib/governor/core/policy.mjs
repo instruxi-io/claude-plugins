@@ -146,8 +146,12 @@ export const DEFAULT_RULES = [
     match: 'rm\\s+(-[a-zA-Z]*r[a-zA-Z]*f|-[a-zA-Z]*f[a-zA-Z]*r)', action: 'ask' },
   { name: 'rewrite git history', tool: 'Bash',
     match: 'push\\s+(--force|-f)\\b|reset\\s+--hard|filter-branch', action: 'ask' },
+  { name: 'read or write credentials', tool: 'Bash',
+    match: '(?:^|[\\s;&|(`])(?:cat|less|more|head|tail|cp|mv|scp|rsync|source|\\.|tee|sed|awk|cut|base64|curl|wget|printf|echo|vim?|nano)\\s+(?:[^|;&\\n]*?[\\s\'"=/])?(?:\\.env(?:\\.[\\w-]+)?|id_rsa\\w*|[\\w.-]+\\.pem|credentials\\.json|\\.aws/|\\.ssh/)(?=[\\s\'"|;&)]|$)|[<>]{1,2}\\s*[^|;&\\s]*(?:\\.env\\b|id_rsa|\\.pem\\b|credentials\\.json|\\.aws/|\\.ssh/)', action: 'ask' },
+  // Any tool whose input names a credentials FILE as its path (Read/Edit/Write:
+  // "file_path": "/app/.env") — the path key, not a mention in content.
   { name: 'read or write credentials', tool: '',
-    match: '\\.env\\b|id_rsa|\\.pem\\b|credentials\\.json|\\.aws/|\\.ssh/', action: 'ask' },
+    match: '"(?:file_)?path"\\s*:\\s*"[^"]*(?:^|/)(?:\\.env(?:\\.[\\w-]+)?|id_rsa\\w*|[\\w.-]+\\.pem|credentials\\.json)"|"(?:file_)?path"\\s*:\\s*"[^"]*/\\.(?:aws|ssh)/', action: 'ask' },
   { name: 'publish or deploy', tool: 'Bash',
     match: 'npm\\s+publish|vercel\\s+.*--prod|kubectl\\s+(apply|delete)|terraform\\s+apply', action: 'ask' },
 ];

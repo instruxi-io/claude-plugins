@@ -160,7 +160,7 @@ The record is written three places: as the `decision` field, last, on the hash-c
 | `force_push` | a force-push (--force, -f or a +refspec) |
 | `destructive_delete` | rm -rf of a whole tree |
 | `destructive_git` | history rewrite: reset --hard or filter-branch |
-| `secret_in_command` | the action reads or writes credentials (.env, keys, credentials.json, ~/.aws, ~/.ssh) |
+| `secret_in_command` | the action reads or writes a credentials file (.env, keys, credentials.json, ~/.aws, ~/.ssh): a shell command on such a path, or an edit whose target is one — a mention in text, a report or a fixture is not access (1.0.3) |
 | `deploy_publish` | publish or deploy (npm publish, vercel --prod, kubectl apply/delete, terraform apply) |
 | `custom_rule` | a rule from config.json with no code of its own |
 | `graph_push_allowed` | headless worker pushing its own graph/<key> branch, as the whole command |
