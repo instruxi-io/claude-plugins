@@ -5,12 +5,13 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, appendFileSync, ex
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
+import { DOT } from '../../../hooks/claude/paths.mjs';
 
 const home = mkdtempSync(join(tmpdir(), 'gov-ship-'));
 process.env.HOME = home; process.env.USERPROFILE = home;
 process.env.GOVERNOR_HOME = join(home, '.enforcer-governor');
 process.env.ENFORCER_HOME = join(home, '.enforcer');
-process.env.CLAUDE_SETTINGS_PATH = join(home, '.claude', 'settings.json');
+process.env.CLAUDE_SETTINGS_PATH = join(home, DOT, 'settings.json');
 delete process.env.ENFORCER_API_KEY;
 mkdirSync(process.env.GOVERNOR_HOME, { recursive: true });
 
@@ -145,7 +146,7 @@ if (process.env.GOVERNOR_EXPORT_FIXTURE) writeFileSync(process.env.GOVERNOR_EXPO
 
 // ── telemetry settings ─────────────────────────────────────────────────────
 await ok('telemetry on writes the export settings and a helper, and keeps everything else', () => {
-  mkdirSync(join(home, '.claude'), { recursive: true });
+  mkdirSync(join(home, DOT), { recursive: true });
   writeFileSync(process.env.CLAUDE_SETTINGS_PATH, JSON.stringify({ statusLine: { type: 'command', command: 'x' }, env: { KEEP_ME: '1' } }));
   const r = telemetry.enable({ centralUrl: 'https://api.example.test' });
   const s = JSON.parse(readFileSync(process.env.CLAUDE_SETTINGS_PATH, 'utf8'));

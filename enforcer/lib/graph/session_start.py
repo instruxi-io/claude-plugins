@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """SessionStart (startup, resume, compact). Prints where the plan stands so the
 session opens knowing what is runnable, what is running, and whether IT still
-holds a run. Plain stdout becomes context. Silent without .claude/graph.json.
+holds a run. Plain stdout becomes context. Silent without a project graph config.
 
 Before that, and with or without a graph, it says ONCE (per version pair) when
 an Instruxi plugin installed here is older than the copy in its marketplace
@@ -12,6 +12,7 @@ import json, os, sys
 from collections import Counter
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import lib, version_check
+import claude_paths as _cp
 
 
 def _vtuple(v):
@@ -49,8 +50,8 @@ def base_url():
 
 def notices():
     """(key, text) for each thing the person should fix. Reads Claude Code's own
-    plugin bookkeeping under CLAUDE_CONFIG_DIR (default ~/.claude); writes nothing there."""
-    cfgdir = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude")
+    plugin bookkeeping under its config directory; writes nothing there."""
+    cfgdir = _cp.config_dir()
     mkt = marketplace_name()
     installed = ((_load(os.path.join(cfgdir, "plugins", "installed_plugins.json")) or {}).get("plugins")) or {}
     loc = (((_load(os.path.join(cfgdir, "plugins", "known_marketplaces.json")) or {}).get(mkt)) or {}).get("installLocation")

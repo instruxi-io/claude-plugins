@@ -28,5 +28,5 @@ assert.ok(body.indexOf('enforcer_setup_apply') >= ask, 'apply is not mentioned a
 assert.match(body, /\*\*no\*\*, or anything else: apply nothing/); ok('anything but a yes applies nothing');
 assert.match(body, /permissions_allow/); assert.match(body, /plugin_commands/); ok('shows the allow rules and the plugin commands from the plan');
 assert.match(body, /Do not run these yourself/); ok('plugin commands are the person\'s to run');
-assert.match(body, /never edit `~\/\.claude\/settings\.json`/); ok('writes only the project settings file');
+assert.match(body, /never edit `~\/\S*settings\.json`/); ok('writes only the project settings file');
 console.log(`\nsetup-command: ${n} checks passed`);

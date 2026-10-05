@@ -10,9 +10,11 @@ trap 'kill $STUB 2>/dev/null; rm -rf "$WORK" "$STUB_LOG" "$STUB_LOG.hb"' EXIT
 sleep 0.4
 
 WORK="$(mktemp -d)"
+# the Claude fallback manifest directory is named in hooks/claude/ only
+CPD=$(python3 -c 'import sys;sys.path.insert(0,"hooks/claude");import claude_paths;print(claude_paths.MANIFEST_DIR)')
 export CLAUDE_PLUGIN_DATA="$WORK/data"
-mkdir -p "$WORK/proj/.claude"
-printf '{"graph_id":"g1","base_url":"http://127.0.0.1:%s","api_key_env":"GRAPH_API_KEY"}\n' "$PORT" > "$WORK/proj/.claude/graph.json"
+mkdir -p "$WORK/proj/.enforcer"
+printf '{"graph_id":"g1","base_url":"http://127.0.0.1:%s","api_key_env":"GRAPH_API_KEY"}\n' "$PORT" > "$WORK/proj/.enforcer/graph.json"
 export GRAPH_API_KEY=stub-key
 # Claude Code's own plugin bookkeeping, for session_start's notices: never the real one.
 export CLAUDE_CONFIG_DIR="$WORK/cc"; mkdir -p "$CLAUDE_CONFIG_DIR"
@@ -28,7 +30,7 @@ out=$(hook session_start.py "{\"session_id\":\"$SID\",\"cwd\":\"$WORK/proj\",\"h
 check "session_start: prints the frontier" 'echo "$out" | grep -q "frontier (runnable now, not claimed): api-contract, legal-and-key"'
 check "session_start: prints running and failed" 'echo "$out" | grep -q "running: schema-judgment" && echo "$out" | grep -q "failed.*broken"'
 out=$(hook session_start.py "{\"session_id\":\"$SID\",\"cwd\":\"/\",\"hook_event_name\":\"SessionStart\",\"source\":\"startup\"}")
-check "session_start: silent without .claude/graph.json" '[ -z "$out" ]'
+check "session_start: silent without a graph config" '[ -z "$out" ]'
 out=$(GRAPH_API_KEY=wrong hook session_start.py "{\"session_id\":\"$SID\",\"cwd\":\"$WORK/proj\",\"hook_event_name\":\"SessionStart\",\"source\":\"startup\"}")
 check "session_start: silent on 401 (fails open)" '[ -z "$out" ]'
 
@@ -328,7 +330,7 @@ EH="$WORK/enforcer"; mkdir -p "$EH"
 creds() { # $1 access token, $2 expires_at
   printf '{"enforcer":{"base_url":"http://127.0.0.1:%s","oauth":{"access_token":"%s","refresh_token":"rt-1","expires_at":"%s","token_endpoint":"http://127.0.0.1:%s/token","client_id":"mcp_test","scope":"enforcer:read"}}}\n' "$PORT" "$1" "$2" "$PORT" > "$EH/credentials.json"
 }
-mkdir -p "$WORK/oproj/.claude"; printf '{"graph_id":"g1"}\n' > "$WORK/oproj/.claude/graph.json"
+mkdir -p "$WORK/oproj/.enforcer"; printf '{"graph_id":"g1"}\n' > "$WORK/oproj/.enforcer/graph.json"
 ohook() { printf '%s' "$2" | env -u GRAPH_API_KEY -u ENFORCER_API_KEY ENFORCER_HOME="$EH" python3 "lib/graph/$1"; }
 start="{\"session_id\":\"$SID\",\"cwd\":\"$WORK/oproj\",\"hook_event_name\":\"SessionStart\",\"source\":\"startup\"}"
 
@@ -411,7 +413,7 @@ check "agent + skill: a structured graph_remember before any failed report; the 
 check "dispatch: --help works and names the flags" './bin/graph-dispatch --help | grep -q -- "--workers"'
 
 # --- client attestation: every claim, heartbeat and report says hooks=on (X-Graph-Client, enforcer-graph 089)
-ver=$(python3 -c 'import json;print(json.load(open(".claude-plugin/plugin.json"))["version"])')
+ver=$(python3 -c 'import json;print(json.load(open("plugin.json"))["version"])')
 want="enforcer-graph-plugin/$ver; hooks=on"
 for t in next_work heartbeat report; do
   for pre in mcp__plugin_enforcer_enforcer__ mcp__enforcer__ mcp__enforcer-graph__; do
@@ -440,10 +442,10 @@ sys.exit(0 if r and all(x.get(\"client\")==os.environ[\"W\"] for x in r) else 1)
 rm -f "$rf2"
 
 # --- session_start version check: one line per mismatch, silent when aligned, workspace from the credential
-MK="$WORK/mkt"; mkdir -p "$MK/.claude-plugin" "$MK/enforcer-graph/.claude-plugin" "$MK/enforcer/.claude-plugin" "$CLAUDE_CONFIG_DIR/plugins" "$ENFORCER_HOME"
-printf '{"name":"instruxi","plugins":[{"name":"enforcer","source":"./enforcer"},{"name":"enforcer-graph","source":"./enforcer-graph"},{"name":"gov","source":{"source":"github","repo":"x/y"}}]}' > "$MK/.claude-plugin/marketplace.json"
-printf '{"name":"enforcer-graph","version":"9.1.0"}' > "$MK/enforcer-graph/.claude-plugin/plugin.json"
-printf '{"name":"enforcer","version":"0.5.0"}' > "$MK/enforcer/.claude-plugin/plugin.json"
+MK="$WORK/mkt"; mkdir -p "$MK/$CPD" "$MK/enforcer-graph/$CPD" "$MK/enforcer/$CPD" "$CLAUDE_CONFIG_DIR/plugins" "$ENFORCER_HOME"
+printf '{"name":"instruxi","plugins":[{"name":"enforcer","source":"./enforcer"},{"name":"enforcer-graph","source":"./enforcer-graph"},{"name":"gov","source":{"source":"github","repo":"x/y"}}]}' > "$MK/$CPD/marketplace.json"
+printf '{"name":"enforcer-graph","version":"9.1.0"}' > "$MK/enforcer-graph/$CPD/plugin.json"
+printf '{"name":"enforcer","version":"0.5.0"}' > "$MK/enforcer/$CPD/plugin.json"
 printf '{"instruxi":{"installLocation":"%s"}}' "$MK" > "$CLAUDE_CONFIG_DIR/plugins/known_marketplaces.json"
 printf '{"version":2,"plugins":{"enforcer-graph@instruxi":[{"scope":"user","version":"0.15.0"},{"scope":"local","version":"0.13.0"},{"scope":"project","version":"9.1.0"}]}}' > "$CLAUDE_CONFIG_DIR/plugins/installed_plugins.json"
 python3 -c 'import json;print(json.dumps({"version":"0.9.14","tools":json.load(open("lib/graph/known_tools.json"))}))' > "$STUB_HEALTH_FILE"

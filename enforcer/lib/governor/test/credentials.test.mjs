@@ -6,6 +6,7 @@ import { join } from 'node:path';
 
 const home = mkdtempSync(join(tmpdir(), 'gov-cred-'));
 process.env.HOME = home; process.env.USERPROFILE = home;
+process.env.GOVERNOR_HOME = join(home, '.enforcer-governor');
 delete process.env.ENFORCER_API_KEY;
 mkdirSync(join(home, '.enforcer-governor'), { recursive: true });
 

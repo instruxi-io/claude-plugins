@@ -6,6 +6,7 @@ import { join } from 'node:path';
 
 const home = mkdtempSync(join(tmpdir(), 'gov-outbox-'));
 process.env.HOME = home; process.env.USERPROFILE = home;
+process.env.GOVERNOR_HOME = join(home, '.enforcer-governor');
 mkdirSync(join(home, '.enforcer-governor'), { recursive: true });
 const FILE = join(home, '.enforcer-governor', 'receipts.jsonl');
 

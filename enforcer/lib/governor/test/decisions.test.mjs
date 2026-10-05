@@ -12,6 +12,7 @@ import { gate } from '../core/gate.mjs';
 import { DEFAULT_RULES } from '../core/capability.mjs';
 import { CODES, DECISIONS, decisionRecord, decisionLine, DECISION_PREFIX, isCode, codeOf } from '../core/codes.mjs';
 import { evaluate as worker, headlessFrom, WORKER_RULES } from '../core/worker.mjs';
+import { DOT } from '../../../hooks/claude/paths.mjs';
 
 let pass = 0;
 const ok = (label, fn) => { fn(); pass++; console.log('  ok  ' + label); };
@@ -131,7 +132,7 @@ ok('graph.pr_create: ask — a person is present', () =>
   assert.deepEqual(record(bash('gh pr create --fill', PERSON)), { decision: 'ask', code: 'graph_pr_confirm',
     rule: 'graph.pr_create', tool: 'Bash', summary: 'this opens a pull request from graph/demo' }));
 
-const LAND = '"$(ls -d ~/.claude/plugins/cache/*/enforcer-graph/*/bin/land-pr.sh | tail -1)" 42 --timeout 3000';
+const LAND = '"$(ls -d ~/' + DOT + '/plugins/cache/*/enforcer-graph/*/bin/land-pr.sh | tail -1)" 42 --timeout 3000';
 ok('graph.land: allow — the skill\'s own land-pr.sh invocation, headless, on the graph branch', () =>
   assert.deepEqual(record(bash(LAND, HEADLESS)), { decision: 'allow', code: 'graph_land_allowed',
     rule: 'graph.land', tool: 'Bash', summary: 'headless worker landing graph/demo' }));
@@ -155,18 +156,18 @@ ok('git.push_default_branch: ask — a person is present', () =>
     rule: 'git.push_default_branch', tool: 'Bash', summary: 'this pushes straight to main' }));
 
 ok('governor.settings: allow — reading settings changes nothing', () =>
-  assert.deepEqual(record(bash('cat ~/.claude/settings.json', HEADLESS)), ALLOWED));
+  assert.deepEqual(record(bash('cat ~/' + DOT + '/settings.json', HEADLESS)), ALLOWED));
 ok('governor.settings: deny — headless edit of plugin or governor settings, by tool or by shell', () => {
   const want = { decision: 'deny', code: 'governor_settings_edit', rule: 'governor.settings',
     summary: 'a headless worker may not change plugin or governor settings' };
-  assert.deepEqual(record(edit('/home/u/.claude/settings.json', HEADLESS)), { ...want, tool: 'Edit' });
-  for (const c of ['echo \'{}\' > ~/.enforcer-governor/config.json', 'sed -i s/true/false/ .claude/settings.local.json',
-    'rm -rf ~/.claude/plugins/cache/instruxi/enforcer-governor']) {
+  assert.deepEqual(record(edit('/home/u/' + DOT + '/settings.json', HEADLESS)), { ...want, tool: 'Edit' });
+  for (const c of ['echo \'{}\' > ~/.enforcer-governor/config.json', 'sed -i s/true/false/ ' + DOT + '/settings.local.json',
+    'rm -rf ~/' + DOT + '/plugins/cache/instruxi/enforcer-governor']) {
     assert.deepEqual(record(bash(c, HEADLESS)), { ...want, tool: 'Bash' }, c);
   }
 });
 ok('governor.settings: ask — a person is present', () =>
-  assert.deepEqual(record(edit('/home/u/.claude/settings.json', PERSON)), { decision: 'ask', code: 'governor_settings_edit',
+  assert.deepEqual(record(edit('/home/u/' + DOT + '/settings.json', PERSON)), { decision: 'ask', code: 'governor_settings_edit',
     rule: 'governor.settings', tool: 'Edit', summary: 'this changes plugin or governor settings' }));
 
 ok('a tenant deny outranks a graph-worker allow', () =>

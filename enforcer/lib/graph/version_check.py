@@ -7,7 +7,10 @@
   * the workspace the stored credential is bound to (from the JWT claims, no call).
 
 One GET at most, short timeout, never raises."""
-import base64, json, os
+import base64, json, os, sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "hooks", "claude"))
+from claude_paths import MANIFEST_DIR
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_BASE = "https://api.instruxi.dev"
@@ -101,11 +104,11 @@ def report(cfgdir, mkt, plugin_version, doc, base, auth, health=None):
     lines = []
     installed = ((load(os.path.join(cfgdir, "plugins", "installed_plugins.json")) or {}).get("plugins")) or {}
     loc = (((load(os.path.join(cfgdir, "plugins", "known_marketplaces.json")) or {}).get(mkt)) or {}).get("installLocation")
-    catalog = load(os.path.join(loc, ".claude-plugin", "marketplace.json")) if loc else None
+    catalog = load(os.path.join(loc, MANIFEST_DIR, "marketplace.json")) if loc else None
     versions = {}
     for e in (catalog or {}).get("plugins") or []:
         if isinstance(e.get("source"), str):
-            v = (load(os.path.join(loc, e["source"], ".claude-plugin", "plugin.json")) or {}).get("version")
+            v = (load(os.path.join(loc, e["source"], MANIFEST_DIR, "plugin.json")) or {}).get("version")
             if v:
                 versions[e["name"]] = v
     lines += stale_installs(installed, versions, mkt)

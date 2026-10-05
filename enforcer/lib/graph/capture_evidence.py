@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """PostToolUse on every tool. While this session holds a run, append what the
-tool actually did to ${CLAUDE_PLUGIN_DATA}/evidence/<actor>.jsonl.
+tool actually did to ~/.config/enforcer/sessions/<harness>/evidence/<actor>.jsonl.
 
 This is the load-bearing half of verification. A report is prose, and prose can
 be invented: a fabricated report with invented paths, line numbers and test
