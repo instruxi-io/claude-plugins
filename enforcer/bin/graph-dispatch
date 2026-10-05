@@ -463,10 +463,36 @@ def worker_prompt(graph, node, path, branch, previous=None):
     return "\n".join(lines)
 
 
+HARNESSES = ("claude", "codex", "grok")
+
+
+def launch_grok(prompt, model, args, key):
+    """grok -p <prompt> --output-format json: one JSON object at the end of the run."""
+    cmd = [getattr(args, "grok", None) or os.environ.get("GROK_BIN", "grok"), "-p", prompt,
+           "--output-format", "json"]
+    if model:
+        cmd += ["--model", model]
+    return cmd
+
+
+def launch_codex(prompt, model, args, key):
+    """codex exec --json <prompt>: JSONL events. The parser is a stub until a real sample exists."""
+    cmd = [getattr(args, "codex", None) or os.environ.get("CODEX_BIN", "codex"), "exec", "--json"]
+    if model:
+        cmd += ["--model", model]
+    return cmd + [prompt]
+
+
+HARNESS_LAUNCHERS = {"grok": launch_grok, "codex": launch_codex}
+
+
 def launch_cmd(prompt, model, args, key, session=None, resume=False, max_turns=None):
     """`session` is the session id: with resume, `--resume <id>` continues it
     (same id; claude finds it from any cwd), else `--session-id <id>` names a
     new one so it can be resumed later. `max_turns` is data.max_turns."""
+    harness = getattr(args, "harness", "claude")
+    if harness != "claude":
+        return HARNESS_LAUNCHERS[harness](prompt, model, args, key)
     cmd = [args.claude, "-p", prompt,
            "--agent", AGENT,
            "--model", model]
@@ -970,14 +996,14 @@ class Dispatcher:
                     del self.workers[key]
                 continue
             salvage = None
-            w.turns = count_turns(w.log_path)
+            w.turns = count_turns(w.log_path, getattr(self.args, "harness", "claude"))
             cap = getattr(w, "max_turns", self.args.max_turns)
             if w.alive() and w.turns > cap:
                 self.say("turn cap: %s at %d turns > %d, stopping it" % (key, w.turns, cap))
                 os.killpg(w.proc.pid, signal.SIGTERM)
                 w.proc.wait(timeout=30)
             if not w.alive():
-                s = summarize(w.log_path)
+                s = summarize(w.log_path, getattr(self.args, "harness", "claude"))
                 sess = getattr(w, "session", None)
                 limit_text = harness_limit_text(s)
                 if limit_text:
@@ -1456,7 +1482,39 @@ def limit_reset_at(text, now=None):
     return when.timestamp()
 
 
-def _events(path):
+def grok_events(path):
+    """`grok -p --output-format json` prints one JSON object (the final result).
+    Yield the Claude-shaped events summarize reads: init, one assistant turn, result."""
+    try:
+        with open(path, errors="replace") as f:
+            o = json.loads(f.read())
+    except (OSError, ValueError):
+        return
+    if not isinstance(o, dict):
+        return
+    sid = o.get("sessionId")
+    yield {"type": "system", "subtype": "init", "session_id": sid, "message": {}}
+    n = o.get("num_turns") or 0
+    for _ in range(int(n) if isinstance(n, (int, float)) else 0):
+        yield {"type": "assistant", "message": {"content": []}}
+    ok = o.get("stopReason") == "end_turn"
+    yield {"type": "result", "subtype": "success" if ok else "error_" + str(o.get("stopReason")),
+           "result": o.get("text"), "usage": o.get("usage"), "num_turns": n, "session_id": sid,
+           "total_cost_usd": o.get("total_cost_usd"), "message": {}}
+
+
+def codex_events(path):
+    raise NotImplementedError("codex stream parser: no fixture (no real `codex exec --json` sample "
+                              "is recorded); refusing to guess the schema")
+
+
+HARNESS_PARSERS = {"grok": grok_events, "codex": codex_events}
+
+
+def _events(path, harness="claude"):
+    if harness != "claude":
+        yield from HARNESS_PARSERS[harness](path)
+        return
     try:
         with open(path) as f:
             for line in f:
@@ -1472,8 +1530,8 @@ def _events(path):
         return
 
 
-def count_turns(path):
-    return sum(1 for e in _events(path) if e.get("type") == "assistant")
+def count_turns(path, harness="claude"):
+    return sum(1 for e in _events(path, harness) if e.get("type") == "assistant")
 
 
 DECISION_PREFIX = "enforcer-governor:decision "
@@ -1509,7 +1567,7 @@ def _strings(o):
             yield from _strings(v)
 
 
-def summarize(path):
+def summarize(path, harness="claude"):
     """turns, result subtype, permission denials, cost, the run id the worker
     claimed (from its graph_next_work tool result) and whether it reported."""
     s = {"turns": 0, "result": None, "denials": 0, "denied_tools": [], "run_id": None, "reported": False,
@@ -1521,7 +1579,9 @@ def summarize(path):
          "report_status": None, "report_error": None, "report_node": None, "report_data": None,
          "rejection": None, "card_rejection": None, "card_skills": []}
     claims, reports = set(), set()
-    try:  # the first non-JSON line, e.g. claude's "No conversation found with session ID: ..."
+    try:  # the first non-JSON line (claude only: grok's output is one pretty-printed object), e.g. claude's "No conversation found with session ID: ..."
+        if harness != "claude":
+            raise OSError
         with open(path, errors="replace") as f:
             for line in f:
                 line = line.strip()
@@ -1530,7 +1590,7 @@ def summarize(path):
                     s["decisions"] += decision_records(line)  # the hook's stderr line
     except OSError:
         pass
-    for e in _events(path):
+    for e in _events(path, harness):
         t = e.get("type")
         content = (e.get("message") or {}).get("content")
         content = content if isinstance(content, list) else []
@@ -1802,6 +1862,10 @@ def parse_args(argv):
                    help="nodes one resumed session may run in all before it is retired (default 5)")
     p.add_argument("--warm-max-age", type=float, default=120,
                    help="minutes from a session's first launch after which it is retired (default 120)")
+    p.add_argument("--harness", choices=HARNESSES, default="claude",
+                   help="agent CLI that runs the workers (default claude)")
+    p.add_argument("--grok", default=os.environ.get("GROK_BIN", "grok"))
+    p.add_argument("--codex", default=os.environ.get("CODEX_BIN", "codex"))
     p.add_argument("--claude", default=os.environ.get("CLAUDE_BIN", "claude"))
     a = p.parse_args(argv)
     if a.workers < 1:

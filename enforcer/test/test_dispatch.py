@@ -1242,6 +1242,48 @@ class DispatcherService(unittest.TestCase):
         self.assertEqual([w for w in api.writes if w[0] == "node"], [])
 
 
+class HarnessParsers(unittest.TestCase):
+    FX = os.path.join(HERE, "fixtures", "dispatch")
+
+    def test_claude_fixture(self):
+        s = gd.summarize(os.path.join(self.FX, "claude-e2e.jsonl"), "claude")
+        self.assertEqual(s["result"], "success")
+        self.assertEqual(s["turns"], 23)
+        self.assertTrue(s["reported"])
+        self.assertEqual(s["run_id"], "5a1c33f4-e7bd-4f6b-8b52-2ce6a3c92754")
+        self.assertEqual(s["session_id"], "d0273637-f02b-49c2-b9e0-cc0606713480")
+        self.assertGreater(s["usage"]["output_tokens"], 0)
+
+    def test_grok_fixture(self):
+        path = os.path.join(self.FX, "grok-ok.json")
+        s = gd.summarize(path, "grok")
+        self.assertEqual(s["result"], "success")
+        self.assertEqual(s["result_text"], "ok")
+        self.assertEqual(s["turns"], 1)
+        self.assertEqual(s["session_id"], "01a10cc3-aed8-7b31-8e22-591b628266ee")
+        self.assertEqual(s["usage"]["output_tokens"], 27)
+        self.assertAlmostEqual(s["cost"], 0.00798252)
+        self.assertIsNone(s["error_text"])
+        self.assertEqual(gd.count_turns(path, "grok"), 1)
+
+    def test_codex_stub_fails_loudly(self):
+        with self.assertRaisesRegex(NotImplementedError, "no fixture"):
+            gd.summarize(os.path.join(self.FX, "grok-ok.json"), "codex")
+
+    def test_launchers(self):
+        a = args(harness="grok")
+        c = gd.launch_cmd("hi", "grok-4.7-build", a, "k")
+        self.assertEqual(c[1:4], ["-p", "hi", "--output-format"])
+        self.assertEqual(c[4], "json")
+        a = args(harness="codex")
+        self.assertEqual(gd.launch_cmd("hi", None, a, "k")[1:3], ["exec", "--json"])
+
+    def test_help_lists_harness(self):
+        import subprocess
+        out = subprocess.run([PATH, "--help"], capture_output=True, text=True).stdout
+        self.assertIn("--harness {claude,codex,grok}", out)
+
+
 if __name__ == "__main__":
     unittest.main()
 
