@@ -27,7 +27,8 @@ root = inst["enforcer@instruxi"][0]["installPath"]
 hooks = json.load(open(os.path.join(root, "hooks", "hooks.json")))["hooks"]
 tool = "mcp__plugin_enforcer_enforcer__graph_next_work"
 for g in hooks["PreToolUse"]:
-    if not re.fullmatch(g["matcher"], tool):
+    m = g.get("matcher")
+    if m not in (None, "", "*") and not re.fullmatch(m, tool):
         continue
     for h in g["hooks"]:
         cmd = h["command"].replace("${CLAUDE_PLUGIN_ROOT}", root)
@@ -36,5 +37,8 @@ for g in hooks["PreToolUse"]:
                             "tool_input": {"graph": "g1", "runner": "clean-install"}, "cwd": "/tmp"})
         out = subprocess.run(cmd, shell=True, input=stdin, capture_output=True, text=True, env=env)
         print(f"hook fired: PreToolUse {tool} -> {cmd.split('/')[-1]} exit={out.returncode}")
-        print("updatedInput:", json.dumps(json.loads(out.stdout)["hookSpecificOutput"]["updatedInput"]))
+        if out.stdout.strip():
+            ui = json.loads(out.stdout).get("hookSpecificOutput", {}).get("updatedInput")
+            if ui is not None:
+                print("updatedInput:", json.dumps(ui))
 EOF
