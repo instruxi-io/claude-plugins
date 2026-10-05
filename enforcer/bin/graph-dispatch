@@ -292,6 +292,16 @@ def plugin_dirs(extra):
     return out
 
 
+def worker_env(graph_id):
+    """A worker's environment. Claude Code sets CLAUDE_PLUGIN_ROOT for hook and MCP
+    commands only, never in the model's Bash tool, so the skill's lander line
+    would expand to an empty root; export the plugin dir (the one passed as
+    --plugin-dir) for it."""
+    root = plugin_dirs(None)[0]
+    return dict(os.environ, GRAPH_ID=graph_id, JEV_HOOKS_HEADLESS="1",
+                CLAUDE_PLUGIN_ROOT=root, ENFORCER_PLUGIN_ROOT=root)
+
+
 def node_max_turns(node):
     try:
         v = int((node.get("data") or {}).get("max_turns") or 0)
@@ -1028,7 +1038,7 @@ class Dispatcher:
         w = Worker(n, log)
         # JEV_HOOKS_HEADLESS tells jev-hooks the launcher is headless, so it allows the
         # graph/<key> push; set for the worker only, never for the dispatcher itself.
-        env = dict(os.environ, GRAPH_ID=self.g, JEV_HOOKS_HEADLESS="1")
+        env = worker_env(self.g)
         w.path = path
         with open(log, "w") as f:
             w.proc = subprocess.Popen(cmd, cwd=path, stdin=subprocess.DEVNULL, stdout=f,
@@ -1105,7 +1115,7 @@ class Dispatcher:
         w.triage_of, w.path, w.model, w.turns, w.session, w.resumed = n, path, a.triage_model, 0, sess, False
         w.triage_any = bool(n.get("_triage_any"))
         w.max_turns = a.max_turns
-        env = dict(os.environ, GRAPH_ID=self.g, JEV_HOOKS_HEADLESS="1")
+        env = worker_env(self.g)
         with open(log, "w") as f:
             w.proc = subprocess.Popen(cmd, cwd=path, stdin=subprocess.DEVNULL, stdout=f,
                                       stderr=subprocess.STDOUT, env=env, start_new_session=True)
@@ -1480,7 +1490,7 @@ class Dispatcher:
         cmd = launch_cmd(prompt, w.model, a, key, session=sess.sid, resume=True, max_turns=getattr(w, "max_turns", None))
         log = os.path.join(self.logs, "%s.%d.salvage.jsonl" % (key, self.attempts.get(key, 1)))
         nw = Worker(w.node, log)
-        env = dict(os.environ, GRAPH_ID=self.g, JEV_HOOKS_HEADLESS="1")
+        env = worker_env(self.g)
         with open(log, "w") as f:
             nw.proc = subprocess.Popen(cmd, cwd=path, stdin=subprocess.DEVNULL, stdout=f,
                                        stderr=subprocess.STDOUT, env=env, start_new_session=True)
