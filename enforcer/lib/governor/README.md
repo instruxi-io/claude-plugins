@@ -175,7 +175,7 @@ The record is written three places: as the `decision` field, last, on the hash-c
 | `branch_mismatch` | pushing a branch other than the one the worktree has checked out |
 | `outside_worktree` | the working directory is not a git worktree on a graph/<key> branch |
 | `delivery_shape` | a headless worker ran a delivery command (push, remote, pull request create/merge, api, land-pr.sh) that is not exactly a recognised shape |
-| `governor_settings_edit` | an edit to plugin or governor settings |
+| `settings_write` | an edit to plugin or governor settings |
 | `tenant_policy` | the organisation's Enforcer policy decided |
 | `agent_stopped` | the agent was stopped by a person or for looping, and stays stopped until resumed |
 | `period_limit` | the daily, weekly or monthly spend limit is reached |
@@ -201,7 +201,7 @@ A graph worker is a `claude -p` session the dispatcher starts in a git worktree 
 | `graph.land`: `land-pr.sh`, including the skill's `"$(ls -d …/land-pr.sh \| tail -1)"` form | **allow** `graph_land_allowed`; off a graph branch: deny `outside_worktree` | ask `graph_land_confirm` |
 | `git.force_push`: `--force`, `-f`, `+refspec` | deny `force_push` | rewritten to `--force-with-lease` (an ask) `force_push` |
 | `git.push_default_branch`: a push to `main`, `master`, `develop` or `trunk` | deny `push_default_branch` | ask `push_default_branch` |
-| `governor.settings`: an edit of `.claude/settings*.json`, `managed-settings.json`, `.claude/plugins/` or `~/.enforcer-governor/` (Edit/Write, or a shell command that writes) | deny `governor_settings_edit` | ask `governor_settings_edit` |
+| `governor.settings`: an edit of `.claude/settings*.json`, `managed-settings.json`, `.claude/plugins/` or `~/.enforcer-governor/` (Edit/Write, or a shell command that writes) | deny `settings_write` | ask `settings_write` |
 
 These are the only rules that **allow** (an affirmative grant that skips the prompt). They run before the capability rules, a tenant policy can still refuse what they allow, and `rulesOn: false` turns them off with the rest.
 

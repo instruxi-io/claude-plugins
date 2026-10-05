@@ -182,7 +182,7 @@ ok('git.push_default_branch: ask — a person is present', () =>
 ok('governor.settings: allow — reading settings changes nothing', () =>
   assert.deepEqual(record(bash('cat ~/' + DOT + '/settings.json', HEADLESS)), ALLOWED));
 ok('governor.settings: deny — headless edit of plugin or governor settings, by tool or by shell', () => {
-  const want = { decision: 'deny', code: 'governor_settings_edit', rule: 'governor.settings',
+  const want = { decision: 'deny', code: 'settings_write', rule: 'governor.settings',
     summary: 'a headless worker may not change plugin or governor settings' };
   assert.deepEqual(record(edit('/home/u/' + DOT + '/settings.json', HEADLESS)), { ...want, tool: 'Edit' });
   for (const c of ['echo \'{}\' > ~/.enforcer-governor/config.json', 'sed -i s/true/false/ ' + DOT + '/settings.local.json',
@@ -191,7 +191,7 @@ ok('governor.settings: deny — headless edit of plugin or governor settings, by
   }
 });
 ok('governor.settings: ask — a person is present', () =>
-  assert.deepEqual(record(edit('/home/u/' + DOT + '/settings.json', PERSON)), { decision: 'ask', code: 'governor_settings_edit',
+  assert.deepEqual(record(edit('/home/u/' + DOT + '/settings.json', PERSON)), { decision: 'ask', code: 'settings_write',
     rule: 'governor.settings', tool: 'Edit', summary: 'this changes plugin or governor settings' }));
 
 ok('a tenant deny outranks a graph-worker allow', () =>
