@@ -46,7 +46,7 @@ RULES = [
     "`node` parameter",
     "MCP 0.9.5",
     "user` beats `planner` beats `rule` beats `jev`",
-    "Load the `enforcer-graph:graph`",
+    "Load the `enforcer:graph`",
     "Never call `graph_report` for a worker",
 ]
 
