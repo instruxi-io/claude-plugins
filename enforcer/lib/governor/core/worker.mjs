@@ -55,7 +55,7 @@ const MUTATES = /(^|[^0-9&<])>{1,2}(?!&)|\btee\b|\bsed\s+(-[a-zA-Z]*i|--in-place
 // it is one command, so it is folded to its name before the shape is checked.
 const LAND_LOOKUP = /^"?\$\(\s*ls\s+-d\s+([^()|;&\s]*\/land-pr\.sh)\s*\|\s*tail\s+-1\s*\)"?/;
 // Where land-pr.sh may live: the plugin's own bin/, or its install cache.
-const CACHE_LAND = new RegExp('^(?:~|\\$HOME|\\$\\{HOME\\})\\/\\' + DOT + '\\/plugins\\/cache\\/[^\\/\\s]+\\/enforcer-graph\\/[^\\/\\s]+\\/bin\\/land-pr\\.sh$');
+const CACHE_LAND = new RegExp('^(?:~|\\$HOME|\\$\\{HOME\\})\\/\\' + DOT + '\\/plugins\\/cache\\/[^\\/\\s]+\\/enforcer(?:-graph)?\\/[^\\/\\s]+\\/bin\\/land-pr\\.sh$');
 const trustedLand = (path, root) => {
   if (typeof path !== 'string' || /\.\./.test(path)) return false;
   if (CACHE_LAND.test(path.replace(/\*/g, 'x'))) return true;
