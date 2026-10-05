@@ -1,7 +1,7 @@
 {
   "name": "@instruxi-io/claude-plugin-enforcer",
   "private": true,
-  "version": "1.0.4",
+  "version": "1.0.5",
   "type": "module",
   "scripts": {
     "posttest": "node test/tmp-posttest.mjs",
