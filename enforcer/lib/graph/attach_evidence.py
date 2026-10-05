@@ -234,7 +234,7 @@ def main():
     # is nothing to stamp onto and the call goes through unattested.
     if lib.stamps_client(tool) and MODE != "context":
         out = out or {"hookEventName": "PreToolUse"}
-        out["updatedInput"] = lib.with_client(out.get("updatedInput", inp.get("tool_input")))
+        out["updatedInput"] = lib.with_client(out.get("updatedInput", inp.get("tool_input")), inp)
     if out:
         print(json.dumps({"hookSpecificOutput": out}))
 

@@ -417,12 +417,15 @@ ver=$(python3 -c 'import json;print(json.load(open("plugin.json"))["version"])')
 want="enforcer-graph-plugin/$ver; hooks=on"
 for t in next_work heartbeat report; do
   for pre in mcp__plugin_enforcer_enforcer__ mcp__enforcer__ mcp__enforcer-graph__; do
+    hook session_start.py "{\"session_id\":\"client-$t\"}" >/dev/null   # the self-check marker hooks=on needs
     out=$(hook attach_evidence.py "{\"session_id\":\"client-$t\",\"tool_name\":\"${pre}graph_$t\",\"tool_input\":{\"graph\":\"g1\",\"client\":\"made-up\"}}")
     check "client: stamped on ${pre}graph_$t" 'echo "$out" | W="$want" python3 -c "
 import json,os,sys; u=json.load(sys.stdin)[\"hookSpecificOutput\"][\"updatedInput\"]
 sys.exit(0 if u.get(\"client\")==os.environ[\"W\"] and u.get(\"graph\")==\"g1\" else 1)"'
   done
 done
+out=$(hook attach_evidence.py "{\"session_id\":\"client-unmarked\",\"tool_name\":\"mcp__enforcer__graph_next_work\",\"tool_input\":{\"graph\":\"g1\"}}")
+check "client: no self-check marker -> hooks=off:no-capture-yet, never hooks=on" 'echo "$out" | grep -q "hooks=off:no-capture-yet" && ! echo "$out" | grep -q "hooks=on"'
 out=$(hook attach_evidence.py "{\"session_id\":\"client-r\",\"tool_name\":\"mcp__plugin_enforcer_enforcer__graph_remember\",\"tool_input\":{\"graph\":\"g1\"}}")
 check "client: not stamped on graph_remember (it takes no client)" '! echo "$out" | grep -q "hooks=on"'
 out=$(hook attach_evidence.py "{\"session_id\":\"client-p\",\"tool_name\":\"mcp__plugin_enforcer_enforcer__graph_plan_status\",\"tool_input\":{\"graph\":\"g1\"}}")

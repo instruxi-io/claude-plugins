@@ -5,7 +5,7 @@ no output. A coordination service must never be the reason a session stalls.
 Nothing here calls Jev or any model; hooks are plain HTTP to enforcer-graph.
 """
 import hashlib
-import json, os, re, shutil, sys
+import json, os, re, shutil, sys, time
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "hooks", "claude"))
 import claude_paths  # Claude Code's own on-disk names live there and nowhere else
@@ -41,7 +41,8 @@ USER_AGENT = f"enforcer-graph-plugin/{VERSION}"
 # MCP server forwards a `client` argument on graph_next_work, graph_heartbeat
 # and graph_report as that header). Only these hooks may say "hooks=on": a run
 # that records it was worked with the heartbeat, evidence and usage hooks live.
-CLIENT = f"enforcer-graph-plugin/{VERSION}; hooks=on"
+CLIENT_BASE = f"enforcer-graph-plugin/{VERSION}"
+CLIENT = f"{CLIENT_BASE}; hooks=on"
 CLIENT_TOOLS = ("graph_next_work", "graph_heartbeat", "graph_report")
 
 
@@ -50,11 +51,50 @@ def stamps_client(tool_name):
     return is_graph_tool(tool_name) and (tool_name or "").endswith(CLIENT_TOOLS)
 
 
-def with_client(args):
+def attest_marker(key):
+    return os.path.join(state_base(), "attest", str(key or "unknown"))
+
+
+def mark_attested(*keys):
+    """Record that the hooks ran end to end for these actor/session keys: a
+    capture succeeded, or the SessionStart self-check passed. Fails open."""
+    try:
+        d = os.path.join(state_base(), "attest")
+        private_dir(d)
+        for k in keys:
+            if k:
+                with private_open(attest_marker(k), "w") as f:
+                    f.write(str(int(time.time())))
+    except Exception:
+        pass
+
+
+def attest_reason(inp=None, python3=None):
+    """None when the hooks can honestly claim `hooks=on`, else why not."""
+    if (python3 if python3 is not None else shutil.which("python3")) is None:
+        return "python3"
+    try:
+        import fcntl  # noqa: F401
+    except ImportError:
+        return "fcntl"
+    inp = inp or {}
+    keys = {actor_key(inp), inp.get("session_id")} - {None}
+    if not any(os.path.exists(attest_marker(k)) for k in keys):
+        return "no-capture-yet"
+    return None
+
+
+def client_for(inp=None, python3=None):
+    """The X-Graph-Client attestation: `hooks=on` only when attest_reason is None."""
+    why = attest_reason(inp, python3)
+    return CLIENT if why is None else f"{CLIENT_BASE}; hooks=off:{why}"
+
+
+def with_client(args, inp=None, python3=None):
     """The arguments with `client` set to this plugin's attestation. It REPLACES
     whatever the model passed: the field is the hooks' word, not the model's."""
     args = dict(args) if isinstance(args, dict) else {}
-    args["client"] = CLIENT
+    args["client"] = client_for(inp, python3)
     return args
 
 
