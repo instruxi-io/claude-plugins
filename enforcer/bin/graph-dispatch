@@ -1983,6 +1983,96 @@ def triage_decision(data):
     return t, ""
 
 
+def worktree_safe_to_remove(path, branch, src, base_ref=None, pr_state=None):
+    """(ok, reason). A worktree may be removed only when its tree is clean AND
+    its branch head is an ancestor of origin's default/base branch, or its PR is
+    MERGED. Anything else is kept, with the reason. pr_state(branch, src) -> str|None."""
+    st = git(["status", "--porcelain"], path)
+    if st.returncode != 0:
+        return False, "uncommitted changes (status unreadable)"
+    if st.stdout.strip():
+        return False, "uncommitted changes"
+    refs = []
+    h = git(["symbolic-ref", "--short", "refs/remotes/origin/HEAD"], src).stdout.strip()
+    for r in (base_ref, h):
+        if r and r not in refs:
+            refs.append(r)
+    for r in refs:
+        if git(["rev-parse", "--verify", "-q", r], src).returncode == 0 and \
+                git(["merge-base", "--is-ancestor", branch, r], src).returncode == 0:
+            return True, "merged into " + r
+    state = (pr_state or gh_pr_state)(branch, src)
+    if state == "MERGED":
+        return True, "PR merged"
+    if state == "OPEN":
+        return False, "open PR"
+    return False, "unmerged commits"
+
+
+def gh_pr_state(branch, src):
+    """MERGED / OPEN / CLOSED for the branch's latest PR, None when gh cannot say."""
+    try:
+        r = subprocess.run(["gh", "pr", "view", branch, "--json", "state", "-q", ".state"],
+                           cwd=src, capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return r.stdout.strip() or None if r.returncode == 0 else None
+
+
+def prune_worktrees(repo_root, yes=False, registry=None, pr_state=None, out=None):
+    """Remove each <repo>-<key> worktree (branch graph/<key>) that is safe to
+    remove (with yes; else only say so) and list the rest. Returns (removed, kept)."""
+    out = out or sys.stdout
+    registry = load_repo_bases() if registry is None else registry
+    removed, kept = [], []
+    for repo in sorted(os.listdir(repo_root)):
+        src = os.path.join(repo_root, repo)
+        if not os.path.isdir(os.path.join(src, ".git")):
+            continue
+        porc = git(["worktree", "list", "--porcelain"], src).stdout
+        for blk in porc.split("\n\n"):
+            f = dict(l.split(" ", 1) for l in blk.splitlines() if " " in l)
+            path, br = f.get("worktree"), f.get("branch", "")
+            if not path or not br.startswith("refs/heads/graph/"):
+                continue
+            key = br[len("refs/heads/graph/"):]
+            if os.path.realpath(path) != os.path.realpath(os.path.join(repo_root, "%s-%s" % (repo, key))):
+                continue
+            base = registry.get(repo)
+            ok, why = worktree_safe_to_remove(path, br[len("refs/heads/"):], src,
+                                              _origin_ref(base) if base else None, pr_state)
+            if ok and yes:
+                r = git(["worktree", "remove", path], src)
+                if r.returncode != 0:
+                    kept.append((path, "remove failed: " + r.stderr.strip()[:200]))
+                    continue
+                removed.append((path, why))
+                print("removed %s (%s)" % (path, why), file=out)
+            elif ok:
+                removed.append((path, why))
+                print("would remove %s (%s)" % (path, why), file=out)
+            else:
+                kept.append((path, why))
+    if kept:
+        print("Review %d branches:" % len(kept), file=out)
+        for path, why in kept:
+            print("  %s: %s" % (path, why), file=out)
+    return removed, kept
+
+
+def prune_main(argv):
+    p = argparse.ArgumentParser(prog="graph-dispatch prune",
+                                description="remove clean worktrees whose branch is merged; list the rest for review")
+    p.add_argument("--repo-root", default=os.path.expanduser("~/apps"))
+    p.add_argument("--yes", action="store_true", help="remove them (default: dry run)")
+    try:
+        a = p.parse_args(argv)
+    except SystemExit as e:
+        return 5 if e.code else 0
+    prune_worktrees(a.repo_root, a.yes)
+    return 0
+
+
 def parse_args(argv):
     p = argparse.ArgumentParser(prog="graph-dispatch", description=__doc__.split("\n")[0])
     p.add_argument("--graph", required=True, help="graph id")
@@ -2045,6 +2135,8 @@ def parse_args(argv):
 
 
 def main(argv=None):
+    if (argv if argv is not None else sys.argv[1:])[:1] == ["prune"]:
+        return prune_main((argv if argv is not None else sys.argv[1:])[1:])
     try:
         a = parse_args(argv if argv is not None else sys.argv[1:])
     except SystemExit as e:

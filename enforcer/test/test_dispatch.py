@@ -293,6 +293,36 @@ class WorktreeSetup(unittest.TestCase):
         self.assertIn("worktree-setup j: copied 1, linked 1", out.getvalue())
 
 
+class PruneWorktrees(unittest.TestCase):
+    def test_prune_keeps_dirty_and_unmerged(self):
+        import subprocess
+        tmp = tempfile.mkdtemp()
+        root = git_repo_with_origin(tmp, ["main"])
+        src = os.path.join(root, "r")
+        for k in ("merged", "dirty", "unmerged"):
+            gd.worktree_for(node(k, repo="r"), root, tmp)
+        run = lambda c, cwd: subprocess.run(c, cwd=cwd, check=True, capture_output=True)
+        with open(os.path.join(root, "r-dirty", "x.txt"), "w") as f:
+            f.write("wip")
+        with open(os.path.join(root, "r-unmerged", "u.txt"), "w") as f:
+            f.write("u")
+        run(["git", "add", "-A"], os.path.join(root, "r-unmerged"))
+        run(["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "u"], os.path.join(root, "r-unmerged"))
+        out = io.StringIO()
+        removed, kept = gd.prune_worktrees(root, yes=True, registry={}, pr_state=lambda b, s: None, out=out)
+        self.assertEqual([os.path.basename(p) for p, _ in removed], ["r-merged"])
+        self.assertFalse(os.path.exists(os.path.join(root, "r-merged")))
+        why = {os.path.basename(p): w for p, w in kept}
+        self.assertEqual(why, {"r-dirty": "uncommitted changes", "r-unmerged": "unmerged commits"})
+        self.assertIn("Review 2 branches", out.getvalue())
+        self.assertTrue(os.path.isdir(os.path.join(root, "r-dirty")))
+        # an open PR keeps it; a merged PR frees it
+        _, kept = gd.prune_worktrees(root, registry={}, pr_state=lambda b, s: "OPEN", out=io.StringIO())
+        self.assertIn("open PR", [w for _, w in kept])
+        removed, _ = gd.prune_worktrees(root, yes=True, registry={}, pr_state=lambda b, s: "MERGED", out=io.StringIO())
+        self.assertEqual([os.path.basename(p) for p, _ in removed], ["r-unmerged"])
+
+
 class DryRunAndDrain(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()

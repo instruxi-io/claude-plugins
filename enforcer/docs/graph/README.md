@@ -291,6 +291,10 @@ A repo may not work off origin's default branch (`enforcer-v3-portal` works off 
 
 The worktree, the commits-ahead count and the PR base all use the resolved base, and the launch line logs `base=<ref>`. A declared base (steps 1 to 3) that does not exist on origin is refused with `refuse <key>: base origin/<b> (from <source>) does not exist on origin`; the node is not launched.
 
+### Pruning worktrees safely (`graph-dispatch prune`)
+
+`graph-dispatch prune [--repo-root DIR] [--yes]` looks at every `<repo>-<key>` worktree (branch `graph/<key>`) under the repo root. It removes one only when (a) its tree is clean and (b) its branch head is an ancestor of origin's default branch (or the repo's registered base), or its PR is MERGED (`gh`). Everything else is kept and listed under `Review N branches` with the reason: `uncommitted changes`, `unmerged commits` or `open PR`. Without `--yes` it is a dry run and prints `would remove ...`.
+
 ### Per-repo worktree setup (`.worktreeinclude`, `.worktreeshare`)
 
 A fresh worktree has no `.env` and no `node_modules`. When the dispatcher creates or reuses a worktree it reads two optional files at the root of the main checkout (`<repo-root>/<data.repo>/`), applies them and logs `worktree-setup <key>: copied N, linked M` (with a `; skip <path> (reason)` note for each entry it passed over). Both files list one path per line; blank lines and `#` comments are ignored.
