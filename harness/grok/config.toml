@@ -1,0 +1,5 @@
+# Merge into ~/.grok/config.toml (or ./.grok/config.toml), or run:
+#   grok mcp add --transport http enforcer https://api.instruxi.dev/mcp
+[mcp_servers.enforcer]
+transport = "http"
+url = "https://api.instruxi.dev/mcp"

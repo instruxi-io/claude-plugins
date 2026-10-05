@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "enforcer": {
+      "url": "https://api.instruxi.dev/mcp"
+    }
+  }
+}
