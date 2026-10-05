@@ -291,6 +291,15 @@ A repo may not work off origin's default branch (`enforcer-v3-portal` works off 
 
 The worktree, the commits-ahead count and the PR base all use the resolved base, and the launch line logs `base=<ref>`. A declared base (steps 1 to 3) that does not exist on origin is refused with `refuse <key>: base origin/<b> (from <source>) does not exist on origin`; the node is not launched.
 
+### Per-repo worktree setup (`.worktreeinclude`, `.worktreeshare`)
+
+A fresh worktree has no `.env` and no `node_modules`. When the dispatcher creates or reuses a worktree it reads two optional files at the root of the main checkout (`<repo-root>/<data.repo>/`), applies them and logs `worktree-setup <key>: copied N, linked M` (with a `; skip <path> (reason)` note for each entry it passed over). Both files list one path per line; blank lines and `#` comments are ignored.
+
+- `.worktreeinclude`: files to COPY from the main checkout, e.g. `.env`, `.vscode/settings.json`. Only existing, gitignored files inside the repo are copied. A path git tracks is never copied (the worktree already has it), and a missing path is skipped.
+- `.worktreeshare`: directories to SYMLINK from the main checkout, e.g. `node_modules`, `.cache`, or a sibling such as `../protos`. A sibling (`../x`) is linked only when the worktree sits beside the checkout.
+
+An entry already present in the worktree is left alone, so a re-claimed node is not touched twice. `--dry-run` logs the counts without copying or linking.
+
 ## The plugin must be ENABLED, and the allowlist must name the tools as they load
 
 Both failed together on the agents-platform build, so no hook ran at all:
