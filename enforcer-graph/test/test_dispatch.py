@@ -614,6 +614,17 @@ class SalvageDenied(unittest.TestCase):
         wrapped = json.dumps({"state": "claimed", "graph_id": "g", "node": {"key": "k", "skills": [{"slug": "deliver-via-github-pr"}, "other"]}})
         self.assertEqual(gd.skills_of(wrapped), ["deliver-via-github-pr", "other"])
 
+    def test_skills_of_prefers_the_slug_over_the_display_name(self):
+        # The real graph_next_work card (enforcer-graph MCP, 2026-10-05): skills
+        # at the top level, each with slug AND name. The salvage rule compares
+        # slugs; returning the name ("Deliver via GitHub pull request") made
+        # DELIVER_SKILL never match, so salvage stayed skipped after 0.27.1.
+        card = json.dumps({"state": "claimed", "graph_id": "g", "node": {"key": "k", "type": "bug"},
+                           "skills": [{"slug": "deliver-via-github-pr", "name": "Deliver via GitHub pull request",
+                                       "version": 1, "body": "# Deliver via GitHub pull request\n..."}]})
+        self.assertEqual(gd.skills_of(card), ["deliver-via-github-pr"])
+        self.assertIn(gd.DELIVER_SKILL, gd.skills_of(card))
+
     def test_skills_of_reads_attached_skill_rows(self):
         # The real card body (POST /frontier/claim, enforcer-graph 0.27): each
         # entry is a skills.AttachedSkill row and the slug is nested under
