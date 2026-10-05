@@ -94,7 +94,7 @@ class Base(unittest.TestCase):
         self.work = tempfile.mkdtemp()
         self.data = os.path.join(self.work, "data")
         self.proj = os.path.join(self.work, "proj")
-        os.makedirs(os.path.join(self.proj, ".claude"))
+        os.makedirs(os.path.join(self.proj, ".enforcer"))
         self.env = {k: v for k, v in os.environ.items()
                     if k not in ("GRAPH_FILES_BASE_URL", "GRAPH_BASE_URL", "GRAPH_ID", "ENFORCER_API_KEY")}
         self.env.update(CLAUDE_PLUGIN_DATA=self.data, GRAPH_API_KEY="user-key",
@@ -109,7 +109,7 @@ class Base(unittest.TestCase):
         cfg = {"graph_id": "g1", "base_url": base_url, "api_key_env": "GRAPH_API_KEY"}
         if files_base_url is not None:
             cfg["files_base_url"] = files_base_url
-        with open(os.path.join(self.proj, ".claude", "graph.json"), "w") as f:
+        with open(os.path.join(self.proj, ".enforcer", "graph.json"), "w") as f:
             json.dump(cfg, f)
 
     def capture(self, sid, *outputs):

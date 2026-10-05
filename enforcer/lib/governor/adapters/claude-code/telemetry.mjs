@@ -2,7 +2,7 @@
 //
 // Claude Code exports its metrics (claude_code.cost.usage, token.usage, ...) and
 // events (tool_result, api_request, ...) over OTLP when told to. This writes the
-// settings that tell it to, into ~/.claude/settings.json:
+// settings that tell it to, into Claude Code's user settings file:
 //
 //   env.CLAUDE_CODE_ENABLE_TELEMETRY   1
 //   env.OTEL_METRICS_EXPORTER          otlp
@@ -38,10 +38,11 @@ import { readFileSync, writeFileSync, mkdirSync, renameSync, copyFileSync, exist
 import { join, dirname } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
+import { claudeSettingsPath } from '../../../../hooks/claude/paths.mjs';
 import { SHARED_DIR, baseUrl } from '../../core/credentials.mjs';
 
 const home = () => process.env.HOME || process.env.USERPROFILE || homedir();
-export const CLAUDE_SETTINGS = () => process.env.CLAUDE_SETTINGS_PATH || join(home(), '.claude', 'settings.json');
+export const CLAUDE_SETTINGS = () => claudeSettingsPath();
 const SHIM = () => join(SHARED_DIR(), 'otel-headers.mjs');
 const ROOT = () => join(SHARED_DIR(), 'plugin-root');
 export const OTLP_PATH = '/api/v1/governance/otlp';

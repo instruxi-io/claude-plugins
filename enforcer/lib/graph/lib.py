@@ -5,7 +5,10 @@ no output. A coordination service must never be the reason a session stalls.
 Nothing here calls Jev or any model; hooks are plain HTTP to enforcer-graph.
 """
 import hashlib
-import json, os, re, sys
+import json, os, re, shutil, sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "hooks", "claude"))
+import claude_paths  # Claude Code's own on-disk names live there and nowhere else
 
 HTTP_TIMEOUT = float(os.environ.get("GRAPH_HOOK_TIMEOUT", "1.5"))
 
@@ -20,7 +23,7 @@ def plugin_version():
     try:
         # One version for the whole package: the root plugin.json (lib/graph/ -> package root).
         here = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        for rel in ("plugin.json", os.path.join(".claude-plugin", "plugin.json")):
+        for rel in ("plugin.json", os.path.join(claude_paths.MANIFEST_DIR, "plugin.json")):
             try:
                 with open(os.path.join(here, rel)) as f:
                     return str(json.load(f).get("version") or "unknown")
@@ -63,11 +66,13 @@ def read_stdin():
 
 
 def find_config(start):
-    """Walk up from `start` for .claude/graph.json. Env overrides win field by field."""
+    """Walk up from `start` for .enforcer/graph.json (or the legacy Claude project config). Env overrides win field by field."""
     cfg = {}
     d = os.path.abspath(start or os.getcwd())
     while True:
-        p = os.path.join(d, ".claude", "graph.json")
+        p = os.path.join(d, ".enforcer", "graph.json")
+        if not os.path.exists(p):
+            p = os.path.join(d, claude_paths.LEGACY_PROJECT_CONFIG)
         if os.path.exists(p):
             try:
                 cfg = json.load(open(p))
@@ -252,8 +257,45 @@ def http(cfg, method, path, body=None):
         return None
 
 
+POINTER = "MOVED_TO"
+
+
+def migrate_dir(src, dst):
+    """First-run migration: move every entry of `src` into `dst` (never over an
+    existing one) and leave src/MOVED_TO naming `dst`. Once only; fails open.
+    Returns the names moved."""
+    moved = []
+    try:
+        if (os.path.abspath(src) == os.path.abspath(dst) or not os.path.isdir(src)
+                or os.path.exists(os.path.join(src, POINTER))):
+            return moved
+        os.makedirs(dst, exist_ok=True)
+        for name in os.listdir(src):
+            t = os.path.join(dst, name)
+            if not os.path.exists(t):
+                shutil.move(os.path.join(src, name), t)
+                moved.append(name)
+        with open(os.path.join(src, POINTER), "w") as f:
+            f.write(dst + "\n")
+    except Exception:
+        pass
+    return moved
+
+
+def state_base():
+    """Session state: $ENFORCER_STATE_DIR, else what the harness hands the plugin,
+    else ~/.config/enforcer/sessions/<harness> (first use moves the old location)."""
+    explicit = os.environ.get("ENFORCER_STATE_DIR") or claude_paths.plugin_data_env()
+    if explicit:
+        return explicit
+    cfg = os.environ.get("ENFORCER_CONFIG_HOME") or os.path.join(os.path.expanduser("~"), ".config", "enforcer")
+    d = os.path.join(cfg, "sessions", os.environ.get("ENFORCER_HARNESS") or "claude")
+    migrate_dir(claude_paths.legacy_state_dir(), d)
+    return d
+
+
 def data_dir():
-    d = os.environ.get("CLAUDE_PLUGIN_DATA") or os.path.expanduser("~/.claude/enforcer-graph")
+    d = state_base()
     d = os.path.join(d, "runs")
     os.makedirs(d, exist_ok=True)
     return d
@@ -358,7 +400,7 @@ def clip_output(s, n=OUTPUT_CLIP, head_share=0.3):
 # (`file_bytes`). The server judges the clip exactly as before and tells the
 # judge the whole is stored; it never downloads it.
 #
-# Configured by `files_base_url` in .claude/graph.json (or GRAPH_FILES_BASE_URL),
+# Configured by `files_base_url` in .enforcer/graph.json (or GRAPH_FILES_BASE_URL),
 # the enforcer-files base INCLUDING its /api/v1/files prefix. Unset disables
 # uploads: no network call at all. Everything here FAILS OPEN — an upload that
 # fails leaves the item exactly as it was (clipped, no file) and the report goes.
@@ -462,7 +504,7 @@ def attach_files(items, cfg):
 
 
 def evidence_dir():
-    d = os.environ.get("CLAUDE_PLUGIN_DATA") or os.path.expanduser("~/.claude/enforcer-graph")
+    d = state_base()
     d = os.path.join(d, "evidence")
     os.makedirs(d, exist_ok=True)
     return d

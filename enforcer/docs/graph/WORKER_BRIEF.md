@@ -18,7 +18,7 @@ Scope here: the `enforcer-graph/` plugin (skill, hooks, agent, bin, tests).
 
 | Event | Matcher | Script |
 |---|---|---|
-| SessionStart | `startup\|resume\|compact` | session_start.py (prints frontier/running/failed; silent without `.claude/graph.json` or on 401) |
+| SessionStart | `startup\|resume\|compact` | session_start.py (prints frontier/running/failed; silent without `.enforcer/graph.json` (the older Claude project config is still read) or on 401) |
 | PreToolUse | `mcp__(plugin_enforcer_enforcer\|enforcer\|enforcer-graph)__graph_(next_work\|report\|remember\|heartbeat)` | attach_evidence.py (merges captured records with the worker's own) |
 | PostToolUse | same prefixes, `graph_(next_work\|report\|heartbeat)` | track_run.py (writes the run file) |
 | PostToolUse | `.*` | capture_evidence.py (records your tool results), heartbeat.py (lease keepalive) |

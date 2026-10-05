@@ -73,7 +73,7 @@ because a worker was denied a graph tool (see README "Headless workers"),
 5 usage.
 
 Auth: GRAPH_AUTH_HELPER (a command printing JSON headers, e.g.
-`node ~/.claude/plugins/cache/instruxi/enforcer/<v>/bin/enforcer-headers.mjs`;
+`node <plugin cache>/instruxi/enforcer/<v>/bin/enforcer-headers.mjs`;
 default: the newest such file in the plugin cache), else GRAPH_API_KEY.
 Base: GRAPH_BASE_URL (default https://api.instruxi.dev/api/v1/graph).
 """
@@ -92,6 +92,10 @@ import time
 import uuid
 import urllib.error
 import urllib.request
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "lib", "graph"))
+import lib as graph_lib  # migrate_dir
+from lib import claude_paths
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PLUGIN_DIR = os.path.dirname(HERE)
@@ -297,8 +301,8 @@ class APIError(Exception):
 
 
 def default_helper():
-    found = sorted(glob.glob(os.path.expanduser(
-        "~/.claude/plugins/cache/*/enforcer/*/bin/enforcer-headers.mjs")),
+    found = sorted(glob.glob(claude_paths.plugin_cache_glob(
+        "enforcer", "*", "bin", "enforcer-headers.mjs")),
         key=lambda p: [int(x) if x.isdigit() else x for x in re.split(r"[./]", p)])
     return "node " + shlex.quote(found[-1]) if found else None
 
@@ -459,7 +463,7 @@ def worker_prompt(graph, node, path, branch, previous=None):
     return "\n".join(lines)
 
 
-def claude_cmd(prompt, model, args, key, session=None, resume=False, max_turns=None):
+def launch_cmd(prompt, model, args, key, session=None, resume=False, max_turns=None):
     """`session` is the session id: with resume, `--resume <id>` continues it
     (same id; claude finds it from any cwd), else `--session-id <id>` names a
     new one so it can be resumed later. `max_turns` is data.max_turns."""
@@ -734,7 +738,7 @@ class Dispatcher:
             tag += " (remediation after %d failed attempt(s))" % len(failures)
         else:
             prompt = worker_prompt(self.g, n, path, branch, previous=sess.last_key if resumed else None)
-        cmd = claude_cmd(prompt, model, a, n["key"], session=sess.sid, resume=resumed, max_turns=turns_cap)
+        cmd = launch_cmd(prompt, model, a, n["key"], session=sess.sid, resume=resumed, max_turns=turns_cap)
         res = ",".join(sorted(resources_of(n))) or "-"
         if a.dry_run:
             self.say("would launch %s [%s, tier %s] model=%s worktree=%s branch=%s (%s) resources=%s%s%s"
@@ -821,7 +825,7 @@ class Dispatcher:
         path = os.path.join(self.state, "work", tkey)
         os.makedirs(path, exist_ok=True)
         sess = Session(str(uuid.uuid4()), None, a.triage_model)
-        cmd = claude_cmd(triage_prompt(self.g, tnode, n, history), a.triage_model, a, tkey, session=sess.sid)
+        cmd = launch_cmd(triage_prompt(self.g, tnode, n, history), a.triage_model, a, tkey, session=sess.sid)
         log = os.path.join(self.logs, "%s.triage.jsonl" % key)
         w = Worker(tnode, log)
         w.triage_of, w.path, w.model, w.turns, w.session, w.resumed = n, path, a.triage_model, 0, sess, False
@@ -1195,7 +1199,7 @@ class Dispatcher:
                   "run the deciding gate on the merged tree as your last commands, and report."
                   % (pr, rc, clip(out, 500)))
         a = self.args
-        cmd = claude_cmd(prompt, w.model, a, key, session=sess.sid, resume=True, max_turns=getattr(w, "max_turns", None))
+        cmd = launch_cmd(prompt, w.model, a, key, session=sess.sid, resume=True, max_turns=getattr(w, "max_turns", None))
         log = os.path.join(self.logs, "%s.%d.salvage.jsonl" % (key, self.attempts.get(key, 1)))
         nw = Worker(w.node, log)
         env = dict(os.environ, GRAPH_ID=self.g, JEV_HOOKS_HEADLESS="1")
@@ -1693,7 +1697,7 @@ def parse_args(argv):
     p.add_argument("--interval", type=float, default=30, help="seconds between passes")
     p.add_argument("--heartbeat", type=float, default=120, help="seconds between merge-run heartbeats")
     p.add_argument("--land-timeout", type=int, default=3000)
-    p.add_argument("--state-dir", help="logs and stop file (default ~/.cache/graph-dispatch/<graph>)")
+    p.add_argument("--state-dir", help="logs and stop file (default ~/.config/enforcer/dispatch/<graph>)")
     p.add_argument("--stop-file", help="touch it to drain (default <state-dir>/STOP)")
     p.add_argument("--plugin-dir", action="append", default=[],
                    help="extra plugin dirs (default: the newest cached enforcer plugin, for the MCP server)")
@@ -1718,10 +1722,13 @@ def parse_args(argv):
     a = p.parse_args(argv)
     if a.workers < 1:
         p.error("--workers must be >= 1")
-    a.state_dir = a.state_dir or os.path.expanduser("~/.cache/graph-dispatch/" + a.graph)
+    if not a.state_dir:
+        cfg = os.environ.get("ENFORCER_CONFIG_HOME") or os.path.expanduser("~/.config/enforcer")
+        a.state_dir = os.path.join(cfg, "dispatch", a.graph)
+        graph_lib.migrate_dir(os.path.expanduser("~/.cache/graph-dispatch/" + a.graph), a.state_dir)
     a.stop_file = a.stop_file or os.path.join(a.state_dir, "STOP")
     if not a.plugin_dir:
-        found = sorted(glob.glob(os.path.expanduser("~/.claude/plugins/cache/*/enforcer/*/.claude-plugin")),
+        found = sorted(glob.glob(claude_paths.plugin_cache_glob("enforcer", "*", claude_paths.MANIFEST_DIR)),
                        key=lambda q: [int(x) if x.isdigit() else x for x in re.split(r"[./]", q)])
         a.plugin_dir = [os.path.dirname(found[-1])] if found else []
     return a

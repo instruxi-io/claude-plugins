@@ -421,10 +421,10 @@ class WarmWorkers(unittest.TestCase):
         self.done = os.path.join(self.tmp, "done")
         os.makedirs(self.done)
         self.calls = os.path.join(self.tmp, "calls.jsonl")
-        self.claude = os.path.join(self.tmp, "claude-warm")
-        with open(self.claude, "w") as f:
+        self.cbin = os.path.join(self.tmp, "claude-warm")
+        with open(self.cbin, "w") as f:
             f.write(FAKE_WARM_CLAUDE)
-        os.chmod(self.claude, 0o755)
+        os.chmod(self.cbin, 0o755)
         os.environ["FAKE_CALLS"], os.environ["FAKE_DONE"] = self.calls, self.done
         os.environ.pop("FAKE_RESUME_FAILS", None)
 
@@ -434,7 +434,7 @@ class WarmWorkers(unittest.TestCase):
     def run_dispatch(self, nodes, **kw):
         out = io.StringIO()
         a = args(workers=1, state_dir=self.state, stop_file=os.path.join(self.state, "STOP"),
-                 interval=0.05, claude=self.claude, **kw)
+                 interval=0.05, claude=self.cbin, **kw)
         rc = gd.Dispatcher(DoneAPI(nodes, self.done), a, out).run()
         with open(self.calls) as f:
             launches = [json.loads(l) for l in f]
@@ -496,13 +496,13 @@ class WarmWorkers(unittest.TestCase):
 
     def test_one_plugin_dir_each_and_max_turns(self):
         a = args(plugin_dir=[gd.PLUGIN_DIR, "/p", "/p/", "/q"])
-        cmd = gd.claude_cmd("hi", "sonnet", a, "k", session="s1", max_turns=40)
+        cmd = gd.launch_cmd("hi", "sonnet", a, "k", session="s1", max_turns=40)
         dirs = [cmd[i + 1] for i, c in enumerate(cmd) if c == "--plugin-dir"]
         self.assertEqual(len(dirs), 3)
         self.assertEqual(len({os.path.realpath(d) for d in dirs}), 3)
         self.assertEqual(cmd[cmd.index("--max-turns") + 1], "40")
         self.assertEqual(cmd[cmd.index("--session-id") + 1], "s1")
-        self.assertNotIn("--max-turns", gd.claude_cmd("hi", "sonnet", a, "k"))
+        self.assertNotIn("--max-turns", gd.launch_cmd("hi", "sonnet", a, "k"))
         self.assertEqual(gd.node_max_turns(node("n", max_turns="60")), 60)
         self.assertIsNone(gd.node_max_turns(node("n")))
 
@@ -529,7 +529,7 @@ class SalvageDenied(unittest.TestCase):
                     'echo https://github.com/o/r/pull/7\n' % self.log)
         self.land = self.script("land-pr.sh", '#!/bin/sh\necho "land $*" >> %s\nsleep ${FAKE_LAND_SLEEP:-0}\necho landed-output\n'
                                 'exit ${FAKE_LAND_EXIT:-0}\n' % self.log)
-        self.claude = self.script("claude", '#!/bin/sh\necho "claude $*" >> %s\n' % self.log)
+        self.cbin = self.script("claude", '#!/bin/sh\necho "claude $*" >> %s\n' % self.log)
         self.oldpath, self.oldland = os.environ["PATH"], gd.LAND_PR
         os.environ["PATH"] = self.bin + ":" + self.oldpath
         gd.LAND_PR = self.land
@@ -562,7 +562,7 @@ class SalvageDenied(unittest.TestCase):
 
     def run_salvage(self, key="a", denied_cmd="git push -u origin graph/a", tools=("Bash",), text="final report", d=None, skills=("deliver-via-github-pr",)):
         out = io.StringIO()
-        d = d or gd.Dispatcher(FakeAPI([]), args(state_dir=self.state, claude=self.claude), out)
+        d = d or gd.Dispatcher(FakeAPI([]), args(state_dir=self.state, claude=self.cbin), out)
         w = gd.Worker(node(key), os.path.join(self.tmp, "w.log"))
         w.path, w.model, w.max_turns = self.wt, "sonnet", 10
         w.session = gd.Session("sess-1", "r", "sonnet")
@@ -598,7 +598,7 @@ class SalvageDenied(unittest.TestCase):
         self.git(self.wt, "push", "-q", "origin", "HEAD:staging")
         self.git(self.wt, "fetch", "-q")
         self.setup_branch()
-        d = gd.Dispatcher(FakeAPI([]), args(state_dir=self.state, claude=self.claude), io.StringIO())
+        d = gd.Dispatcher(FakeAPI([]), args(state_dir=self.state, claude=self.cbin), io.StringIO())
         n = node("a")
         n["data"] = dict(n.get("data") or {}, base="staging")
         w = gd.Worker(n, os.path.join(self.tmp, "w.log"))
@@ -708,7 +708,7 @@ class SalvageDenied(unittest.TestCase):
         os.environ["FAKE_LAND_SLEEP"] = "2"
         out = io.StringIO()
         api = FakeAPI([node("a"), node("b")])
-        d = gd.Dispatcher(api, args(state_dir=self.state, claude=self.claude, workers=1,
+        d = gd.Dispatcher(api, args(state_dir=self.state, claude=self.cbin, workers=1,
                                     stop_file=os.path.join(self.state, "STOP")), out)
         w = gd.Worker(node("a"), os.path.join(self.tmp, "w.log"))
         w.path, w.model, w.max_turns = self.wt, "sonnet", 10
@@ -820,10 +820,10 @@ class FailureRemediation(unittest.TestCase):
         self.state = os.path.join(self.tmp, "s")
         os.makedirs(os.path.join(self.state, "logs"))
         self.calls = os.path.join(self.tmp, "calls.jsonl")
-        self.claude = os.path.join(self.tmp, "claude-fail")
-        with open(self.claude, "w") as f:
+        self.cbin = os.path.join(self.tmp, "claude-fail")
+        with open(self.cbin, "w") as f:
             f.write(FAKE_FAIL_CLAUDE)
-        os.chmod(self.claude, 0o755)
+        os.chmod(self.cbin, 0o755)
         os.environ["FAKE_CALLS"] = self.calls
         os.environ["FAKE_TRIAGE"] = json.dumps({"action": "revise", "reason": "acceptance 2 names a removed file",
                                                 "acceptance": ["the suite passes"]})
@@ -837,7 +837,7 @@ class FailureRemediation(unittest.TestCase):
         out = io.StringIO()
         api = TriageAPI([node("a", repo="r")])
         a = args(workers=1, state_dir=self.state, stop_file=os.path.join(self.state, "STOP"),
-                 interval=0.05, claude=self.claude, **kw)
+                 interval=0.05, claude=self.cbin, **kw)
         d = gd.Dispatcher(api, a, out)
         rc = d.run()
         with open(self.calls) as f:
@@ -977,7 +977,7 @@ class TriageAllFailures(unittest.TestCase):
         api = TriageAPI(nodes or [node("o", type="ops", status="failed", repo="r"),
                                   node("p", type="ops", status="active")])
         a = args(workers=2, state_dir=self.state, stop_file=os.path.join(self.state, "STOP"),
-                 interval=0.05, types=kw.pop('types', 'task,bug,chore,merge'), claude=self.claude, **kw)
+                 interval=0.05, types=kw.pop('types', 'task,bug,chore,merge'), claude=self.cbin, **kw)
         d = gd.Dispatcher(api, a, out)
         rc = d.run()
         launches = [json.loads(l) for l in open(self.calls)] if os.path.exists(self.calls) else []

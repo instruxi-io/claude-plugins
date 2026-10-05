@@ -81,7 +81,7 @@ npx skills add instruxi-io/claude-plugins --skill graph
 
 ## Configure
 
-`.claude/graph.json` in the project (found by walking up from the cwd):
+`.enforcer/graph.json` (the older Claude project config is still read) in the project (found by walking up from the cwd):
 
 ```json
 { "graph_id": "<uuid>" }
@@ -235,7 +235,7 @@ and, for each ready node, up to `--workers` at once:
 - **Contested resources**: never two workers, ours or a live run elsewhere, on
   one `data.resources` value. A lapsed lease frees its resources and its node
   is re-dispatched (the server lists it as `looking_for_work`).
-- **Drain**: `touch <state>/STOP` (default state `~/.cache/graph-dispatch/<graph>`):
+- **Drain**: `touch <state>/STOP` (default state `~/.config/enforcer/dispatch/<graph>`):
   no new launches, running workers finish, exit 0. `--max-attempts` (2) bounds
   launches per node per session.
 - **Auth**: `GRAPH_AUTH_HELPER` (any command printing JSON headers; default the
@@ -305,7 +305,7 @@ standalone server added with `claude mcp add`). Keep the one your session shows.
 |---|---|---|
 | SessionStart (startup, resume, compact) | `session_start.py` | Prints plan status: counts, frontier, running, failed, and whether THIS session still holds a run. Two HTTP GETs. |
 | PostToolUse on `graph_next_work` / `graph_report` / `graph_heartbeat` | `track_run.py` | Records the run this session holds in `${CLAUDE_PLUGIN_DATA}/runs/<session_id>.json` from the tool result; clears it on report or when a heartbeat says `reclaimed` / `finished`. No HTTP. |
-| PostToolUse on every tool | `capture_evidence.py` | While a run is held, appends what the tool actually did to `${CLAUDE_PLUGIN_DATA}/evidence/<session_id>.jsonl`: `Bash` as `{kind:"command", cmd, exit, output}` (output clipped to 4000 chars), `Edit`/`Write`/`MultiEdit` as `{kind:"file", path, excerpt}`. `Read`/`Grep`/`Glob` are not captured. No HTTP. |
+| PostToolUse on every tool | `capture_evidence.py` | While a run is held, appends what the tool actually did to `~/.config/enforcer/sessions/<harness>/evidence/<session_id>.jsonl`: `Bash` as `{kind:"command", cmd, exit, output}` (output clipped to 4000 chars), `Edit`/`Write`/`MultiEdit` as `{kind:"file", path, excerpt}`. `Read`/`Grep`/`Glob` are not captured. No HTTP. |
 | PreToolUse on `graph_report` | `attach_evidence.py` | Reads the capture, caps it at the 20 items the server accepts (failing commands first, then the most recent commands, then file changes) and merges it into the tool's arguments as `evidence` via `hookSpecificOutput.updatedInput`. Anything the model wrote in `evidence` is replaced. No HTTP. |
 | PostToolUse on every tool | `heartbeat.py` | Every 10th tool call, if a run is held, one HTTP heartbeat (1.5s timeout, 3s hook timeout). Silent on `ok`. On `cancel_requested`, `reclaimed` or `finished` it says so in one line to you and to the model, and forgets a run that is no longer ours. |
 | PreCompact (manual, auto) | `remember_on_compact.py` | If a run is held, writes one progress observation (the last assistant message) on the node, so the state of the work survives in the graph, not only in the summary. |

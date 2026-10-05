@@ -7,6 +7,8 @@ import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { homedir } from 'node:os';
+import { stateBase } from '../src/state.mjs';
+import { LEGACY_PROJECT_CONFIG } from '../hooks/claude/paths.mjs';
 
 const here = (p) => fileURLToPath(new URL(p, import.meta.url));
 const [area, sub, ...rest] = process.argv.slice(2);
@@ -24,13 +26,13 @@ const HOOKS = {
 function graphContextLive(ev) {
   if (process.env.GRAPH_ID) return true;
   const sid = ev.session_id;
-  // session state: a claimed run is recorded here (state-relocation moves this path)
-  const data = process.env.CLAUDE_PLUGIN_DATA || join(homedir(), '.claude', 'enforcer-graph');
+  // session state: a claimed run is recorded here
+  const data = stateBase();
   if (sid && existsSync(join(data, 'runs', `${sid}.json`))) return true;
   // a project that configures a graph
   let d = ev.cwd || process.cwd();
   for (;;) {
-    if (existsSync(join(d, '.claude', 'graph.json'))) return true;
+    if (existsSync(join(d, '.enforcer', 'graph.json')) || existsSync(join(d, LEGACY_PROJECT_CONFIG))) return true;
     const up = dirname(d);
     if (up === d) return false;
     d = up;

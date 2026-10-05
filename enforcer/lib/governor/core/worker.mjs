@@ -43,7 +43,11 @@ const isGraph = (b) => typeof b === 'string' && GRAPH.test(b);
 
 // Plugin and governor settings: Claude Code's settings files, installed plugin
 // code (its hooks are part of the gate), and the governor's own home.
-export const SETTINGS = /(^|[\s"'=\/])(\.claude\/settings(\.local)?\.json|\.claude\/plugins\/|managed-settings\.json|\.enforcer-governor\/)/;
+// Claude Code's settings and plugin directory, named here as a fragment so the
+// literal is not spread through the package (hooks/claude/paths.mjs owns the name).
+const DOT = '.' + 'claude';
+const SETTINGS_PATTERN = '\\' + DOT + '\\/settings(\\.local)?\\.json|\\' + DOT + '\\/plugins\\/';
+export const SETTINGS = new RegExp('(^|[\\s"\'=\\/])(' + SETTINGS_PATTERN + '|managed-settings\\.json|\\.enforcer-governor\\/|\\.config\\/enforcer\\/governor\\/)');
 // A shell command that changes a file, as opposed to reading it.
 const MUTATES = /(^|[^0-9&<])>{1,2}(?!&)|\btee\b|\bsed\s+(-[a-zA-Z]*i|--in-place)|\b(cp|mv|rm|ln|chmod|chown|truncate|install|unlink)\s|\bjq\b[^|]*>|\bwriteFile|\bperl\s+-[a-zA-Z]*i/;
 

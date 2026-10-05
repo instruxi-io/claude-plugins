@@ -130,7 +130,7 @@ well-written report with nothing behind it scores like no report at all.
   A failing command is evidence too, and is kept first.
 - **Long output goes to enforcer-files, whole.** Each output is clipped to
   4000 characters, keeping both ends. If `files_base_url` is set in
-  `.claude/graph.json`, the attach hook uploads any longer output to the user's
+  `.enforcer/graph.json` (the older Claude project config is still read), the attach hook uploads any longer output to the user's
   enforcer-files and the evidence item carries its `file` id; you do nothing.
   Without that setting, upload the log yourself through Bash, so that the
   upload is captured too (this is the `files` skill run as a

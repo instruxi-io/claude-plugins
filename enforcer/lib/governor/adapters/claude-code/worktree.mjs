@@ -6,6 +6,7 @@ import { readFileSync, statSync, readdirSync } from 'node:fs';
 import { join, dirname, resolve, isAbsolute } from 'node:path';
 import { homedir } from 'node:os';
 import { headlessFrom, gitDir } from '../../core/worker.mjs';
+import { stateBase } from '../../../../src/state.mjs';
 
 /** The checked-out branch of `dir`, or null (not a worktree, detached HEAD). */
 export function branchOf(dir) {
@@ -48,11 +49,7 @@ export function runIdOf(ev, env = process.env) {
   if (env.ENFORCER_GRAPH_RUN_ID) return env.ENFORCER_GRAPH_RUN_ID;
   const key = ev?.agent_id ? null : ev?.session_id;   // subagents key by a hash; not resolved here
   if (!key) return undefined;
-  const dirs = [join(homedir(), '.claude', 'enforcer-graph', 'runs')];
-  try {
-    const data = join(homedir(), '.claude', 'plugins', 'data');
-    for (const n of readdirSync(data)) if (n.startsWith('enforcer-graph')) dirs.push(join(data, n, 'runs'));
-  } catch {}
+  const dirs = [join(stateBase(), 'runs')];
   for (const d of dirs) {
     try { const r = JSON.parse(readFileSync(join(d, `${key}.json`), 'utf8')); if (r?.run_id) return String(r.run_id); } catch {}
   }

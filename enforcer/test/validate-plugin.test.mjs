@@ -3,6 +3,7 @@
 // maxLength, pattern) and checks every version string in the package is identical.
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import assert from 'node:assert/strict';
+import { DOT } from '../hooks/claude/paths.mjs';
 const rd = (p) => JSON.parse(readFileSync(new URL(`../${p}`, import.meta.url), 'utf8'));
 const schema = JSON.parse(readFileSync(new URL('./fixtures/agent-plugins-1.0.0.plugin.schema.json', import.meta.url), 'utf8'));
 
@@ -37,8 +38,8 @@ console.log('ok   plugin.json validates against the vendored Agent Plugins 1.0.0
 assert.ok(validate(schema, { name: 'x' }).length > 0); assert.ok(validate(schema, { ...plugin, bogus: 1 }).length > 0);
 console.log('ok   the validator rejects a missing $schema and an unknown property');
 
-const versions = { 'plugin.json': plugin.version, '.claude-plugin/plugin.json': rd('.claude-plugin/plugin.json').version, 'package.json': rd('package.json').version };
-const market = rd('../.claude-plugin/marketplace.json').plugins.find((p) => p.name === 'enforcer');
+const versions = { 'plugin.json': plugin.version, [`${DOT}-plugin/plugin.json`]: rd(`${DOT}-plugin/plugin.json`).version, 'package.json': rd('package.json').version };
+const market = rd(`../${DOT}-plugin/marketplace.json`).plugins.find((p) => p.name === 'enforcer');
 if (market.version) versions['marketplace.json'] = market.version;
 assert.equal(new Set(Object.values(versions)).size, 1, `versions differ: ${JSON.stringify(versions)}`);
 console.log(`ok   one version everywhere: ${plugin.version} (${Object.keys(versions).join(', ')})`);

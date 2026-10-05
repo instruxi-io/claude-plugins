@@ -15,9 +15,16 @@ import { readFileSync, writeFileSync, appendFileSync, mkdirSync, openSync, close
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { makeState } from './policy.mjs';
+import { migrateDir } from './migrate.mjs';
 
 const HOME = process.env.HOME || process.env.USERPROFILE || '.';
-export const DIR = process.env.GOVERNOR_HOME || join(HOME, '.enforcer-governor');
+// Governor records live under ~/.config/enforcer/governor. Before 2.10 they were
+// in ~/.enforcer-governor; the first run moves them (receipt chain intact) and
+// leaves MOVED_TO behind. GOVERNOR_HOME, when set, is used as given.
+export const CONFIG_HOME = process.env.ENFORCER_CONFIG_HOME || join(HOME, '.config', 'enforcer');
+export const LEGACY_DIR = join(HOME, '.enforcer-governor');
+export const DIR = process.env.GOVERNOR_HOME || join(CONFIG_HOME, 'governor');
+if (!process.env.GOVERNOR_HOME) migrateDir(LEGACY_DIR, DIR);
 export const RECEIPTS = join(DIR, 'receipts.jsonl');
 const STATE = join(DIR, 'state.json');
 const CONFIG = join(DIR, 'config.json');
