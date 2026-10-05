@@ -50,13 +50,13 @@ class EvidenceAssertTest(unittest.TestCase):
     def test_failed_report_not_blocked(self):
         self.assertNotIn("permissionDecision", run([LAND], status="failed"))
 
-    def test_override_needs_reason_and_is_recorded(self):
-        out = run([LAND], evidence_override=True)
-        self.assertEqual(out["permissionDecision"], "deny")
-        out = run([LAND], evidence_override=True, evidence_override_reason="file is binary")
+    def test_override_needs_line_and_reason_and_is_recorded(self):
+        self.assertEqual(run([LAND], evidence_override=True)["permissionDecision"], "deny")
+        self.assertEqual(run([LAND], evidence_override={"line": 1, "reason": " "})["permissionDecision"], "deny")
+        out = run([LAND], evidence_override={"line": 1, "reason": "file is binary"})
         self.assertNotIn("permissionDecision", out)
         ti = out["updatedInput"]
-        self.assertEqual(ti["data"]["evidence_override"]["reason"], "file is binary")
+        self.assertEqual(ti["data"]["overrides"], [{"line": 1, "reason": "file is binary"}])
         self.assertNotIn("evidence_override", ti)
 
 

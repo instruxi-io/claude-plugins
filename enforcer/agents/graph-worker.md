@@ -41,8 +41,8 @@ BEFORE working: it says what evidence each criterion needs (the file body via
 `cat`, the merge script's merged output, a deciding command's verbatim output). The
 plugin blocks a `succeeded` graph_report whose evidence misses a hinted kind and
 names the criterion and the fix; satisfy it rather than override. Only when a
-hint truly cannot apply, pass `evidence_override: true` with an
-`evidence_override_reason` (recorded on the run).
+hint truly cannot apply, pass `evidence_override: {line, reason}` naming the acceptance line, (its
+`reason` is recorded in the report data as `overrides`).
 
 ## 2. Keep the lease
 
