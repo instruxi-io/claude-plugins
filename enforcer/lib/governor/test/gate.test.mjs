@@ -97,4 +97,20 @@ ok('worker allow falls through to capability', () => {
   assert.equal(v.code, 'secret_in_command');
 });
 
+const pushCmd = 'git push -u origin graph/k1';
+const pushEv = { tool: 'shell', name: 'Bash', action: 'Bash:' + pushCmd, input: { command: pushCmd },
+  raw: { command: pushCmd }, worker: { headless: true, branch: 'graph/k1' } };
+
+ok('central deny overrides worker allow', () => {
+  assert.equal(gate(pushEv, {}, healthy).action, 'allow');
+  const v = gate(pushEv, {}, { ...healthy, workerCentral: { opinion: 'deny', reason: 'no pushes this week' } });
+  assert.equal(v.action, 'deny');
+  assert.equal(v.code, 'tenant_policy');
+});
+
+ok('paused agent cannot push', () => {
+  const v = gate(pushEv, {}, stopping);
+  assert.equal(v.action, 'deny');
+});
+
 console.log(`\n  ${pass} passed`);

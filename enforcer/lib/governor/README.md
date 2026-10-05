@@ -178,6 +178,7 @@ The record is written three places: as the `decision` field, last, on the hash-c
 | `settings_write` | an edit to plugin or governor settings |
 | `tenant_policy` | the organisation's Enforcer policy decided |
 | `agent_stopped` | the agent was stopped by a person or for looping, and stays stopped until resumed |
+| `ask_declined` | the agent was paused to ask you something and the answer was not yes; it stays denied until resumed or the day rolls |
 | `period_limit` | the daily, weekly or monthly spend limit is reached |
 | `loop_detected` | the agent repeated the same action past the loop limit |
 | `burn_rate` | spending faster than the per-minute mark |

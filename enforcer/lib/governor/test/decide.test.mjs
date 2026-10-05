@@ -10,6 +10,8 @@ import { tmpdir } from 'node:os';
 
 const root = new URL('../', import.meta.url).pathname;
 const fx = join(root, 'test/fixtures/decide');
+import * as econ from '../src/economics.mjs';
+import * as pol from '../src/policy.mjs';
 let pass = 0;
 const ok = (l, fn) => { fn(); pass++; console.log('  ok  ' + l); };
 
@@ -90,4 +92,21 @@ ok('empty stdin on PreToolUse -> ask', () => {
 ok('garbage stdin on PreToolUse -> ask', () => {
   assert.equal(out(runRaw('hooks/pre-tool-use.mjs', undefined, '{nope')).permissionDecision, 'ask');
 });
+ok('declined soft-limit ask denies the next call', () => {
+  const { evaluate } = econ;
+  const { makeState, DEFAULTS } = pol;
+  const cfg = { ...DEFAULTS, budgetOn: true, softAction: 'escalate', loopOn: false };
+  const state = makeState();
+  const ev = { agent: 'a', action: 'x', tokens: 0 };
+  const first = evaluate(state, { ...ev, tokens: 1 }, cfg);
+  assert.notEqual(first?.action, 'deny');
+  const a = state.agents.a; a.budget = 100; a.soft = 0.5;
+  const asked = evaluate(state, { ...ev, tokens: 60 }, cfg);
+  assert.equal(asked.action, 'ask');
+  const next = evaluate(state, { ...ev, action: 'y', tokens: 61 }, cfg);   // no after(): the tool did not run
+  assert.equal(next.action, 'deny');
+  assert.equal(next.code, 'ask_declined');
+  a.pendingAsk = undefined; a.status = 'active';   // answered yes (post-tool-use) or resumed
+  assert.notEqual(evaluate(state, { ...ev, action: 'z', tokens: 62 }, cfg)?.action, 'deny');
+}) ;
 console.log(`${pass} passed`);

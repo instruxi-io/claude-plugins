@@ -18,12 +18,18 @@ import { Verdict, ECONOMICS, CAPABILITY, OPERATOR } from './verdict.mjs';
 import { nameOf } from './tools.mjs';
 import {
   PERIODS, burnRate, spawnRate, addSpend, getAgent, setModel, clientFor,
-  rollPeriods, modelAdvice, taskShape, BURN_WINDOW,
+  rollPeriods, modelAdvice, taskShape, BURN_WINDOW, dayKey,
 } from './policy.mjs';
 
 const of = { source: ECONOMICS, checked: [CAPABILITY, ECONOMICS] };
 const ground = (a, by) => { a.status = 'grounded'; a.groundedBy = by; };
 const pause = (a) => { a.status = 'paused'; };
+// An ask the hook cannot see answered. It is remembered; post-tool-use clears it
+// when the tool ran (the user said yes), so a 'no' is whatever is still here.
+const asking = (a, reason, now) => {
+  a.pendingAsk = { reason, day: dayKey(now) };
+  return Verdict.ask(reason, of);
+};
 
 // ── advancing the world ─────────────────────────────────────────────────────
 //
@@ -82,6 +88,16 @@ function latched(state, a, ev, cfg) {
   return null;
 }
 
+/** A declined ask stays declined until the user clears it or the day rolls. */
+function declined(state, a, ev, cfg, now) {
+  if (a.pendingAsk && a.pendingAsk.day !== dayKey(now)) { a.pendingAsk = undefined; if (a.status === 'paused') a.status = 'active'; }
+  if (a.pendingAsk) {
+    return Verdict.deny(`you did not approve this: ${a.pendingAsk.reason}. Resume it with /enforcer-governor:resume`, { ...of, source: OPERATOR });
+  }
+  if (a.status === 'paused') return Verdict.deny('this agent is paused. Resume it with /enforcer-governor:resume', { ...of, source: OPERATOR });
+  return null;
+}
+
 /** Fleet totals first: agents can each sit inside their own limit and together blow the budget. */
 function periodCaps(state, a, ev, cfg) {
   if (!cfg.budgetOn || !state.periods) return null;
@@ -114,7 +130,7 @@ function burn(state, a, ev, cfg, now) {
             : null;
   if (!hit) return null;
   a.burnFlagged = true; pause(a);
-  return Verdict.ask(`${hit[0]} $${hit[1].toFixed(2)} a minute, over your $${hit[2]} a minute mark`, of);
+  return asking(a, `${hit[0]} $${hit[1].toFixed(2)} a minute, over your $${hit[2]} a minute mark`, now);
 }
 
 /** Flagged once per burst, so a genuine twenty-agent job asks one question, not twenty. */
@@ -123,8 +139,8 @@ function fanout(state, a, ev, cfg, now) {
   const spawned = spawnRate(state, now);
   if (spawned < cfg.fanoutLimit) return null;
   state.fanoutFlagged = true; pause(a);
-  return Verdict.ask(
-    `${spawned} new agents started in the last minute, and you asked to be told past ${cfg.fanoutLimit}`, of);
+  return asking(a,
+    `${spawned} new agents started in the last minute, and you asked to be told past ${cfg.fanoutLimit}`, now);
 }
 
 /** A rate-limited call fails cheaply; the retry does not. */
@@ -133,8 +149,8 @@ function retryStorm(state, a, ev, cfg, now) {
   const recent = a.fails.reduce((n, t) => n + (t > now - BURN_WINDOW ? 1 : 0), 0);
   if (recent < cfg.retryLimit) return null;
   a.retryFlagged = true; pause(a);
-  return Verdict.ask(
-    `it hit ${recent} errors in a minute and kept going, which is a retry loop, not progress`, of);
+  return asking(a,
+    `it hit ${recent} errors in a minute and kept going, which is a retry loop, not progress`, now);
 }
 
 function clientCap(state, a, ev, cfg) {
@@ -153,20 +169,20 @@ function hardLimit(state, a, ev, cfg) {
   return Verdict.deny('it reached your spend limit', of);
 }
 
-function softLimit(state, a, ev, cfg) {
+function softLimit(state, a, ev, cfg, now) {
   if (!cfg.budgetOn || a.escalated || a.tokens < a.budget * a.soft) return null;
   a.escalated = true;
   if (cfg.softAction === 'escalate') {
     pause(a);
-    return Verdict.ask(`it has used ${Math.round(a.soft * 100)}% of your spend limit`, of);
+    return asking(a, `it has used ${Math.round(a.soft * 100)}% of your spend limit`, now);
   }
   ground(a, 'soft');
   return Verdict.deny('it passed the warn-me mark, and you set that to stop it', of);
 }
 
-const CHECKS = [latched, periodCaps, loop, burn, fanout, retryStorm, clientCap, hardLimit, softLimit];
+const CHECKS = [latched, declined, periodCaps, loop, burn, fanout, retryStorm, clientCap, hardLimit, softLimit];
 // Each check's machine code (codes.mjs), stamped on the verdict it returns.
-const CHECK_CODES = new Map([[latched, 'agent_stopped'], [periodCaps, 'period_limit'], [loop, 'loop_detected'],
+const CHECK_CODES = new Map([[latched, 'agent_stopped'], [declined, 'ask_declined'], [periodCaps, 'period_limit'], [loop, 'loop_detected'],
   [burn, 'burn_rate'], [fanout, 'fanout_rate'], [retryStorm, 'retry_storm'], [clientCap, 'client_limit'],
   [hardLimit, 'spend_limit'], [softLimit, 'spend_warning']]);
 
