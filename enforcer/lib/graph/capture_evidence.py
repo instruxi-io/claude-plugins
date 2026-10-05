@@ -22,6 +22,7 @@ import json, os, re, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import lib
 
+DELIVERY_CMD = re.compile(r"gh\s+pr\s+(create|view)\b|land-pr\.sh")
 EXIT_LINE = re.compile(r"^(?:Error: )?Exit code (\d+)\s*", re.I)
 
 
@@ -123,11 +124,10 @@ def main():
     if rec:
         rec["_run"] = rid          # scoped to THIS run; attach strips it
         lib.append_evidence(sid, rec)
-    # A pull request URL seen in a result is evidence the `pr` output can extract.
-    text = rec.get("output") or "" if rec and name == "Bash" else (
-        json.dumps(resp)[:200000] if not captured and resp else "")
-    if text:
-        for url in dict.fromkeys(lib.PR_RE.findall(text)):
+    # A pull request URL is an artifact only when a delivery command produced it
+    # (the create, view and land-pr.sh commands), never a list or MCP output.
+    if name == "Bash" and rec and DELIVERY_CMD.search(str(rec.get("cmd") or "")):
+        for url in dict.fromkeys(lib.PR_RE.findall(rec.get("output") or "")):
             lib.append_evidence(sid, {"kind": "artifact", "url": url, "label": "pull request URL in tool output", "_run": rid})
 
 

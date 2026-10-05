@@ -80,6 +80,7 @@ def unseen(items):
 def main():
     inp = lib.read_stdin()
     lib.tighten_state()
+    lib.sweep_sessions()
     lib.mark_attested(inp.get("session_id"))  # hooks run here: python3 and fcntl worked to get this far
     try:
         said = unseen(notices())
