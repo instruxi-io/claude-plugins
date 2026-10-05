@@ -14,5 +14,13 @@
     "mcp",
     "identity",
     "authorization"
-  ]
+  ],
+  "extensions": {
+    "com.openai": {
+      "hooks": "./hooks/hooks.json",
+      "interface": {
+        "displayName": "Enforcer"
+      }
+    }
+  }
 }

@@ -9,7 +9,7 @@ import { sweep } from '../adapters/claude-code/sweep.mjs';
 import { recordPluginRoot } from '../adapters/claude-code/telemetry.mjs';
 import { governor } from '../adapters/claude-code/index.mjs';
 
-const ev = input();
+const ev = input('SessionStart', 'SessionEnd');
 const EVENT = ev.hook_event_name === 'SessionEnd' ? 'SessionEnd' : 'SessionStart';
 const gov = governor();
 const event = { agent: agentOf(ev), session: ev.session_id, transcript: ev.transcript_path, cwd: ev.cwd };

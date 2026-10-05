@@ -4,7 +4,7 @@ import { input, emit, pass } from './lib.mjs';
 import { decide } from '../lib/decide.mjs';
 
 const EVENT = 'PreToolUse';
-const r = await decide(input());
+const r = await decide(input('PreToolUse'));
 try { process.stderr.write(r.line + '\n'); } catch {}
 const top = r.notice ? { systemMessage: r.notice } : {};
 if (r.decision) {

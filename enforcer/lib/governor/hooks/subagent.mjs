@@ -10,7 +10,7 @@ import { input, emit, done } from './lib.mjs';
 import { agentOf } from '../adapters/claude-code/events.mjs';
 import { governor } from '../adapters/claude-code/index.mjs';
 
-const ev = input();
+const ev = input('SubagentStart', 'SubagentStop');
 const EVENT = ev.hook_event_name === 'SubagentStop' ? 'SubagentStop' : 'SubagentStart';
 
 // The id is what the harness calls the subagent where it gives us one; a start

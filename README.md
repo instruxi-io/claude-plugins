@@ -35,6 +35,25 @@ claude plugin install enforcer@instruxi             # brings enforcer-graph (its
 claude plugin install enforcer-governor@instruxi     # optional: govern agent actions
 ```
 
+### Codex CLI
+
+The same `enforcer/` package installs in Codex through `.agents/plugins/marketplace.json`
+(`enforcer/plugin.json` carries the `extensions.com.openai` overlay: hooks at
+`./hooks/hooks.json`, display name). Codex also exports `CLAUDE_PLUGIN_ROOT`, so the hook
+commands resolve unchanged.
+
+```sh
+codex plugin marketplace add instruxi-io/claude-plugins
+codex plugin install enforcer@instruxi
+codex mcp login enforcer
+```
+
+The shims are tested on Codex-shaped hook input (`enforcer/test/fixtures/codex`); events
+the shims do not handle (`PermissionRequest`, `PostCompact`, `Interrupt`) are ignored with
+exit 0 and no output. These fixtures are written from Codex's documented payload, and the
+install commands above have not been run against a live Codex: Codex CLI is not installed
+on the build machine.
+
 **Instruxi staff** can also install `jev-hooks@instruxi` (put your Jev key in
 `~/.claude/settings.json` as `{ "env": { "TYPESAFE_API_KEY": "<your key>" } }`),
 or run the `claude-loadout` wizard from the private jev-hooks releases, which

@@ -1,0 +1,12 @@
+{
+  "name": "instruxi",
+  "description": "Instruxi plugins for Codex CLI",
+  "plugins": [
+    {
+      "name": "enforcer",
+      "description": "Enforcer for your agent: the MCP connection, one sign-in, workspace files, the graph worker and the governor.",
+      "source": "./enforcer",
+      "version": "1.0.0-rc.1"
+    }
+  ]
+}

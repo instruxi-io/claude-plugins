@@ -7,7 +7,7 @@ import { input, emit } from './lib.mjs';
 import { agentOf } from '../adapters/claude-code/events.mjs';
 import { governor } from '../adapters/claude-code/index.mjs';
 
-const ev = input();
+const ev = input('PostToolUse');
 const failed = !!(ev.tool_response && (ev.tool_response.is_error || ev.tool_response.error));
 
 // Record the outcome and ship what has been decided, without waiting: the
