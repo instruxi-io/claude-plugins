@@ -814,6 +814,73 @@ class TriageAPI(FakeAPI):
         return [{"body": "Tried X; blocked by Y; next needs Z"}]
 
 
+FAKE_LIMIT_CLAUDE = r"""#!/usr/bin/env python3
+import json, os, sys
+argv = sys.argv[1:]
+def opt(name):
+    return argv[argv.index(name) + 1] if name in argv else None
+key = opt("--name").split(":", 1)[1]
+with open(os.environ["FAKE_CALLS"], "a") as f:
+    f.write(json.dumps({"key": key, "argv": argv}) + "\n")
+sid = opt("--resume") or opt("--session-id")
+print(json.dumps({"type": "system", "subtype": "init", "session_id": sid, "mcp_servers": []}))
+# verbatim shape of a Claude Code worker that hit the account's weekly limit (2026-10-05)
+print(json.dumps({"type": "result", "subtype": "success", "is_error": True, "num_turns": 1, "session_id": sid,
+                  "permission_denials": [], "stop_reason": "stop_sequence",
+                  "result": "You've hit your weekly limit \u00b7 resets Oct 7, 8pm (America/New_York)", "usage": {}}))
+sys.exit(1)
+"""
+
+
+class HarnessUsageLimit(unittest.TestCase):
+    """A usage limit is the harness's state: no attempt spent, no run failed,
+    launches held until the reset (2026-10-05: the old behaviour spent both
+    attempts within a second and exited with 'nothing runnable')."""
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.state = os.path.join(self.tmp, "s")
+        os.makedirs(os.path.join(self.state, "logs"))
+        self.calls = os.path.join(self.tmp, "calls.jsonl")
+        self.cbin = os.path.join(self.tmp, "claude-limited")
+        with open(self.cbin, "w") as f:
+            f.write(FAKE_LIMIT_CLAUDE)
+        os.chmod(self.cbin, 0o755)
+        os.environ["FAKE_CALLS"] = self.calls
+
+    def test_reset_time_is_parsed_from_the_message(self):
+        import datetime as dt
+        from zoneinfo import ZoneInfo
+        now = dt.datetime(2026, 10, 5, 13, 42, tzinfo=dt.timezone.utc).timestamp()
+        t = gd.limit_reset_at("You've hit your weekly limit \u00b7 resets Oct 7, 8pm (America/New_York)", now=now)
+        when = dt.datetime.fromtimestamp(t, ZoneInfo("America/New_York"))
+        self.assertEqual((when.year, when.month, when.day, when.hour, when.minute), (2026, 10, 7, 20, 0))
+        self.assertIsNone(gd.limit_reset_at("rate limited, try again later"))
+        self.assertTrue(gd.harness_limit_text({"result_text": "You've hit your weekly limit", "error_text": None}))
+        self.assertIsNone(gd.harness_limit_text({"result_text": "the suite is red", "error_text": None}))
+
+    def test_limit_spends_no_attempt_and_holds_launches(self):
+        out = io.StringIO()
+        api = TriageAPI([node("a", repo="r")])
+        a = args(workers=1, state_dir=self.state, stop_file=os.path.join(self.state, "STOP"),
+                 interval=0.05, claude=self.cbin, on_limit="exit")
+        d = gd.Dispatcher(api, a, out)
+        rc = d.run()
+        text = out.getvalue()
+        with open(self.calls) as f:
+            launches = [json.loads(l) for l in f]
+        self.assertEqual(rc, 4, text)
+        self.assertEqual(len(launches), 1, "a limited worker must not be relaunched: %s" % text)
+        self.assertIn("HARNESS-LIMITED a: You've hit your weekly limit", text)
+        self.assertIn("no attempt spent", text)
+        self.assertEqual(d.attempts.get("a", 0), 0)
+        self.assertFalse(d.failures.get("a"), "a limit is not a failed attempt")
+        self.assertGreater(d.limited_until, time.time())
+        # the run was left to lapse, not failed: no completion was written
+        self.assertFalse([c for c in api.calls if c[0] == "complete"], "no run must be failed on a limit")
+        self.assertNotIn("FAILED a", text)
+        self.assertNotIn("triage", text.lower().split("harness usage limit")[0])
+
+
 class FailureRemediation(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()

@@ -379,3 +379,12 @@ bash enforcer-graph/test/run.sh
 
 A five-minute demo (two sessions, one killed, the lease reclaimed) lives with the
 service, in enforcer-graph's `docs/PLUGIN_DEMO.md` (Instruxi staff).
+
+### Harness usage limits
+
+A worker that exits with a usage-limit message (`You've hit your weekly limit · resets Oct 7, 8pm (America/New_York)`,
+rate limited, out of quota) is the HARNESS's state, not the node's. The dispatcher spends no attempt, leaves the
+run to lapse rather than failing it, logs `HARNESS-LIMITED <key>: … until <reset>`, and holds every launch until
+the reset named in the message (else `--limit-backoff`, default 1800 s). `--on-limit exit` makes it exit 4 instead,
+for a supervisor that restarts it. Before 1.0.0-rc.2 the limit counted as two failed attempts and the dispatcher
+exited with "nothing runnable" (2026-10-05).

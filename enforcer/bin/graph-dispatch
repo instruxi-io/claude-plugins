@@ -498,6 +498,8 @@ class Dispatcher:
         self.blocked = False
         self.salvaged = set()  # node keys already salvaged (or skipped) this session
         self.denied = {}  # node key -> worktree path: denied by the environment, not relaunched this session
+        self.limited_until = 0.0  # harness usage limit: no launches before this instant
+        self.limit_noted = 0.0
         self.mcp_down = 0
         self.last_skip = {}
         self.drain_said = False
@@ -977,6 +979,19 @@ class Dispatcher:
             if not w.alive():
                 s = summarize(w.log_path)
                 sess = getattr(w, "session", None)
+                limit_text = harness_limit_text(s)
+                if limit_text:
+                    # the harness, not the node: refund the attempt, leave the
+                    # run to lapse (a failed run would read as the node's
+                    # fault), and hold every launch until the reset
+                    del self.workers[key]
+                    self.attempts[key] = max(0, self.attempts.get(key, 0) - 1)
+                    until = limit_reset_at(limit_text) or (time.time() + self.args.limit_backoff)
+                    self.limited_until = max(self.limited_until, until)
+                    self.say("HARNESS-LIMITED %s: %s; no attempt spent; %s until %s"
+                             % (key, clip(limit_text, 160), "waiting" if self.args.on_limit == "wait" else "exiting",
+                                time.strftime("%Y-%m-%d %H:%M %Z", time.localtime(until))))
+                    continue
                 if sess is not None and getattr(w, "resumed", False) and not s["started"]:
                     # the resume never started (session gone, unreadable, ...):
                     # not the node's fault, so no attempt is spent; drop the
@@ -1342,8 +1357,25 @@ class Dispatcher:
         self.say("dispatching graph %s with %d workers; stop file %s" % (self.g, a.workers, a.stop_file))
         idle = 0
         while True:
+            if self.limited_until > time.time():
+                self.reap()
+                if self.args.on_limit == "exit" and not self.workers:
+                    self.say("harness usage limit: exiting 4; resume after %s"
+                             % time.strftime("%Y-%m-%d %H:%M %Z", time.localtime(self.limited_until)))
+                    return 4
+                if time.time() - self.limit_noted > 600:
+                    self.say("harness usage limit: holding every launch until %s (%d running)"
+                             % (time.strftime("%Y-%m-%d %H:%M %Z", time.localtime(self.limited_until)), len(self.workers)))
+                    self.limit_noted = time.time()
+                if self.stopping() and not self.workers:
+                    self.say("drained while limited; exiting (peak %d)" % self.peak)
+                    return 0
+                time.sleep(min(max(a.interval, 1.0), max(self.limited_until - time.time(), 0.0) + 0.01, 300))
+                continue
             try:
                 self.reap()
+                if self.limited_until > time.time():
+                    continue  # a worker just reported a usage limit: hold, do not tick
                 if time.time() - self.lease_at > LEASE_TTL / 3:
                     if not self.renew_lease():
                         return 3
@@ -1374,6 +1406,54 @@ class Dispatcher:
 
 
 LAND_CODES = {0: "merged", 2: "CI failed", 3: "conflict with the base", 4: "timed out", 5: "usage or gh error"}
+
+# A harness usage limit is the HARNESS's state, not the node's: the worker
+# exits at its first turn with a message like
+#   "You've hit your weekly limit \u00b7 resets Oct 7, 8pm (America/New_York)"
+# Before 1.0.0-rc.2 that counted as a failed attempt, the retry hit the same
+# wall a second later, the node went to triage and the dispatcher exited with
+# "nothing runnable" (2026-10-05, hook-adapter-grok). Now: no attempt is spent,
+# the run is left to lapse (not failed), and the dispatcher waits for the reset.
+LIMIT_RE = re.compile(r"hit your (?:weekly|daily|monthly|session|usage) limit|usage limit (?:reached|exceeded)|"
+                      r"rate[ -]?limit(?:ed|s)?\b|too many requests|out of (?:credits|quota)", re.I)
+RESET_RE = re.compile(r"resets?\s+(?:at\s+|on\s+)?(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+(\d{1,2}),?"
+                      r"\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?(?:\s*\(([A-Za-z_]+/[A-Za-z_+\-]+)\))?", re.I)
+MONTHS = {m: i for i, m in enumerate(["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"], 1)}
+
+
+def harness_limit_text(s):
+    """The limit message when a worker's result or stderr says the harness is
+    out of quota, else None."""
+    for t in (s.get("result_text"), s.get("error_text")):
+        if t and LIMIT_RE.search(t):
+            return t
+    return None
+
+
+def limit_reset_at(text, now=None):
+    """Epoch seconds of the reset named in a limit message ("resets Oct 7, 8pm
+    (America/New_York)"), or None when the message names no time. The year is
+    the current one, or the next when that instant is already past."""
+    m = RESET_RE.search(text or "")
+    if not m:
+        return None
+    import datetime as _dt
+    try:
+        from zoneinfo import ZoneInfo
+        tz = ZoneInfo(m.group(6)) if m.group(6) else None
+    except Exception:
+        tz = None
+    hour = int(m.group(3)) % 12 + (12 if (m.group(5) or "").lower() == "pm" else 0)
+    now_ts = time.time() if now is None else now
+    base = _dt.datetime.fromtimestamp(now_ts, tz)
+    try:
+        when = base.replace(month=MONTHS[m.group(1).lower()[:3]], day=int(m.group(2)), hour=hour,
+                            minute=int(m.group(4) or 0), second=0, microsecond=0)
+    except ValueError:
+        return None
+    if when.timestamp() < now_ts:
+        when = when.replace(year=when.year + 1)
+    return when.timestamp()
 
 
 def _events(path):
@@ -1699,6 +1779,10 @@ def parse_args(argv):
     p.add_argument("--land-timeout", type=int, default=3000)
     p.add_argument("--state-dir", help="logs and stop file (default ~/.config/enforcer/dispatch/<graph>)")
     p.add_argument("--stop-file", help="touch it to drain (default <state-dir>/STOP)")
+    p.add_argument("--on-limit", choices=["wait", "exit"], default="wait",
+                   help="when the harness reports a usage limit: wait for the reset (default) or exit 4")
+    p.add_argument("--limit-backoff", type=float, default=1800,
+                   help="seconds to hold when a limit message names no reset time")
     p.add_argument("--plugin-dir", action="append", default=[],
                    help="extra plugin dirs (default: the newest cached enforcer plugin, for the MCP server)")
     p.add_argument("--no-salvage", action="store_true",
