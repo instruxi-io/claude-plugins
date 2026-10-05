@@ -61,7 +61,7 @@ enforcer/
   commands/*.md            Claude extra, thin: each just invokes its skill
   hooks/hooks.json         Claude adapter wiring -> bin/enforcer hook|governor
   hooks/claude/*.mjs       the shims
-  harness/codex/           plugin.json extensions.com.openai overlay, hooks wiring
+  enforcer/harness/codex/   plugin.json extensions.com.openai overlay, hooks wiring
   harness/grok/            hooks/*.json templates, config.toml [mcp_servers.enforcer] snippet, agents/
   bin/enforcer             node CLI: login, workspace, files, headers, governor, hook, harness install <claude|codex|grok>
   bin/graph-dispatch       python
@@ -125,7 +125,7 @@ and the protected-resource and authorization-server metadata carry `authorizatio
 client registration (`registration_endpoint`), so a client needs no pre-issued client id.
 
 - **Codex:** `codex mcp add enforcer --url https://api.instruxi.dev/mcp` (or merge
-  `harness/codex/mcp.json`), then `codex mcp login enforcer`. Codex discovers the metadata
+  `enforcer/harness/codex/mcp.json`), then `codex mcp login enforcer`. Codex discovers the metadata
   above, registers itself, and opens the browser for the authorization-code + PKCE flow.
 - **Grok:** `grok mcp add --transport http enforcer https://api.instruxi.dev/mcp` (or merge
   `harness/grok/config.toml`). Grok completes OAuth in the browser on first connect;
