@@ -1269,6 +1269,37 @@ class FailureRemediation(unittest.TestCase):
         self.assertIn("TRIAGE-VIOLATION a", text)
         self.assertEqual([w[0] for w in api.writes], ["node"])  # the triage node only
 
+    def _prereq(self, **node):
+        node.setdefault("key", "k")
+        node.setdefault("title", "t")
+        return gd.triage_decision({"triage": {"action": "prerequisite", "reason": "r", "nodes": [node]}})
+
+    def test_triage_merge_type_from_triage_is_dropped(self):
+        t, why = self._prereq(type="merge")
+        self.assertIsNotNone(t, why)
+        self.assertNotIn("type", t["nodes"][0])
+        self.assertTrue(any("type 'merge'" in d for d in t["dropped"]))
+        t, _ = gd.triage_decision({"triage": {"action": "revise", "reason": "r", "type": "merge", "description": "d"}})
+        self.assertNotIn("type", t)
+
+    def test_triage_data_pr_from_triage_is_dropped(self):
+        t, why = self._prereq(data={"pr": "other/repo#1", "model": "opus", "max_turns": 999, "tier": "fast", "repo": "r"})
+        self.assertEqual(t["nodes"][0]["data"], {"tier": "fast", "repo": "r"})
+        self.assertEqual(len(t["dropped"]), 3)
+
+    def test_triage_repo_dotdot_x_is_refused(self):
+        t, why = self._prereq(data={"repo": "../x"})
+        self.assertIsNone(t)
+        self.assertIn("data.repo", why)
+        self.assertIn("../x", gd.unsafe_ident({"key": "k", "data": {"repo": "../x"}}))
+
+    def test_triage_key_with_slash_is_refused(self):
+        t, why = self._prereq(key="a/b")
+        self.assertIsNone(t)
+        self.assertIn("key", why)
+        self.assertTrue(gd.unsafe_ident({"key": "a/b"}))
+        self.assertEqual(gd.unsafe_ident({"key": "ok-1.x", "data": {"repo": "claude-plugins"}}), "")
+
     def test_invalid_decision_applies_nothing(self):
         os.environ["FAKE_TRIAGE"] = json.dumps({"action": "rewrite-everything", "reason": "x"})
         rc, d, api, text, launches = self.run_dispatch()
