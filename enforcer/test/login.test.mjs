@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { createHash } from 'node:crypto';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -197,14 +197,21 @@ await ok('the last preset is remembered and shown by `workspace current`', async
 });
 
 await ok('one credential at a time: a sign-in replaces a key and a key replaces a sign-in', async () => {
-  const { execFileSync } = await import('node:child_process');
+  const { execFileSync, spawnSync } = await import('node:child_process');
   const { saveCredentials, readCredentials } = await import('../src/credentials.mjs');
   saveCredentials({ enforcer: { api_key: 'env3_' + 'k'.repeat(43), base_url: base } });
   // The browser path, driven through the CLI entry point's save logic by importing it is not
   // possible without a browser, so exercise the same rule on the api-key path in reverse.
   saveCredentials({ enforcer: { base_url: base, oauth: { access_token: 'at', client_id: 'c' } } });
-  execFileSync(process.execPath, [new URL('../bin/login.mjs', import.meta.url).pathname, 'api-key', 'env3_' + 'z'.repeat(43)],
+  const keyFile = join(tmpdir(), 'k-' + process.pid);
+  writeFileSync(keyFile, 'env3_' + 'z'.repeat(43) + '\n');
+  execFileSync(process.execPath, [new URL('../bin/login.mjs', import.meta.url).pathname, 'api-key', keyFile],
     { env: { ...process.env, ENFORCER_API_KEY: '' }, encoding: 'utf8' });
+  rmSync(keyFile);
+  const refused = spawnSync(process.execPath, [new URL('../bin/login.mjs', import.meta.url).pathname, 'api-key', 'env3_' + 'y'.repeat(43)],
+    { env: { ...process.env, ENFORCER_API_KEY: '' }, encoding: 'utf8' });
+  assert.equal(refused.status, 2, 'a key passed as an argument is refused');
+  assert.match(refused.stdout, /Do not pass the key as an argument/);
   const e = readCredentials().enforcer;
   assert.equal(e.api_key, 'env3_' + 'z'.repeat(43));
   assert.equal(e.oauth, undefined, 'saving a key must drop the browser sign-in, or the two identities disagree');

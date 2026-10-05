@@ -3,4 +3,4 @@ description: Set this project up for Enforcer - show the plan (graph allow rules
 argument-hint: [rules] [--activate]
 allowed-tools: Read, Grep, Glob, mcp__plugin_enforcer_enforcer__enforcer_whoami, mcp__plugin_enforcer_enforcer__enforcer_setup_plan
 ---
-Invoke the `enforcer` skill's `setup` procedure (skills/enforcer/setup.md) with: $ARGUMENTS
+Invoke the `enforcer` skill's `setup` procedure (skills/enforcer/setup.md) with the arguments given to this command
