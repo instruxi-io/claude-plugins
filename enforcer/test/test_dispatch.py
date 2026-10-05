@@ -536,7 +536,7 @@ class DryRunAndDrain(unittest.TestCase):
         try:
             a = args(workers=1, state_dir=state, stop_file=os.path.join(state, "STOP"), interval=0.2,
                      max_attempts=1)
-            self.assertEqual(gd.Dispatcher(api, a, out).run(), 0)
+            self.assertEqual(gd.Dispatcher(api, a, out).run(), 6)
         finally:
             gd.LAND_PR = old
         done = [c for c in api.calls if c[0] == "complete"]
@@ -1345,7 +1345,7 @@ class TriageAllFailures(unittest.TestCase):
 
     def test_failed_ops_node_is_triaged_once(self):
         rc, d, api, text, launches = self.run_dispatch()
-        self.assertEqual(rc, 0, text)
+        self.assertEqual(rc, 6, text)
         self.assertEqual(len(launches), 1, text)  # not relaunched next pass
         self.assertTrue(launches[0]["key"].startswith("triage-o-"), launches)
         self.assertTrue(launches[0]["prompt"].startswith("TRIAGE."))
@@ -1690,6 +1690,80 @@ class DispatcherResilience(unittest.TestCase):
         p.wait(timeout=5)
         self.assertIsNotNone(p.poll())
         self.assertFalse(os.path.exists(os.path.join(self.state, "pids.json")))
+
+class GraphBasesAndHold(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.state = os.path.join(self.tmp, "s")
+        os.makedirs(os.path.join(self.state, "logs"))
+
+    def test_bases_a_500_on_get_graph_does_not_cache_empty_bases(self):
+        class G(FakeAPI):
+            fail = True
+
+            def graph(self, g):
+                if self.fail:
+                    raise gd.APIError(500, "boom")
+                return {"node_defaults": {"bases": {"r": "release"}}}
+        api = G([])
+        d = gd.Dispatcher(api, args(state_dir=self.state), io.StringIO())
+        self.assertEqual(d.graph_bases(), {})
+        api.fail = False
+        self.assertEqual(d.graph_bases(), {"r": "release"})
+
+    def test_bases_hold_loop_renews_the_lease(self):
+        d = gd.Dispatcher(FakeAPI([]), args(state_dir=self.state, stop_file=os.path.join(self.tmp, "STOP"),
+                                            interval=0.05, workers=1), io.StringIO())
+        d.limited_until = time.time() + 30
+        d.lease_at = 0
+        calls = []
+
+        def renew():
+            calls.append(1)
+            d.limited_until = 0
+            open(d.args.stop_file, "w").close()
+            return True
+        d.renew_lease = renew
+        self.assertEqual(d.loop(), 0)
+        self.assertTrue(calls, "the lease must be renewed while holding for a usage limit")
+        self.assertTrue(os.path.exists(os.path.join(self.state, "pids.json")))
+
+
+class ExitCodes(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.state = os.path.join(self.tmp, "s")
+        os.makedirs(os.path.join(self.state, "logs"))
+
+    def test_exit_404_at_startup_exits_1_naming_the_workspace(self):
+        class A(FakeAPI):
+            def frontier(self, g):
+                raise gd.APIError(404, "not found")
+
+            def nodes(self, g):
+                raise gd.APIError(404, "not found")
+        out = io.StringIO()
+        d = gd.Dispatcher(A([]), args(state_dir=self.state, stop_file=os.path.join(self.state, "STOP"),
+                                      interval=0.05), out)
+        self.assertEqual(d.run(), 1)
+        self.assertIn("workspace", out.getvalue())
+        self.assertIn("404", out.getvalue())
+
+    def test_exit_failed_nodes_remaining_exits_6(self):
+        d = gd.Dispatcher(FakeAPI([node("a", status="failed"), node("b", status="done")]),
+                          args(state_dir=self.state, stop_file=os.path.join(self.state, "STOP"),
+                               interval=0.01, workers=1), io.StringIO())
+        self.assertEqual(d.run(), 6)
+        self.assertFalse(os.path.exists(os.path.join(self.state, "pids.json")))
+
+    def test_exit_all_done_exits_0_and_stale_stop_file_is_cleared(self):
+        stop = os.path.join(self.state, "STOP")
+        open(stop, "w").close()
+        d = gd.Dispatcher(FakeAPI([node("b", status="done")]),
+                          args(state_dir=self.state, stop_file=stop, interval=0.01, workers=1), io.StringIO())
+        self.assertEqual(d.run(), 0)
+        self.assertFalse(os.path.exists(stop))
+
 
 if __name__ == "__main__":
     unittest.main()
