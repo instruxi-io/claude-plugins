@@ -40,9 +40,9 @@
     },
     {
       "name": "enforcer-files",
-      "description": "Files in your Enforcer workspace: find, read and share them through the enforcer MCP server, and move the bytes with /enforcer-files:upload and /enforcer-files:download. Uses the enforcer plugin's sign-in.",
-      "category": "platform",
-      "source": "./enforcer-files"
+      "description": "DEPRECATED: now part of enforcer. Install enforcer instead; this alias goes away after one release.",
+      "category": "deprecated",
+      "source": "./enforcer"
     }
   ]
 }

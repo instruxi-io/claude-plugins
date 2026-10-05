@@ -1,6 +1,5 @@
 // ~/.enforcer/credentials.json is ONE file with FOUR readers and writers:
 //   enforcer/src/credentials.mjs        (the enforcer plugin; MCP header helper, /enforcer:login)
-//   enforcer-files/src/credentials.mjs  (byte-identical; CI `cmp`s it)
 //   enforcer-governor src/credentials.mjs (folded in at enforcer/lib/governor)
 //   enforcer/lib/graph/lib.py         (Python)
 // A format change in one signs the others out. This writes the file with each

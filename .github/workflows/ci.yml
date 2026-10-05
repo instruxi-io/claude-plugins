@@ -17,15 +17,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}   # one graph test resolves a public PR with `gh`
         run: npm test
-      - name: enforcer-files plugin tests
-        working-directory: enforcer-files
-        run: npm test
-      # Every Enforcer plugin reads and writes ~/.enforcer/credentials.json. The
-      # module that does it is copied, not shared (a plugin cannot import another
-      # at runtime), so the copies must not drift: a format change in one would
-      # sign the other out.
-      - name: the shared credential module is one module
-        run: cmp enforcer/src/credentials.mjs enforcer-files/src/credentials.mjs
       # One credential file, four implementations (enforcer, enforcer-files,
       # enforcer-governor (folded in at enforcer/lib/governor), and the graph hooks'
       # Python): each must read what the others write, refreshes included.
@@ -67,7 +58,7 @@ jobs:
             console.log("enforcer hooks.json routes the graph events through bin/enforcer hook");'
       - name: manifests are valid JSON
         run: |
-          for f in .claude-plugin/marketplace.json kit.json enforcer/.claude-plugin/plugin.json enforcer/.mcp.json enforcer/hooks/hooks.json enforcer/docs/graph/settings.example.json enforcer-files/.claude-plugin/plugin.json test/fixtures/mcp-tool-names.json; do
+          for f in .claude-plugin/marketplace.json kit.json enforcer/.claude-plugin/plugin.json enforcer/.mcp.json enforcer/hooks/hooks.json enforcer/docs/graph/settings.example.json test/fixtures/mcp-tool-names.json; do
             node -e 'JSON.parse(require("fs").readFileSync(process.argv[1]))' "$f" && echo "$f ok"
           done
       # A local source that stops resolving breaks every new install while

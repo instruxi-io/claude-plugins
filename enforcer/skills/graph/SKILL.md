@@ -133,9 +133,9 @@ well-written report with nothing behind it scores like no report at all.
   `.claude/graph.json`, the attach hook uploads any longer output to the user's
   enforcer-files and the evidence item carries its `file` id; you do nothing.
   Without that setting, upload the log yourself through Bash, so that the
-  upload is captured too (this is the `enforcer-files:upload` skill run as a
+  upload is captured too (this is the `files` skill run as a
   command):
-  `node "$(ls -d ~/.claude/plugins/cache/*/enforcer-files/*/bin/files.mjs | tail -1)" upload <log> --dir graph-evidence`.
+  `node "${CLAUDE_PLUGIN_ROOT}/bin/files.mjs" upload <log> --dir graph-evidence`.
   Then cite the file id it prints in the report line the log supports.
 - **Prose only supports.** The report says which evidence answers which
   criterion; it cannot stand in for the evidence. At most 20 items are
