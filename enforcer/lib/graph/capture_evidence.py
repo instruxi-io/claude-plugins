@@ -22,7 +22,7 @@ import json, os, re, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import lib
 
-EXIT_LINE = re.compile(r"^Error: Exit code (\d+)\s*", re.I)
+EXIT_LINE = re.compile(r"^(?:Error: )?Exit code (\d+)\s*", re.I)
 
 
 def normalize(resp):
@@ -108,6 +108,13 @@ def main():
         return  # no run held: nothing to attach this to, so nothing to record
     rid = run.get("run_id")
     resp = normalize(inp.get("tool_response"))
+    if inp.get("hook_event_name") == "PostToolUseFailure" or (resp is None and "error" in inp):
+        # PostToolUseFailure carries the failure as a top-level `error` string
+        # ("Exit code N\n<output>"), not as tool_response. Always a failed command.
+        err = str(inp.get("error") or "")
+        resp = err if (EXIT_LINE.match(err) or inp.get("is_interrupt")) else "Error: Exit code 1\n" + err
+        if inp.get("is_interrupt") and not EXIT_LINE.match(err):
+            resp = "Error: Exit code 130\n" + err
     rec = None
     if captured:
         rec = bash_record(inp.get("tool_input"), resp) if name == "Bash" \

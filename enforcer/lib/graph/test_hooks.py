@@ -30,5 +30,28 @@ class ActorKey(unittest.TestCase):
             lib.clear_run(key)
 
 
+class PostToolUseFailure(unittest.TestCase):
+    def test_failure_payload_with_error_is_captured_as_a_failed_command(self):
+        """PostToolUseFailure payload with error is captured as a failed command"""
+        tmp = tempfile.mkdtemp()
+        env = {k: v for k, v in os.environ.items() if k not in ("GRAPH_ID", "ENFORCER_STATE_DIR")}
+        env["CLAUDE_PLUGIN_DATA"] = os.path.join(tmp, "data")
+        os.environ["CLAUDE_PLUGIN_DATA"] = env["CLAUDE_PLUGIN_DATA"]
+        os.environ.pop("ENFORCER_STATE_DIR", None)
+        key = "sfail"
+        lib.save_run(key, {"graph_id": "g", "node_id": "n", "run_id": "r"})
+        payload = {"session_id": key, "cwd": tmp, "hook_event_name": "PostToolUseFailure",
+                   "tool_name": "Bash", "tool_input": {"command": "npm test"},
+                   "error": "Exit code 3\nCannot find module", "is_interrupt": False}
+        r = subprocess.run(["node", CLI, "hook", "post-tool-use-failure", "capture-evidence"],
+                           input=json.dumps(payload), capture_output=True, text=True, env=env)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        ev = lib.load_evidence(key)
+        self.assertEqual(len(ev), 1)
+        self.assertEqual((ev[0]["cmd"], ev[0]["exit"]), ("npm test", 3))
+        self.assertIn("Cannot find module", ev[0]["output"])
+        lib.clear_run(key)
+
+
 if __name__ == "__main__":
     unittest.main()

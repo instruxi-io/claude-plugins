@@ -139,6 +139,23 @@
           }
         ]
       }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/enforcer\" hook post-tool-use-failure capture-evidence",
+            "timeout": 3
+          },
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/enforcer\" hook post-tool-use-failure heartbeat",
+            "timeout": 3
+          }
+        ]
+      }
     ]
   }
 }
