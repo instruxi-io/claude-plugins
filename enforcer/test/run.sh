@@ -3,10 +3,11 @@
 set -u
 cd "$(dirname "$0")/.."
 PORT=${PORT:-18790}
+RUN_TMP="$(mktemp -d)"; export TMPDIR="$RUN_TMP"   # everything below lives here, removed on exit
 export STUB_LOG="$(mktemp)"
 export STUB_HEALTH_FILE="$(mktemp)"
 python3 test/stub_graph.py "$PORT" & STUB=$!
-trap 'kill $STUB 2>/dev/null; rm -rf "$WORK" "$STUB_LOG" "$STUB_LOG.hb"' EXIT
+trap 'kill $STUB 2>/dev/null; rm -rf "$WORK" "$STUB_LOG" "$STUB_LOG.hb" "$RUN_TMP"' EXIT
 sleep 0.4
 
 WORK="$(mktemp -d)"

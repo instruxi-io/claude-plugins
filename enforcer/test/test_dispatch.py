@@ -1,3 +1,4 @@
+import tmpclean  # noqa: F401
 """bin/graph-dispatch: tier -> model, contested resources, merge targets, the
 stream summary, dry run and stop-file drain, against a fake API and a fake
 claude binary. No network, no model."""

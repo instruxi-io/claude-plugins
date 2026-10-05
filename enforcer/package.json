@@ -4,7 +4,8 @@
   "version": "1.0.4",
   "type": "module",
   "scripts": {
-    "test": "node test/cli-main.test.mjs && node test/login.test.mjs && node test/files.test.mjs && node test/codex-shims.test.mjs && node test/grok-shims.test.mjs && node test/grok-shim.test.mjs && node test/grok-install.test.mjs && node test/migration.test.mjs && node test/credentials.test.mjs && node test/setup-command.test.mjs && node test/workspace.test.mjs && node test/validate-plugin.test.mjs && node test/governor-wiring.test.mjs && node test/governor-announce.test.mjs && (cd lib/governor && npm test) && python3 -m unittest discover test && bash test/run.sh"
+    "posttest": "node test/tmp-posttest.mjs",
+    "test": "node --import ./test/tmp-cleanup.mjs test/cli-main.test.mjs && node --import ./test/tmp-cleanup.mjs test/login.test.mjs && node --import ./test/tmp-cleanup.mjs test/files.test.mjs && node --import ./test/tmp-cleanup.mjs test/codex-shims.test.mjs && node --import ./test/tmp-cleanup.mjs test/grok-shims.test.mjs && node --import ./test/tmp-cleanup.mjs test/grok-shim.test.mjs && node --import ./test/tmp-cleanup.mjs test/grok-install.test.mjs && node --import ./test/tmp-cleanup.mjs test/migration.test.mjs && node --import ./test/tmp-cleanup.mjs test/credentials.test.mjs && node --import ./test/tmp-cleanup.mjs test/setup-command.test.mjs && node --import ./test/tmp-cleanup.mjs test/workspace.test.mjs && node --import ./test/tmp-cleanup.mjs test/validate-plugin.test.mjs && node --import ./test/tmp-cleanup.mjs test/governor-wiring.test.mjs && node --import ./test/tmp-cleanup.mjs test/governor-announce.test.mjs && (cd lib/governor && npm test) && python3 -m unittest discover test && python3 -m unittest discover -s lib/graph -p \"test_*.py\" && bash test/run.sh"
   },
   "engines": {
     "node": ">=18"

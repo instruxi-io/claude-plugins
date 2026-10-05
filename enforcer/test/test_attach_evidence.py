@@ -1,3 +1,4 @@
+import tmpclean  # noqa: F401
 """Full outputs beyond the clip go to the USER's enforcer-files (adapter-files).
 
 Run by test/run.sh (python3 -m unittest); pytest collects it too. Everything is

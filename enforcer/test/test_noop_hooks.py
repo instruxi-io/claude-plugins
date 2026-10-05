@@ -1,3 +1,4 @@
+import tmpclean  # noqa: F401
 """Every graph hook is a no-op without a graph context: exit 0, empty stdout, fast."""
 import json, os, subprocess, tempfile, time, unittest
 
