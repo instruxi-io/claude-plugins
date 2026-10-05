@@ -23,9 +23,21 @@ const HOOKS = {
   'stop': ['open_run_guard'],
 };
 
+// Same key as lib/graph/lib.py actor_key: sha256("agent_id:<id>")[:32] for a subagent, else session_id.
+function actorKey(ev) {
+  if (ev.agent_id) return process.getBuiltinModule('node:crypto').createHash('sha256').update(`agent_id:${ev.agent_id}`).digest('hex').slice(0, 32);
+  return ev.session_id || 'unknown';
+}
+const GRAPH_TOOL = /^mcp__(plugin_enforcer_enforcer|enforcer|enforcer-graph)__graph_/;
+
 function graphContextLive(ev) {
   if (process.env.GRAPH_ID) return true;
+  // graph_* tool handlers (track-run, attach-evidence, open-run-guard) create or need the run: never gate them
+  if (GRAPH_TOOL.test(ev.tool_name || '')) return true;
   const sid = ev.session_id;
+  const actor = actorKey(ev);
+  if (existsSync(join(stateBase(), 'runs', `${actor}.json`))) return true;
+  if (sid && existsSync(join(stateBase(), 'runs', `${sid}.live`))) return true;
   // session state: a claimed run is recorded here
   const data = stateBase();
   if (sid && existsSync(join(data, 'runs', `${sid}.json`))) return true;

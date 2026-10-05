@@ -6,8 +6,7 @@ CLI = os.path.join(ROOT, "bin", "enforcer")
 EVENTS = ["session-start", "pre-tool-use", "post-tool-use", "pre-compact", "stop"]
 PAYLOAD = {
     "session-start": {"hook_event_name": "SessionStart", "source": "startup"},
-    "pre-tool-use": {"hook_event_name": "PreToolUse", "tool_name": "mcp__enforcer__graph_report",
-                     "tool_input": {"graph": "g", "node_id": "n", "run_id": "r", "status": "succeeded", "report": "x"}},
+    "pre-tool-use": {"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "ls"}},
     "post-tool-use": {"hook_event_name": "PostToolUse", "tool_name": "Bash", "tool_input": {"command": "ls"}, "tool_response": {}},
     "pre-compact": {"hook_event_name": "PreCompact"},
     "stop": {"hook_event_name": "Stop"},
