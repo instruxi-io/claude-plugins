@@ -1,3 +1,4 @@
+import tmpclean  # noqa: F401
 import importlib.util, os, stat, tempfile, unittest
 HERE = os.path.dirname(os.path.abspath(__file__))
 _s = importlib.util.spec_from_file_location("graph_lib", os.path.join(HERE, "lib.py"))

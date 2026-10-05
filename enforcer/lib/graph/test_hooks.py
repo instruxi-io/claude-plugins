@@ -1,3 +1,4 @@
+import tmpclean  # noqa: F401
 import hashlib, json, os, subprocess, sys, tempfile, unittest
 HERE = os.path.dirname(os.path.abspath(__file__))
 import importlib.util

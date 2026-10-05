@@ -1,3 +1,4 @@
+import tmpclean  # noqa: F401
 """graph_report carries what the run cost: model, tokens and tool calls read
 from the reporting agent's own transcript since its claim."""
 import json, os, subprocess, sys, tempfile, unittest

@@ -1,3 +1,4 @@
+import tmpclean  # noqa: F401
 """graph_report is blocked when the evidence misses a kind the card's hints ask for."""
 import json, os, sys, tempfile, unittest
 
