@@ -160,6 +160,74 @@ def fake_claude(dirpath, seconds):
     return p
 
 
+def git_repo_with_origin(tmp, branches):
+    """A checkout under tmp/r whose origin has the given branches."""
+    import subprocess
+    run = lambda c, cwd: subprocess.run(c, cwd=cwd, check=True, capture_output=True)
+    o = os.path.join(tmp, "origin.git")
+    run(["git", "init", "-q", "--bare", "-b", branches[0], o], tmp)
+    root = os.path.join(tmp, "root")
+    os.makedirs(root)
+    src = os.path.join(root, "r")
+    run(["git", "clone", "-q", o, src], tmp)
+    run(["git", "config", "user.email", "t@t"], src)
+    run(["git", "config", "user.name", "t"], src)
+    run(["git", "commit", "-q", "--allow-empty", "-m", "i"], src)
+    for b in branches:
+        run(["git", "push", "-q", "origin", "HEAD:refs/heads/" + b], src)
+    run(["git", "remote", "set-head", "origin", branches[0]], src)
+    return root
+
+
+class BaseResolution(unittest.TestCase):
+    def test_four_step_order(self):
+        n = node("k", repo="r", base="feat")
+        gb, reg = {"r": "staging"}, {"r": "develop"}
+        self.assertEqual(gd.resolve_base(n, gb, reg, "origin/main"), ("origin/feat", "data.base"))
+        n = node("k", repo="r")
+        self.assertEqual(gd.resolve_base(n, gb, reg, "origin/main"), ("origin/staging", "graph bases"))
+        self.assertEqual(gd.resolve_base(n, {}, reg, "origin/main"), ("origin/develop", "repo-bases.json"))
+        self.assertEqual(gd.resolve_base(n, {}, {}, "origin/main"), ("origin/main", "origin/HEAD"))
+        self.assertEqual(gd.resolve_base(node("k", repo="other"), gb, reg, "origin/main")[1], "origin/HEAD")
+
+    def test_registry_file(self):
+        tmp = tempfile.mkdtemp()
+        p = os.path.join(tmp, "repo-bases.json")
+        self.assertEqual(gd.load_repo_bases(p), {})
+        json.dump({"portal": "staging"}, open(p, "w"))
+        self.assertEqual(gd.load_repo_bases(p), {"portal": "staging"})
+
+    def test_missing_base_is_refused(self):
+        tmp = tempfile.mkdtemp()
+        root = git_repo_with_origin(tmp, ["main", "staging"])
+        with self.assertRaises(gd.BaseMissing) as c:
+            gd.worktree_for(node("k", repo="r"), root, tmp, registry={"r": "nope"})
+        self.assertIn("origin/nope", str(c.exception))
+        self.assertIn("repo-bases.json", str(c.exception))
+        out = io.StringIO()
+        reg = os.path.join(tmp, "reg.json")
+        json.dump({"r": "nope"}, open(reg, "w"))
+        a = args(dry_run=False, repo_root=root, state_dir=os.path.join(tmp, "s"), repo_bases=reg)
+        os.makedirs(os.path.join(tmp, "s", "logs"))
+        d = gd.Dispatcher(FakeAPI([]), a, out)
+        d.launch(node("k", repo="r"))
+        self.assertIn("refuse k:", out.getvalue())
+        self.assertEqual(d.workers, {})
+
+    def test_worktree_uses_registry_base_and_dry_run_logs_it(self):
+        tmp = tempfile.mkdtemp()
+        root = git_repo_with_origin(tmp, ["main", "staging"])
+        path, branch, note = gd.worktree_for(node("k", repo="r"), root, tmp, registry={"r": "staging"})
+        self.assertIn("added off origin/staging", note)
+        reg = os.path.join(tmp, "reg.json")
+        json.dump({"r": "staging"}, open(reg, "w"))
+        out = io.StringIO()
+        a = args(dry_run=True, repo_root=root, state_dir=os.path.join(tmp, "s2"), stop_file="/nope",
+                 repo_bases=reg, claude=os.path.join(tmp, "none"))
+        gd.Dispatcher(FakeAPI([node("j", repo="r")]), a, out).run()
+        self.assertIn("base=origin/staging", out.getvalue())
+
+
 class DryRunAndDrain(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
