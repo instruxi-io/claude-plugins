@@ -114,3 +114,27 @@ docs/CANONICAL_RELEASE.md  this file
 
 Nodes that edit `enforcer/` declare `data.resources: ["claude-plugins/enforcer"]`
 so the dispatcher never runs two of them at once.
+
+## Remote MCP OAuth from non-Claude clients
+
+`https://api.instruxi.dev/mcp` is a remote MCP server that takes OAuth, not a shim.
+`bash test/mcp-oauth-smoke.sh` proves it with no credential: `initialize` returns 401 with
+`WWW-Authenticate: Bearer resource_metadata=".../.well-known/oauth-protected-resource/mcp"`,
+and the protected-resource and authorization-server metadata carry `authorization_endpoint`,
+`token_endpoint` and the `enforcer:*` scopes. The server advertises PKCE S256 and dynamic
+client registration (`registration_endpoint`), so a client needs no pre-issued client id.
+
+- **Codex:** `codex mcp add enforcer --url https://api.instruxi.dev/mcp` (or merge
+  `harness/codex/mcp.json`), then `codex mcp login enforcer`. Codex discovers the metadata
+  above, registers itself, and opens the browser for the authorization-code + PKCE flow.
+- **Grok:** `grok mcp add --transport http enforcer https://api.instruxi.dev/mcp` (or merge
+  `harness/grok/config.toml`). Grok completes OAuth in the browser on first connect;
+  `grok mcp doctor` diagnoses connectivity.
+
+The Codex and Grok flows were not completed here (browser sign-in is interactive; codex is not
+installed on this machine). grok 1.0.41 non-interactive listing, verbatim:
+
+```
+$ grok mcp list
+No MCP servers configured. Run `grok mcp add --help` to get started.
+```
