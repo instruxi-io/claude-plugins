@@ -33,6 +33,7 @@ const as = createServer(async (req, res) => {
   if (u.pathname === '/.well-known/oauth-authorization-server') {
     return json(200, { issuer: base, authorization_endpoint: base + '/authorize', token_endpoint: base + '/token', registration_endpoint: base + '/register', ...(issued.meta || {}) });
   }
+  if (u.pathname === '/revoke') { issued.revoked = new URLSearchParams(body).get('token'); return json(200, {}); }
   if (u.pathname === '/register') { const b = JSON.parse(body); issued.redirect = b.redirect_uris[0]; return json(201, { client_id: 'mcp_test' }); }
   if (u.pathname === '/token') {
     const p = new URLSearchParams(body);
@@ -215,6 +216,29 @@ await ok('one credential at a time: a sign-in replaces a key and a key replaces 
   const e = readCredentials().enforcer;
   assert.equal(e.api_key, 'env3_' + 'z'.repeat(43));
   assert.equal(e.oauth, undefined, 'saving a key must drop the browser sign-in, or the two identities disagree');
+});
+
+await ok('logout calls revoke', async () => {
+  const { execFile } = await import('node:child_process');
+  const run = (args, env) => new Promise((res) => execFile(process.execPath, args, { env: { ...process.env, ...env }, encoding: 'utf8' }, (e, stdout) => res({ stdout })));
+  const { saveCredentials, readCredentials } = await import('../src/credentials.mjs');
+  issued.meta = { revocation_endpoint: base + '/revoke' };
+  saveCredentials({ enforcer: { base_url: base, oauth: { access_token: 'at', refresh_token: 'rt-1', client_id: 'c' } } });
+  const r = await run([new URL('../bin/login.mjs', import.meta.url).pathname, 'logout'], { ENFORCER_API_KEY: 'env3_' + 'q'.repeat(43) });
+  assert.equal(issued.revoked, 'rt-1');
+  assert.equal(readCredentials()?.enforcer?.oauth, undefined);
+  assert.match(r.stdout, /Revoked the refresh token/);
+  assert.match(r.stdout, /ENFORCER_API_KEY/, 'names the env credential that still authenticates');
+  delete issued.meta;
+});
+
+await ok('ENFORCER_BASE_URL overrides saved base_url', async () => {
+  const { execFile } = await import('node:child_process');
+  const run = (args, env) => new Promise((res) => execFile(process.execPath, args, { env: { ...process.env, ...env }, encoding: 'utf8' }, (e, stdout) => res({ stdout })));
+  const { saveCredentials } = await import('../src/credentials.mjs');
+  saveCredentials({ enforcer: { base_url: 'http://127.0.0.1:1', oauth: { access_token: 'at' } } });
+  const r = await run([new URL('../bin/login.mjs', import.meta.url).pathname, 'scopes'], { ENFORCER_BASE_URL: base });
+  assert.match(r.stdout, new RegExp(base.replace(/\./g, '\\.')));
 });
 
 as.close();

@@ -22,7 +22,7 @@ import { createServer } from 'node:http';
 import { createHash, randomBytes } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { currentWorkspace, describe } from './enforcer-workspace.mjs';
-import { readCredentials, saveCredentials, enforcerKey, SHARED_FILE, DEFAULT_BASE_URL, authHeaders } from '../src/credentials.mjs';
+import { readCredentials, saveCredentials, legacyCredentialFile, enforcerKey, SHARED_FILE, DEFAULT_BASE_URL, authHeaders } from '../src/credentials.mjs';
 
 const API = '/api/v1/enforcer';
 const b64url = (buf) => buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -236,9 +236,9 @@ async function main(rawArgv) {
   const { argv: a1, scope } = extractScope(rawArgv);
   const { argv, preset: forPreset } = extractPreset(a1);
   const [cmd, arg] = parseLoginArgs(argv);
-  // A saved sign-in pins the origin it was made against; otherwise
-  // ENFORCER_BASE_URL (a self-hosted workspace), then the public one.
-  const base = (readCredentials()?.enforcer?.base_url || process.env.ENFORCER_BASE_URL || DEFAULT_BASE_URL).replace(/\/+$/, '');
+  // ENFORCER_BASE_URL wins (switch deployments without editing a file), then the
+  // origin the saved sign-in was made against, then the public one.
+  const base = (process.env.ENFORCER_BASE_URL || readCredentials()?.enforcer?.base_url || DEFAULT_BASE_URL).replace(/\/+$/, '');
 
   if (cmd === 'status') {
     const doc = readCredentials();
@@ -264,11 +264,30 @@ async function main(rawArgv) {
 
   if (cmd === 'logout') {
     const doc = readCredentials();
-    if (!doc) { out('Already signed out.'); return; }
-    const { api_key, oauth, ...rest } = doc.enforcer;   // eslint-disable-line no-unused-vars
-    saveCredentials({ ...doc, enforcer: rest });
-    out('Signed out on this machine. No Enforcer plugin here sends a credential now.');
-    out('An API key still exists on the server until you revoke it there.');
+    const remaining = [];
+    if (doc?.enforcer) {
+      const { api_key, oauth, ...rest } = doc.enforcer;   // eslint-disable-line no-unused-vars
+      // Revoke the refresh token server-side when the server advertises an endpoint.
+      if (oauth?.refresh_token) {
+        try {
+          const meta = await discover(base);
+          if (meta.revocation_endpoint) {
+            const body = new URLSearchParams({ token: oauth.refresh_token, token_type_hint: 'refresh_token' });
+            if (oauth.client_id) body.set('client_id', oauth.client_id);
+            const r = await fetch(meta.revocation_endpoint, { method: 'POST', body, signal: AbortSignal.timeout(10_000) });
+            out(r.ok ? 'Revoked the refresh token on the server.' : `The server refused to revoke the refresh token (HTTP ${r.status}); it expires on its own.`);
+          } else out('This server advertises no revocation endpoint; the refresh token stays valid there until it expires.');
+        } catch (e) { out(`Could not revoke the refresh token (${e.message}); it stays valid on the server until it expires.`); }
+      }
+      saveCredentials({ ...doc, enforcer: rest });
+      if (api_key) out('The saved API key was removed here, but it still exists on the server until you revoke it there.');
+      out('Signed out: the saved credential in ' + SHARED_FILE() + ' is gone.');
+    } else out('No saved credential in ' + SHARED_FILE() + '.');
+    if (process.env.ENFORCER_API_KEY && process.env.ENFORCER_API_KEY.trim()) remaining.push('the ENFORCER_API_KEY environment variable (unset it)');
+    const legacy = legacyCredentialFile();
+    if (legacy) remaining.push(`the legacy credential file ${legacy} (delete it)`);
+    if (remaining.length) { out('Still authenticating:'); for (const r of remaining) out('  - ' + r); }
+    else out('No Enforcer plugin here sends a credential now.');
     return;
   }
 
