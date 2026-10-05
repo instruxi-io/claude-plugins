@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const home = mkdtempSync(join(tmpdir(), 'ws-'));
+delete process.env.ENFORCER_API_KEY; delete process.env.ENFORCER_KEY;
 process.env.HOME = home; process.env.ENFORCER_HOME = join(home, '.enforcer'); process.env.GOVERNOR_HOME = join(home, '.g');
 const { saveCredentials, readCredentials, SHARED_FILE, SHARED_DIR } = await import('../src/credentials.mjs');
 const { listWorkspaces, switchWorkspace, currentWorkspace, resolveWorkspace } = await import('../bin/enforcer-workspace.mjs');
@@ -87,5 +88,22 @@ await ok('a 403 from /auth/tenant/switch names enforcer:workspace.write and the 
   const denied = (url, init) => (String(url).endsWith('/auth/tenant/switch') ? { ok: false, status: 403, json: async () => ({}) } : fake(url, init));
   await assert.rejects(() => switchWorkspace('Acme', { fetchImpl: denied }),
     (e) => /enforcer:workspace\.write/.test(e.message) && /\/enforcer:login --for work/.test(e.message) && /403/.test(e.message));
+});
+await ok('switch prod with two matches refuses', async () => {
+  const rows = [{ tenant_id: 't-1', name: 'Prod East' }, { tenant_id: 't-2', name: 'Prod West' }];
+  assert.throws(() => resolveWorkspace(rows, 'prod'), /not an exact/);
+  assert.throws(() => resolveWorkspace(rows, 'prod', { fuzzy: true }), /matches 2 workspaces/);
+  assert.equal(resolveWorkspace([rows[0]], 'east', { fuzzy: true }).tenant_id, 't-1');
+});
+await ok('switch prints the reconnect notice', async () => {
+  const { execFileSync } = await import('node:child_process');
+  const src = readFileSync(new URL('../bin/enforcer-workspace.mjs', import.meta.url), 'utf8');
+  assert.match(src, /\/mcp reconnect or restart/);
+  assert.ok(execFileSync);
+});
+await ok('tenants 500 falls back to /auth/me', async () => {
+  const f = (url, init) => (String(url).endsWith('/auth/tenants') ? { ok: false, status: 500, json: async () => ({}) } : fake(url, init));
+  const rows = await listWorkspaces({ fetchImpl: f });
+  assert.equal(rows.length, 1); assert.equal(rows[0].current, true);
 });
 console.log(`${pass} passed`);
