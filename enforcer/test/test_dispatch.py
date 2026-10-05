@@ -1016,7 +1016,7 @@ class TriageAPI(FakeAPI):
         self.writes.append(("node", body))
         n = {"id": "id-" + body["key"], "key": body["key"], "type": body.get("type"), "status": "active",
              "title": body.get("title"), "work_state": "looking_for_work", "data": body.get("data") or {}}
-        if (body.get("data") or {}).get("triage_of"):
+        if (body.get("data") or {}).get("triage_of") or (body.get("data") or {}).get("dispatcher_lease"):
             self._nodes.append(n)
         return n
 
@@ -1026,6 +1026,9 @@ class TriageAPI(FakeAPI):
 
     def patch_node(self, g, n, body):
         self.writes.append(("patch", n, body))
+        for x in self._nodes:  # persist, so the lease re-read sees the write
+            if x["id"] == n and "data" in body:
+                x["data"] = body["data"]
         return {}
 
     def runs(self, g, n):
@@ -1532,6 +1535,92 @@ class HarnessParsers(unittest.TestCase):
         out = subprocess.run([PATH, "--help"], capture_output=True, text=True).stdout
         self.assertIn("--harness {claude,codex,grok}", out)
 
+
+
+class DispatcherResilience(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.state = os.path.join(self.tmp, "state")
+        os.makedirs(os.path.join(self.state, "logs"))
+
+    def test_resilience_worktree_for_runtime_error_does_not_stop_the_loop(self):
+        api = FakeAPI([node("a", repo="r"), node("b", repo="r")])
+        out = io.StringIO()
+        d = gd.Dispatcher(api, args(state_dir=self.state, workers=2), out)
+        seen = []
+
+        def launch(n, cold=False):
+            seen.append(n["key"])
+            if n["key"] == "a":
+                raise RuntimeError("stale registered worktree")
+        d.launch = launch
+        nodes, launched = d.tick()
+        self.assertEqual(sorted(seen), ["a", "b"])
+        self.assertEqual([n["key"] for n in launched], ["b"])
+        self.assertIn("launch a failed", out.getvalue())
+
+    def test_resilience_timeout_expired_escalates_to_sigkill(self):
+        import subprocess
+        p = subprocess.Popen(["sh", "-c", "trap '' TERM; while :; do sleep 1; done"],
+                             start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        time.sleep(0.3)
+        gd.kill_group(p, grace=0.5)
+        self.assertIsNotNone(p.poll())
+        self.assertEqual(p.returncode, -9)
+
+    def test_resilience_sigterm_clears_the_lease_and_fails_open_runs(self):
+        import subprocess
+        lease = {"id": "L", "key": gd.LEASE_KEY, "type": "ops", "status": "done", "data": {}}
+
+        class API(FakeAPI):
+            def patch_node(s, g, nid, body):
+                lease["data"] = body["data"]
+            def create_node(s, g, body):
+                pass
+        api = API([lease])
+        d = gd.Dispatcher(api, args(state_dir=self.state, no_lease=False), io.StringIO())
+        self.assertTrue(d.acquire_lease())
+        self.assertEqual(lease["data"]["dispatcher"]["pid"], os.getpid())
+        w = gd.Worker(node("a"), os.path.join(self.state, "logs", "a.log"))
+        rid = "0" * 8 + "-0000-0000-0000-" + "0" * 12
+        with open(w.log_path, "w") as lf:
+            lf.write(json.dumps({"type": "assistant", "message": {"content": [
+                {"type": "tool_use", "id": "t1", "name": "mcp__x__graph_next_work", "input": {}}]}}) + "\n")
+            lf.write(json.dumps({"type": "user", "message": {"content": [
+                {"type": "tool_result", "tool_use_id": "t1", "content": json.dumps({"run_id": rid})}]}}) + "\n")
+        w.proc = subprocess.Popen(["sleep", "30"], start_new_session=True)
+        d.workers["a"] = w
+        d.shutdown("SIGTERM")
+        self.assertIsNotNone(w.proc.poll())
+        self.assertIsNone(lease["data"].get("dispatcher"))
+        self.assertEqual(d.workers, {})
+        failed = [c for c in api.calls if c[0] == "complete"]
+        self.assertEqual(len(failed), 1)
+        self.assertEqual(failed[0][2]["status"], "failed")
+        self.assertIn("orphaned", failed[0][2]["error"])
+        with open(os.path.join(self.state, "pids.json")) as f:
+            self.assertEqual(json.load(f)["workers"], {})
+
+    def test_resilience_same_pid_other_host_is_not_us(self):
+        d = gd.Dispatcher(FakeAPI([]), args(state_dir=self.state), io.StringIO())
+        self.assertFalse(d.is_us({"host": "some-other-host", "pid": os.getpid(), "nonce": d.nonce}))
+        self.assertTrue(d.is_us({"host": gd.socket.gethostname(), "pid": os.getpid(), "nonce": d.nonce}))
+        self.assertFalse(d.is_us({"host": gd.socket.gethostname(), "pid": os.getpid(), "nonce": "x"}))
+        until = (gd.utcnow() + dt.timedelta(seconds=100)).isoformat()
+        lease = {"id": "L", "key": gd.LEASE_KEY, "data": {"dispatcher": {"host": "some-other-host", "pid": os.getpid(), "until": until}}}
+        d2 = gd.Dispatcher(FakeAPI([lease]), args(state_dir=self.state, takeover=False), io.StringIO())
+        self.assertFalse(d2.acquire_lease())
+
+    def test_resilience_startup_reaps_pids_json_orphans(self):
+        import subprocess
+        p = subprocess.Popen(["sleep", "30"], start_new_session=True)
+        with open(os.path.join(self.state, "pids.json"), "w") as f:
+            json.dump({"dispatcher": 2 ** 22 + 12345, "host": gd.socket.gethostname(), "workers": {"a": p.pid}}, f)
+        d = gd.Dispatcher(FakeAPI([]), args(state_dir=self.state), io.StringIO())
+        self.assertEqual(d.reap_orphans(), ["a"])
+        p.wait(timeout=5)
+        self.assertIsNotNone(p.poll())
+        self.assertFalse(os.path.exists(os.path.join(self.state, "pids.json")))
 
 if __name__ == "__main__":
     unittest.main()
