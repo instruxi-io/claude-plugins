@@ -318,7 +318,7 @@ class PruneWorktrees(unittest.TestCase):
         run(["git", "add", "-A"], os.path.join(root, "r-unmerged"))
         run(["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "u"], os.path.join(root, "r-unmerged"))
         out = io.StringIO()
-        removed, kept = gd.prune_worktrees(root, yes=True, registry={}, pr_state=lambda b, s: None, out=out)
+        removed, kept = gd.prune_worktrees(root, yes=True, registry={}, pr_state=lambda b, s: None, out=out, min_age=0)
         self.assertEqual([os.path.basename(p) for p, _ in removed], ["r-merged"])
         self.assertFalse(os.path.exists(os.path.join(root, "r-merged")))
         why = {os.path.basename(p): w for p, w in kept}
@@ -326,10 +326,70 @@ class PruneWorktrees(unittest.TestCase):
         self.assertIn("Review 2 branches", out.getvalue())
         self.assertTrue(os.path.isdir(os.path.join(root, "r-dirty")))
         # an open PR keeps it; a merged PR frees it
-        _, kept = gd.prune_worktrees(root, registry={}, pr_state=lambda b, s: "OPEN", out=io.StringIO())
+        _, kept = gd.prune_worktrees(root, registry={}, pr_state=lambda b, s: "OPEN", out=io.StringIO(), min_age=0)
         self.assertIn("open PR", [w for _, w in kept])
-        removed, _ = gd.prune_worktrees(root, yes=True, registry={}, pr_state=lambda b, s: "MERGED", out=io.StringIO())
+        removed, _ = gd.prune_worktrees(root, yes=True, registry={}, pr_state=lambda b, s: "MERGED", out=io.StringIO(), min_age=0)
         self.assertEqual([os.path.basename(p) for p, _ in removed], ["r-unmerged"])
+
+    def test_prune_live_worker_worktree_is_kept(self):
+        tmp = tempfile.mkdtemp()
+        root = git_repo_with_origin(tmp, ["main"])
+        gd.worktree_for(node("live", repo="r"), root, tmp)
+        gd.worktree_for(node("fresh", repo="r"), root, tmp)
+        # live: listed in pids.json; fresh: modified within the hour (default min_age)
+        removed, kept = gd.prune_worktrees(root, yes=True, registry={}, pr_state=lambda b, s: None,
+                                           out=io.StringIO(), live_keys={"live"}, min_age=0)
+        self.assertEqual([os.path.basename(p) for p, _ in removed], ["r-fresh"])
+        self.assertTrue(os.path.isdir(os.path.join(root, "r-live")))
+        gd.worktree_for(node("fresh2", repo="r"), root, tmp)
+        removed, _ = gd.prune_worktrees(root, yes=True, registry={}, pr_state=lambda b, s: None, out=io.StringIO())
+        self.assertEqual(removed, [])
+        self.assertTrue(os.path.isdir(os.path.join(root, "r-fresh2")))
+        d = os.path.join(tmp, "dispatch", "g")
+        os.makedirs(d)
+        with open(os.path.join(d, "pids.json"), "w") as f:
+            json.dump({"workers": {"live": 1}}, f)
+        self.assertEqual(gd.live_worker_keys(os.path.join(tmp, "dispatch")), {"live"})
+
+    def test_prune_merged_branch_is_deleted(self):
+        import subprocess
+        tmp = tempfile.mkdtemp()
+        root = git_repo_with_origin(tmp, ["main"])
+        src = os.path.join(root, "r")
+        gd.worktree_for(node("m", repo="r"), root, tmp)
+        removed, _ = gd.prune_worktrees(root, yes=True, registry={}, pr_state=lambda b, s: None,
+                                        out=io.StringIO(), min_age=0)
+        self.assertEqual(len(removed), 1)
+        br = subprocess.run(["git", "branch", "--list", "graph/m"], cwd=src, capture_output=True, text=True).stdout
+        self.assertEqual(br.strip(), "")
+        # a re-claim now adds off the base cleanly
+        _, _, note = gd.worktree_for(node("m", repo="r"), root, tmp)
+        self.assertTrue(note.startswith("added off"))
+
+    def test_prune_old_merged_pr_with_a_different_head_is_not_a_match(self):
+        import subprocess
+        tmp = tempfile.mkdtemp()
+        root = git_repo_with_origin(tmp, ["main"])
+        src = os.path.join(root, "r")
+        gd.worktree_for(node("o", repo="r"), root, tmp)
+        head = subprocess.run(["git", "rev-parse", "graph/o"], cwd=src, capture_output=True, text=True).stdout.strip()
+        bindir = os.path.join(tmp, "bin")
+        os.makedirs(bindir)
+        gh = os.path.join(bindir, "gh")
+        with open(gh, "w") as f:
+            f.write("#!/bin/sh\necho \"$GH_FAKE\"\n")
+        os.chmod(gh, 0o755)
+        old = dict(os.environ)
+        os.environ["PATH"] = bindir + os.pathsep + old["PATH"]
+        try:
+            os.environ["GH_FAKE"] = json.dumps([{"state": "MERGED", "headRefOid": "0" * 40}])
+            self.assertIsNone(gd.gh_pr_state("graph/o", src))
+            os.environ["GH_FAKE"] = json.dumps([{"state": "MERGED", "headRefOid": "0" * 40},
+                                                {"state": "MERGED", "headRefOid": head}])
+            self.assertEqual(gd.gh_pr_state("graph/o", src), "MERGED")
+        finally:
+            os.environ.clear()
+            os.environ.update(old)
 
 
 class DryRunAndDrain(unittest.TestCase):
