@@ -12,7 +12,7 @@ export const configHome = () => process.env.ENFORCER_CONFIG_HOME || join(home(),
 
 export function stateBase() {
   const explicit = process.env.ENFORCER_STATE_DIR || pluginDataEnv();
-  if (explicit) return explicit;
+  if (explicit) { migrateDir(legacyStateDir(), explicit); return explicit; }
   const d = join(configHome(), 'sessions', process.env.ENFORCER_HARNESS || 'claude');
   migrateDir(legacyStateDir(), d);
   return d;

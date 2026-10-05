@@ -18,7 +18,7 @@ def config_dir():
 
 
 def plugin_cache_glob(*parts):
-    return os.path.join(os.path.expanduser("~"), DOT, "plugins", "cache", "*", *parts)
+    return os.path.join(config_dir(), "plugins", "cache", "*", *parts)
 
 
 def plugin_data_env():
@@ -28,4 +28,4 @@ def plugin_data_env():
 
 def legacy_state_dir():
     """Where enforcer-graph kept session state before ~/.config/enforcer/sessions/."""
-    return os.path.join(os.path.expanduser("~"), DOT, "enforcer-graph")
+    return os.path.join(config_dir(), "enforcer-graph")
