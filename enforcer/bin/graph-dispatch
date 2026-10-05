@@ -84,6 +84,7 @@ import json
 import os
 import re
 import shlex
+import shutil
 import signal
 import socket
 import subprocess
@@ -520,6 +521,58 @@ def worktree_for(node, repo_root, state_dir, dry=False, graph_bases=None, regist
     return path, branch, "added off " + base
 
 
+def _manifest(path):
+    """Non-blank, non-comment lines of a .worktreeinclude / .worktreeshare."""
+    try:
+        with open(path) as f:
+            return [l.strip() for l in f if l.strip() and not l.lstrip().startswith("#")]
+    except OSError:
+        return []
+
+
+def worktree_setup(src, path, dry=False):
+    """Apply <src>/.worktreeinclude (gitignored files to COPY) and
+    <src>/.worktreeshare (directories to SYMLINK from the main checkout) to the
+    worktree at path. Tracked or missing paths are never copied; a path that
+    escapes src (except ../sibling shares) or already exists in the worktree is
+    skipped. Returns (copied, linked, notes); dry counts without touching."""
+    copied, linked, notes = 0, 0, []
+    root = os.path.realpath(src)
+    for rel in _manifest(os.path.join(src, ".worktreeinclude")):
+        f = os.path.realpath(os.path.join(src, rel))
+        if os.path.isabs(rel) or not f.startswith(root + os.sep) or not os.path.isfile(f):
+            notes.append("skip %s (missing or outside repo)" % rel)
+            continue
+        if git(["ls-files", "--error-unmatch", "--", rel], src).returncode == 0:
+            notes.append("skip %s (tracked by git)" % rel)
+            continue
+        dest = os.path.join(path, rel)
+        if os.path.lexists(dest):
+            notes.append("skip %s (already in worktree)" % rel)
+            continue
+        if not dry:
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            shutil.copy2(f, dest)
+        copied += 1
+    for rel in _manifest(os.path.join(src, ".worktreeshare")):
+        target = os.path.normpath(os.path.join(src, rel))
+        dest = os.path.normpath(os.path.join(path, rel))
+        if os.path.isabs(rel) or not os.path.isdir(target):
+            notes.append("skip %s (not a directory in the main checkout)" % rel)
+            continue
+        if rel.startswith("..") and os.path.dirname(os.path.normpath(path)) != os.path.dirname(root):
+            notes.append("skip %s (sibling share needs worktree beside checkout)" % rel)
+            continue
+        if os.path.lexists(dest):
+            notes.append("skip %s (already in worktree)" % rel)
+            continue
+        if not dry:
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            os.symlink(target, dest)
+        linked += 1
+    return copied, linked, notes
+
+
 def worker_prompt(graph, node, path, branch, previous=None):
     data = node.get("data") or {}
     lines = []
@@ -858,6 +911,13 @@ class Dispatcher:
             return
         if branch:
             note += " base=%s" % self.base_of(n, path)[0]
+            if repo and os.path.isdir(os.path.join(a.repo_root, repo)):
+                try:
+                    c, l, notes = worktree_setup(os.path.join(a.repo_root, repo), path, dry=a.dry_run)
+                    self.say("worktree-setup %s: copied %d, linked %d%s" % (
+                        n["key"], c, l, "".join("; " + x for x in notes)))
+                except OSError as e:
+                    self.say("worktree-setup %s: failed: %s" % (n["key"], e))
         failures = self.failures.get(n["key"]) or []
         sess = None
         if failures and not cold and not a.no_warm and not a.dry_run:

@@ -250,6 +250,49 @@ class BaseResolution(unittest.TestCase):
         self.assertIn("base=origin/staging", out.getvalue())
 
 
+class WorktreeSetup(unittest.TestCase):
+    def _repo(self):
+        import subprocess
+        tmp = tempfile.mkdtemp()
+        root = git_repo_with_origin(tmp, ["main"])
+        src = os.path.join(root, "r")
+        def w(rel, t):
+            os.makedirs(os.path.dirname(os.path.join(src, rel)), exist_ok=True)
+            with open(os.path.join(src, rel), "w") as f:
+                f.write(t)
+        w(".gitignore", ".env\nnode_modules/\n")
+        w("tracked.txt", "t")
+        w(".worktreeinclude", "# c\n.env\ntracked.txt\nmissing.txt\n")
+        w(".worktreeshare", "node_modules\n")
+        w(".env", "SECRET=1")
+        w("node_modules/pkg/i.js", "x")
+        for c in (["git", "add", "-A"], ["git", "commit", "-q", "-m", "f"], ["git", "push", "-q", "origin", "HEAD:main"]):
+            subprocess.run(c, cwd=src, check=True, capture_output=True)
+        return tmp, root, src
+
+    def test_copy_skip_tracked_and_symlink(self):
+        tmp, root, src = self._repo()
+        path, _, _ = gd.worktree_for(node("k", repo="r"), root, tmp)
+        c, l, notes = gd.worktree_setup(src, path)
+        self.assertEqual((c, l), (1, 1))
+        self.assertEqual(open(os.path.join(path, ".env")).read(), "SECRET=1")
+        self.assertTrue(os.path.islink(os.path.join(path, "node_modules")))
+        self.assertEqual(os.path.realpath(os.path.join(path, "node_modules")),
+                         os.path.realpath(os.path.join(src, "node_modules")))
+        self.assertTrue(any("tracked.txt" in x and "tracked" in x for x in notes))
+        self.assertTrue(any("missing.txt" in x for x in notes))
+        # tracked.txt came from git checkout, not a copy; a second run changes nothing
+        self.assertEqual(gd.worktree_setup(src, path)[:2], (0, 0))
+
+    def test_dry_run_logs_setup_line(self):
+        tmp, root, src = self._repo()
+        out = io.StringIO()
+        a = args(dry_run=True, repo_root=root, state_dir=os.path.join(tmp, "s"), stop_file="/nope",
+                 claude=os.path.join(tmp, "none"))
+        gd.Dispatcher(FakeAPI([node("j", repo="r")]), a, out).run()
+        self.assertIn("worktree-setup j: copied 1, linked 1", out.getvalue())
+
+
 class DryRunAndDrain(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
