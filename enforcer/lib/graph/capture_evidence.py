@@ -62,8 +62,12 @@ def bash_record(tool_input, resp):
             exit_code, out = 1, resp
         else:
             out = resp
+    cmd, n_cmd = lib.redact(cmd)
+    out, n_out = lib.redact(out)
     rec = {"kind": "command", "cmd": cmd[:lib.OUTPUT_CLIP], "exit": exit_code,
            "output": lib.clip_output(out)}
+    if n_cmd + n_out:
+        rec["redactions"] = n_cmd + n_out
     # The whole output rides beside the clip ONLY when the clip lost something,
     # so the data dir does not double for the common short command.
     # attach_evidence.py uploads it to enforcer-files and never sends it on.
@@ -85,7 +89,11 @@ def file_record(name, tool_input):
             if isinstance(edits, list) else ""
     else:
         excerpt = ti.get("new_string") or ti.get("new_source") or ti.get("content") or ""
-    return {"kind": "file", "path": path, "excerpt": str(excerpt)[:lib.EXCERPT_CLIP]}
+    excerpt, n = lib.redact(str(excerpt))
+    rec = {"kind": "file", "path": path, "excerpt": excerpt[:lib.EXCERPT_CLIP]}
+    if n:
+        rec["redactions"] = n
+    return rec
 
 
 def main():

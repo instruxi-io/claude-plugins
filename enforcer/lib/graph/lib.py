@@ -366,6 +366,33 @@ OUTPUT_CLIP = 4000         # per command record, stdout+stderr together
 EXCERPT_CLIP = 600         # per file record
 
 
+_REDACTIONS = [
+    ("pem", re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?(?:-----END [A-Z ]*PRIVATE KEY-----|\Z)", re.S), None),
+    ("bearer", re.compile(r"(?i)(\bBearer\s+)[A-Za-z0-9._~+/=-]{8,}"), r"\1"),
+    ("basic", re.compile(r"(?i)(\bBasic\s+)[A-Za-z0-9+/=]{8,}"), r"\1"),
+    ("jwt", re.compile(r"\beyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]*"), None),
+    ("apikey", re.compile(r"(?i)(\bX-API-Key:\s*)[^\s'\"]+"), r"\1"),
+    ("aws", re.compile(r"\b(?:AKIA|ASIA)[A-Z0-9]{16}\b"), None),
+    ("github", re.compile(r"\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})"), None),
+    ("slack", re.compile(r"\bxox[abposr]-[A-Za-z0-9-]{10,}"), None),
+    ("env", re.compile(r"(\b[A-Za-z0-9_]*(?:KEY|TOKEN|SECRET|PASSWORD)\s*=\s*)(?!\[redacted:)(?:\"[^\"\n]*\"|'[^'\n]*'|[^\s'\"]+)"), r"\1"),
+]
+
+
+def redact(text):
+    """Replace secrets in `text` with [redacted:<kind>]. Returns (text, count).
+    Applied at capture time, before anything is written to disk, so nothing
+    downstream (the server, the judge, enforcer-files) ever sees one."""
+    if not isinstance(text, str) or not text:
+        return text, 0
+    total = 0
+    for kind, rx, keep in _REDACTIONS:
+        repl = (keep + "[redacted:%s]" % kind) if keep else "[redacted:%s]" % kind
+        text, n = rx.subn(repl, text)
+        total += n
+    return text, total
+
+
 def clip_output(s, n=OUTPUT_CLIP, head_share=0.3):
     """Clip command output to n characters keeping BOTH ends.
 
@@ -457,7 +484,7 @@ def upload_full_output(text, cfg, timeout=UPLOAD_BUDGET_S):
         prov = _files_provider(base, auth, timeout)
         if not prov:
             return None
-        body = text.encode("utf-8", "replace")
+        body = redact(text)[0].encode("utf-8", "replace")
         # A name of its own per upload: enforcer-files answers a same-path
         # upload 409 unless told to overwrite, and a log must never replace one.
         import datetime, uuid
