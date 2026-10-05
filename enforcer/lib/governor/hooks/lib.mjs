@@ -3,13 +3,20 @@
 // The contract that actually works: exit 0 and print JSON. Never exit 2 with
 // JSON -- that combination is ignored.
 import { readFileSync } from 'node:fs';
+import { headlessFrom } from '../core/worker.mjs';
+import { loadConfig } from '../src/store.mjs';
 
 // `allowed` names the events this hook answers. A harness may route others here
 // (Codex also sends PermissionRequest, PostCompact, Interrupt): those are not
 // ours, so the only right answer is nothing at all, exit 0.
 export function input(...allowed) {
   let ev = {};
-  try { ev = JSON.parse(readFileSync(0, 'utf8') || '{}'); } catch { return {}; }
+  try {
+    const raw = readFileSync(0, 'utf8');
+    ev = raw.trim() ? JSON.parse(raw) : {};
+    if (!raw.trim()) Object.defineProperty(ev, 'badStdin', { value: true });
+  } catch { ev = {}; Object.defineProperty(ev, 'badStdin', { value: true }); return ev; }
+  if (!ev || typeof ev !== 'object' || Array.isArray(ev)) { ev = {}; Object.defineProperty(ev, 'badStdin', { value: true }); return ev; }
   if (allowed.length && ev && typeof ev.hook_event_name === 'string' && !allowed.includes(ev.hook_event_name)) process.exit(0);
   return ev;
 }
@@ -43,3 +50,32 @@ export function done() { process.exit(0); }
 // What Claude Code's hook JSON MEANS -- the tool map, the match text, the agent
 // id, the billing mode -- is in adapters/claude-code/events.mjs. This file is
 // only the stdin/stdout contract.
+
+// What a hook does when it cannot decide. failMode (config) is `ask` or `deny`;
+// unset, a headless run (no one to ask) denies and a person is asked. Never
+// "allow": a hook that throws exits 1, which Claude Code treats as non-blocking.
+export function failDecision() {
+  let mode;
+  try { mode = loadConfig().failMode; } catch {}
+  if (mode === 'ask' || mode === 'deny') return mode;
+  return headlessFrom(process.env) ? 'deny' : 'ask';
+}
+
+// PreToolUse entry: any throw becomes a deny (headless) or ask, never a pass.
+export async function guardPre(event, fn) {
+  try { await fn(); }
+  catch (e) {
+    let msg = ''; try { msg = String(e?.message || e).slice(0, 300); } catch {}
+    try { process.stderr.write(`enforcer-governor: governor_error: ${msg}\n`); } catch {}
+    emit(event, { permissionDecision: failDecision(),
+      permissionDecisionReason: `enforcer-governor:governor_error ${msg}\nThe governor failed while checking this action, so it is not allowed to proceed unchecked.` });
+  }
+}
+
+// Every other entry: a failure here decides nothing, so report it and exit 0.
+export async function guard(fn) {
+  try { await fn(); } catch (e) {
+    try { process.stderr.write(`enforcer-governor: hook error: ${String(e?.message || e).slice(0, 300)}\n`); } catch {}
+    process.exit(0);
+  }
+}

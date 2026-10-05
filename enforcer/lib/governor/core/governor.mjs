@@ -15,7 +15,7 @@
 //   - a tenant policy that cannot be reached leaves the local rule in charge.
 import { createHash } from 'node:crypto';
 import { gate } from './gate.mjs';
-import { matchRule, DEFAULT_RULES } from './capability.mjs';
+import { matchRule, DEFAULT_RULES, resolveRules } from './capability.mjs';
 import { consult } from './central.mjs';
 import { evaluate as economics } from './economics.mjs';
 import { DEFAULTS, priceOf, tokensForDollars, dollarsForTokens, getAgent, setModel, clientFor, sha256 } from './policy.mjs';
@@ -92,7 +92,7 @@ export function createGovernor({ harness = 'unknown', adapterVersion = '', cost 
     // The tenant's policy is asked BEFORE taking the lock, and only when a
     // local rule matched: the network must never sit inside the lock, and an
     // unmatched call has nothing to ask about.
-    const rules = cfg.rulesOn === false ? [] : (cfg.rules || DEFAULT_RULES);
+    const rules = resolveRules(cfg);
     const matched = matchRule(rules, event);
     const central = matched ? await consult(matched, cfg) : null;
 

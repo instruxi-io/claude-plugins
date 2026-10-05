@@ -3,9 +3,10 @@
 // `terraform apply` and never learned whether it ran. A failed call is also
 // the cheap half of a retry storm: the rate-limited call returns fast, and the
 // retry after it is what costs money.
-import { input, emit } from './lib.mjs';
+import { guard, input, emit } from './lib.mjs';
 import { agentOf } from '../adapters/claude-code/events.mjs';
 import { governor } from '../adapters/claude-code/index.mjs';
+await guard(async () => {
 
 const ev = input('PostToolUse');
 const failed = !!(ev.tool_response && (ev.tool_response.is_error || ev.tool_response.error));
@@ -15,3 +16,4 @@ const failed = !!(ev.tool_response && (ev.tool_response.is_error || ev.tool_resp
 governor().after({ agent: agentOf(ev) }, { failed });
 
 emit('PostToolUse', {});
+});

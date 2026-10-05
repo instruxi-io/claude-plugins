@@ -6,9 +6,10 @@
 // noticing new agent ids appearing in state — which meant a subagent that
 // never made a tool call was invisible, and the burst was always measured late.
 // SubagentStart is the event itself.
-import { input, emit, done } from './lib.mjs';
+import { guard, input, emit, done } from './lib.mjs';
 import { agentOf } from '../adapters/claude-code/events.mjs';
 import { governor } from '../adapters/claude-code/index.mjs';
+await guard(async () => {
 
 const ev = input('SubagentStart', 'SubagentStop');
 const EVENT = ev.hook_event_name === 'SubagentStop' ? 'SubagentStop' : 'SubagentStart';
@@ -19,3 +20,4 @@ if (EVENT === 'SubagentStart') governor().spawned(ev.session_id ? agentOf(ev) : 
 
 if (EVENT === 'SubagentStop') done();
 emit(EVENT, {});
+});

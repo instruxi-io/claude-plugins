@@ -86,6 +86,37 @@ export function ruleAuthz(rule) {
   return rule?.authz === 'read' ? 'read' : 'write';
 }
 
+const warned = new Set();
+/** Why a rule is unusable, or null. Shape plus regex compile. */
+export function ruleProblem(r) {
+  if (!r || typeof r !== 'object' || Array.isArray(r)) return 'not an object';
+  if (typeof r.match !== 'string' || !r.match) return 'match must be a non-empty string';
+  if (r.tool != null && typeof r.tool !== 'string') return 'tool must be a string';
+  try { new RegExp(r.match, 'i'); } catch (e) { return `match is not a valid regex (${e.message})`; }
+  return null;
+}
+
+/**
+ * The rules this config means. Bad rules are dropped with one stderr line each
+ * (naming the rule); good ones still apply. A non-empty list with NO usable
+ * rule is a broken config, not "no rules": that throws, and the hook denies.
+ */
+export function resolveRules(cfg = {}) {
+  if (cfg.rulesOn === false) return [];
+  if (cfg.rules == null) return DEFAULT_RULES;
+  if (!Array.isArray(cfg.rules)) throw new Error('config.rules is not an array');
+  const good = [];
+  cfg.rules.forEach((r, i) => {
+    const why = ruleProblem(r);
+    if (!why) return good.push(r);
+    let shown; try { shown = JSON.stringify(r); } catch { shown = String(r); }
+    const line = `enforcer-governor: invalid rule #${i} ${shown}: ${why}; skipped`;
+    if (!warned.has(line)) { warned.add(line); try { process.stderr.write(line + '\n'); } catch {} }
+  });
+  if (cfg.rules.length && !good.length) throw new Error('config.rules has no valid rule');
+  return good;
+}
+
 /** First rule whose tool and pattern both match. Null when nothing matches. */
 export function matchRule(rules, ev) {
   const text = String(ev.action || '');
