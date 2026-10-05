@@ -1538,9 +1538,15 @@ def skills_of(text):
             # enforcer-plugin-stack-hardening was SALVAGE-SKIPPED "the node's
             # skills do not include deliver-via-github-pr" while
             # GET /nodes/{id}/skills listed exactly that skill (2026-10-04).
+            # The slug is the identifier the salvage rule compares against
+            # (DELIVER_SKILL); a display name is only a fallback for a card
+            # that carries nothing else. The MCP card has BOTH — {"slug",
+            # "name", "version", "body"} — and preferring the name turned
+            # "Deliver via GitHub pull request" into a non-match, so every
+            # salvage was still skipped after 0.27.1 (2026-10-05).
             inner = k.get("skill") if isinstance(k.get("skill"), dict) else {}
-            nm = (k.get("key") or k.get("name") or k.get("slug")
-                  or inner.get("slug") or inner.get("key") or inner.get("name"))
+            nm = (k.get("slug") or inner.get("slug") or k.get("key") or inner.get("key")
+                  or k.get("name") or inner.get("name"))
             if nm:
                 out.append(str(nm))
     return out
