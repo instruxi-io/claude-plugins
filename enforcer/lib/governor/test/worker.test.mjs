@@ -44,4 +44,11 @@ ok('a person present: unchanged (no new denial)', () => {
   assert.equal(evaluate(ev('git remote -v', { headless: false, branch: 'x' })), null);
 });
 
+const SP = '~/.config/enforcer/governor/config.json';
+for (const c of [`python3 -c "open('${SP}','w').write('{}')"`, `dd of=${SP} if=/tmp/x`, `rsync /tmp/x ${SP}`,
+  `awk -i inplace '{print}' ${SP}`, `git apply ${SP}.patch`, `echo {} | tee ~/.enforcer/credentials.json`])
+  ok('settings_write: ' + c, () => { assert.equal(evaluate(ev(c))?.code, 'settings_write'); });
+ok('plain read of a settings file: no opinion', () => { assert.equal(evaluate(ev('cat ' + SP)), null); });
+ok('read chained to a write is denied', () => { assert.equal(evaluate(ev('cat ' + SP + ' ; rm ' + SP))?.code, 'settings_write'); });
+
 console.log(`\n  ${pass} passed`);

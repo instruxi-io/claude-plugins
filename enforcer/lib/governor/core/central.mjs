@@ -129,7 +129,7 @@ export async function consult(rule, cfg = {}, { fetchImpl = globalThis.fetch, no
 
   const cache = readCache();
   const hit = cache.decisions?.[cacheKey];
-  if (hit && now() - hit.at < ttl) return { ...hit.result, cached: true };
+  if (hit && Number.isFinite(hit.at) && hit.at <= now() && now() - hit.at < ttl) return { ...hit.result, cached: true };
 
   try {
     const headers = await authHeaders({ fetchImpl, now });
@@ -139,7 +139,7 @@ export async function consult(rule, cfg = {}, { fetchImpl = globalThis.fetch, no
     // in the caller's tenant, or the platform refuses it as unspecified before
     // the tenant policy is ever consulted.
     let who = cache.identity?.[cred];
-    if (!who || now() - who.at > IDENTITY_TTL_MS) {
+    if (!who || !Number.isFinite(who.at) || who.at > now() || now() - who.at > IDENTITY_TTL_MS) {
       const me = await call(fetchImpl, `${base}${API}/auth/me`, { headers }, timeoutMs);
       const d = me.body?.data;
       // /auth/me nests these: account_id at the top, the tenant under tenant.id.

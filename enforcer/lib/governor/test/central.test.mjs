@@ -126,7 +126,7 @@ await ok('asks as the rule id, owned by the caller in their tenant', async () =>
 });
 
 await ok('a decision is reused within the TTL, and the identity is cached', async () => {
-  let checks = 0, t = 1_000_000;
+  let checks = 0, t = Date.now();
   const e = enforcer(async () => { checks++; return answer(true, 'tenant policy')(); });
   const cfg = { policyTtlSec: 30 };
   await consult(rule('fs.delete_tree'), cfg, { fetchImpl: e.fetchImpl, now: () => t });
@@ -135,6 +135,19 @@ await ok('a decision is reused within the TTL, and the identity is cached', asyn
   await consult(rule('fs.delete_tree'), cfg, { fetchImpl: e.fetchImpl, now: () => t + 31_000 });
   assert.equal(checks, 2, 'expired answers are asked again');
   assert.equal(e.calls.filter(c => c.url.endsWith('/auth/me')).length, 0, 'identity was already cached from the previous test');
+});
+
+await ok('future at is expired', async () => {
+  let checks = 0; const t = Date.now() + 100_000;
+  const e = enforcer(async () => { checks++; return answer(true, 'tenant policy')(); });
+  const cfg = { policyTtlSec: 30 };
+  await consult(rule('fs.delete_tree'), cfg, { fetchImpl: e.fetchImpl, now: () => t });
+  const f = join(process.env.GOVERNOR_HOME, 'policy-cache.json');
+  const c = JSON.parse(readFileSync(f, 'utf8'));
+  for (const k of Object.keys(c.decisions)) c.decisions[k].at = t + 10_000_000;
+  writeFileSync(f, JSON.stringify(c));
+  const r = await consult(rule('fs.delete_tree'), cfg, { fetchImpl: e.fetchImpl, now: () => t + 1000 });
+  assert.equal(checks, 2); assert.ok(!r.cached);
 });
 
 await ok('a timeout is unreachable, is not cached, and names the wait', async () => {

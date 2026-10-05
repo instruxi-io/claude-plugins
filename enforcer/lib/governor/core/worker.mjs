@@ -15,7 +15,7 @@
 //   land-pr.sh on graph/      allow     ask   graph_land_confirm
 //   force-push                deny      (left to git.force_push: rewrite)
 //   push to a default branch  deny      ask   push_default_branch
-//   edit plugin/gov settings  deny      ask   governor_settings_edit
+//   edit plugin/gov settings  deny      ask   settings_write
 //
 // Pure, like capability.mjs: the caller resolves the context first (whether
 // the session is headless, which branch the worktree has checked out) and
@@ -47,8 +47,10 @@ const isGraph = (b) => typeof b === 'string' && GRAPH.test(b);
 // literal is not spread through the package (hooks/claude/paths.mjs owns the name).
 const DOT = '.' + 'claude';
 const SETTINGS_PATTERN = '\\' + DOT + '\\/settings(\\.local)?\\.json|\\' + DOT + '\\/plugins\\/';
-export const SETTINGS = new RegExp('(^|[\\s"\'=\\/])(' + SETTINGS_PATTERN + '|managed-settings\\.json|\\.enforcer-governor\\/|\\.config\\/enforcer\\/governor\\/)');
+export const SETTINGS = new RegExp('(^|[\\s"\'=\\/])(' + SETTINGS_PATTERN + '|managed-settings\\.json|\\.enforcer-governor\\/|\\.enforcer\\/|policy-cache\\.json|\\.config\\/enforcer\\/governor\\/)');
 // A shell command that changes a file, as opposed to reading it.
+// The only commands that may name a settings path: a single plain read.
+const PLAIN_READ = /^(cat|less|head|tail|jq|grep)(\s|$)/;
 const MUTATES = /(^|[^0-9&<])>{1,2}(?!&)|\btee\b|\bsed\s+(-[a-zA-Z]*i|--in-place)|\b(cp|mv|rm|ln|chmod|chown|truncate|install|unlink)\s|\bjq\b[^|]*>|\bwriteFile|\bperl\s+-[a-zA-Z]*i/;
 
 // The skill's own land-pr.sh invocation finds the script with a substitution;
@@ -199,11 +201,11 @@ function land(ctx) {
 
 function settings(ev, ctx, cmd) {
   const path = isFileWrite(ev) ? String(ev.input?.path ?? ev.raw?.file_path ?? ev.raw?.notebook_path ?? '') : null;
-  const hit = path != null ? SETTINGS.test(path) : (SETTINGS.test(cmd) && MUTATES.test(cmd));
+  const hit = path != null ? SETTINGS.test(path) : (SETTINGS.test(cmd) && !(PLAIN_READ.test(cmd.trim()) && !META.test(cmd) && !MUTATES.test(cmd)));
   if (!hit) return null;
   return ctx.headless
-    ? verdict('deny', 'governor.settings', 'governor_settings_edit', 'a headless worker may not change plugin or governor settings')
-    : verdict('ask', 'governor.settings', 'governor_settings_edit', 'this changes plugin or governor settings');
+    ? verdict('deny', 'governor.settings', 'settings_write', 'a headless worker may not change plugin or governor settings')
+    : verdict('ask', 'governor.settings', 'settings_write', 'this changes plugin or governor settings');
 }
 
 /**
@@ -216,14 +218,13 @@ export function evaluate(ev) {
   if (isFileWrite(ev)) return settings(ev, ctx, '');
   if (!isShell(ev)) return null;
   const raw = commandOf(ev).trim();
-  const s = settings(ev, ctx, raw);
-  if (s) return s;
-
   let folded = false;
   const cmd = raw.replace(LAND_LOOKUP, (m, p) => {
     if (!trustedLand(p, ev.worker?.pluginRoot)) return m;
     folded = true; return 'land-pr.sh';
   }).replace(/\s+2>&1\s*$/, '').trim();
+  const s = settings(ev, ctx, cmd);
+  if (s) return s;
   if (!(ctx.headless ? mentionsDeliveryWide(cmd) : mentionsDelivery(cmd))) return null;
   if (META.test(cmd)) return ctx.headless
     ? verdict('deny', 'graph.push', 'push_not_alone', 'a push, pull request or land must be the whole command, on its own')
