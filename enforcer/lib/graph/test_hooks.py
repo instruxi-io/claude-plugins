@@ -74,11 +74,11 @@ class Attest(unittest.TestCase):
         lib.mark_attested("s-new")
         self.assertTrue(lib.client_for(inp).endswith("hooks=on"))
 
-    def test_attest_doctor_fails_without_python3(self):
+    def test_doctor_no_longer_probes_python3(self):
         env = dict(os.environ, PATH="/nonexistent", ENFORCER_STATE_DIR=self.tmp)
         r = subprocess.run([__import__("shutil").which("node"), CLI, "doctor"], capture_output=True, text=True, env=env)
-        self.assertNotEqual(r.returncode, 0, r.stdout)
-        self.assertRegex(r.stdout, r"fail\s+python3 present")
+        self.assertNotIn("python3", r.stdout)
+        self.assertNotIn("fcntl", r.stdout)
         self.assertRegex(r.stdout, r"ok\s+node version")
 
 

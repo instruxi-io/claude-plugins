@@ -5,8 +5,8 @@ const timeoutMs = () => Number(process.env.GRAPH_HOOK_TIMEOUT) * 1000 || TIMEOUT
 
 async function call(cfg, method, path, body, o) {
   const res = await apiFetch(`${cfg.base_url}/api/v1/graph${path}`, {
-    method, headers: { 'Content-Type': 'application/json' }, ...(body !== undefined && body !== null ? { body: JSON.stringify(body) } : {}),
-  }, { auth: true, timeoutMs: timeoutMs(), retries: 1, baseDelayMs: 50, maxDelayMs: 200, hooks: 'on', ...o });
+    method, headers: { 'Content-Type': 'application/json', ...(cfg.api_key ? { 'X-API-Key': cfg.api_key } : {}) }, ...(body !== undefined && body !== null ? { body: JSON.stringify(body) } : {}),
+  }, { auth: !cfg.api_key, timeoutMs: timeoutMs(), retries: 1, baseDelayMs: 50, maxDelayMs: 200, hooks: 'on', ...o });
   let out = null;
   try { out = await res.json(); } catch {}
   return [res, out];
