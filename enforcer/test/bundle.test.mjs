@@ -25,7 +25,8 @@ function build() {
   assert.equal(r.status, 0, r.stderr);
   const path = r.stdout.split('\n')[0];
   const x = join(d, 'x'); mkdirSync(x);
-  assert.equal(spawnSync('tar', ['-xzf', basename(path), '-C', x], { cwd: dirname(path) }).status, 0);
+  const tx = spawnSync('tar', ['-xzf', basename(path), '-C', x], { cwd: dirname(path), encoding: 'utf8' });
+  assert.equal(tx.status, 0, `tar -xzf ${basename(path)} in ${dirname(path)}: ${tx.stderr || tx.error?.message}`);
   const files = {};
   const dir = join(x, 'enforcer-bundle');
   for (const n of spawnSync('ls', [dir], { encoding: 'utf8' }).stdout.split('\n').filter(Boolean)) files[n] = spawnSync('cat', [join(dir, n)], { encoding: 'utf8' }).stdout;
