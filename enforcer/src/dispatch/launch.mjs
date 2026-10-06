@@ -56,9 +56,32 @@ export function pluginDirs(extra = []) {
   return out;
 }
 
-export function workerEnv(graphId, env = process.env) {
+/** The only inherited variables: the operator's keys (ENFORCER_API_KEY, GRAPH_API_KEY, cloud keys, gh tokens) never pass. */
+export const ENV_ALLOW = ['PATH', 'HOME', 'LANG', 'TERM', 'TMPDIR', 'SHELL', 'USER', 'LOGNAME', 'GRAPH_ID', 'ENFORCER_HARNESS', 'JEV_HOOKS_HEADLESS', 'CLAUDE_PLUGIN_ROOT', 'ENFORCER_PLUGIN_ROOT'];
+export const ENV_ALLOW_PREFIX = ['CLAUDE_', 'LC_'];
+/** Scopes a worker token may carry: graph only. */
+export const WORKER_SCOPES = ['graph:read', 'graph:write'];
+
+const allowed = (k) => ENV_ALLOW.includes(k) || ENV_ALLOW_PREFIX.some((p) => k.startsWith(p));
+
+/** The worker environment: the allowlist, the run's worker-scoped token (as GRAPH_API_KEY) and, if the operator
+ *  provides one, a repo-scoped GH_TOKEN (ENFORCER_WORKER_GH_TOKEN). Nothing else. */
+export function workerEnv(graphId, env = process.env, { token = null } = {}) {
   const root = pluginDirs()[0];
-  return { ...env, GRAPH_ID: graphId, JEV_HOOKS_HEADLESS: '1', CLAUDE_PLUGIN_ROOT: root, ENFORCER_PLUGIN_ROOT: root };
+  const out = {};
+  for (const [k, v] of Object.entries(env)) if (allowed(k) && v !== undefined) out[k] = v;
+  Object.assign(out, { GRAPH_ID: graphId, JEV_HOOKS_HEADLESS: '1', CLAUDE_PLUGIN_ROOT: root, ENFORCER_PLUGIN_ROOT: root });
+  if (token) out.GRAPH_API_KEY = token;
+  if (env.ENFORCER_WORKER_GH_TOKEN) out.GH_TOKEN = env.ENFORCER_WORKER_GH_TOKEN;
+  return out;
+}
+
+/** Mint a worker-scoped credential for the run through the agent credential route; null when no worker agent is configured. */
+export async function mintWorkerToken(api, env = process.env, name = 'graph-worker') {
+  const agent = env.ENFORCER_WORKER_AGENT_ID;
+  if (!agent) return null;
+  const r = await api.call('POST', `/agents/${agent}/credentials`, { name, scopes: WORKER_SCOPES, expires_in_days: 1 });
+  return r?.data?.secret || null;
 }
 
 /** The argv of a worker launch. `session` names (or with `resume`, continues) a claude session. */

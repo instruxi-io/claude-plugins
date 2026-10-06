@@ -1,0 +1,1 @@
+- Dispatched workers now get an allowlisted environment (no operator keys) and a worker-scoped graph token minted per run via the agent credential route; gh gets only ENFORCER_WORKER_GH_TOKEN as GH_TOKEN.
