@@ -18,7 +18,10 @@ const scan = (sub, local) => {
     const src = readFileSync(join(dir, sub, f), 'utf8');
     for (const m of src.matchAll(IMPORT)) {
       const spec = m[1] || m[2] || m[3];
-      const ok = spec.startsWith('node:') || local.test(spec);
+      // One sanctioned exception: core/credentials.mjs re-exports the single
+      // shared credentials module, so the plugin and governor cannot drift.
+      const shared = join(sub, f) === 'credentials.mjs' && spec === '../../../src/credentials.mjs';
+      const ok = spec.startsWith('node:') || local.test(spec) || shared;
       if (!ok) bad.push(`${join(sub, f)} imports ${spec}`);
     }
   }
