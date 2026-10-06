@@ -6,7 +6,7 @@ import { openStream, redactFile } from './logs.mjs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DOT } from '../../hooks/claude/paths.mjs';
-import { PROFILE_NAME, PROFILE_ENV } from '../../lib/governor/profiles/headless-worker.mjs';
+import { PROFILE_NAME } from '../../lib/governor/profiles/headless-worker.mjs';
 
 export const PLUGIN_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 export const LAND_PR = join(PLUGIN_DIR, 'bin', 'land-pr.sh');
@@ -72,7 +72,8 @@ export function workerEnv(graphId, env = process.env, { token = null, release = 
   const root = pluginDirs()[0];
   const out = {};
   for (const [k, v] of Object.entries(env)) if (allowed(k) && v !== undefined) out[k] = v;
-  Object.assign(out, { GRAPH_ID: graphId, [PROFILE_ENV]: PROFILE_NAME, JEV_HOOKS_HEADLESS: '1', CLAUDE_PLUGIN_ROOT: root, ENFORCER_PLUGIN_ROOT: root });
+  Object.assign(out, { GRAPH_ID: graphId, ENFORCER_PROFILE: PROFILE_NAME, // = PROFILE_ENV
+    JEV_HOOKS_HEADLESS: '1', CLAUDE_PLUGIN_ROOT: root, ENFORCER_PLUGIN_ROOT: root });
   if (release) out.ENFORCER_RELEASE_NODE = '1';
   if (runId) { out.GRAPH_RUN_ID = String(runId); out.ENFORCER_GRAPH_RUN_ID = String(runId); }
   if (token) out.GRAPH_API_KEY = token;
