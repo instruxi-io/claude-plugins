@@ -259,6 +259,48 @@ class BaseResolution(unittest.TestCase):
         self.assertIn("base=origin/staging", out.getvalue())
 
 
+class BudgetFetchDefaults(unittest.TestCase):
+    def test_defaults_triage_launch_carries_max_budget_and_max_turns(self):
+        from unittest import mock
+        tmp = tempfile.mkdtemp()
+        a = args(dry_run=False, state_dir=os.path.join(tmp, "s"), max_budget_usd=3.5, max_turns=77)
+        os.makedirs(os.path.join(tmp, "s", "logs"))
+        f = node("o", type="ops", status="failed")
+        d = gd.Dispatcher(TriageAPI([f]), a, io.StringIO())
+        with mock.patch.object(gd.subprocess, "Popen") as pop:
+            d.launch_triage(dict(f, _triage=True, _triage_any=True))
+        cmd = pop.call_args[0][0]
+        self.assertEqual(cmd[cmd.index("--max-budget-usd") + 1], "3.5")
+        self.assertEqual(cmd[cmd.index("--max-turns") + 1], "77")
+
+    def test_defaults_fetch_failure_fails_the_node_with_a_message(self):
+        tmp = tempfile.mkdtemp()
+        root = git_repo_with_origin(tmp, ["main"])
+        import subprocess
+        subprocess.run(["git", "remote", "set-url", "origin", os.path.join(tmp, "gone.git")],
+                       cwd=os.path.join(root, "r"), check=True)
+        with self.assertRaises(gd.BaseMissing) as c:
+            gd.worktree_for(node("k", repo="r"), root, tmp)
+        self.assertIn("git fetch origin failed", str(c.exception))
+        out = io.StringIO()
+        a = args(dry_run=False, repo_root=root, state_dir=os.path.join(tmp, "s"))
+        os.makedirs(os.path.join(tmp, "s", "logs"))
+        d = gd.Dispatcher(FakeAPI([]), a, out)
+        d.launch(node("k", repo="r"))
+        self.assertIn("refuse k: git fetch origin failed", out.getvalue())
+        self.assertEqual(d.workers, {})
+
+    def test_defaults_master_default_branch_resolves(self):
+        import subprocess
+        tmp = tempfile.mkdtemp()
+        root = git_repo_with_origin(tmp, ["master"])
+        src = os.path.join(root, "r")
+        subprocess.run(["git", "remote", "set-head", "origin", "-d"], cwd=src, check=True, capture_output=True)
+        self.assertEqual(gd.default_branch(src), "origin/master")
+        path, branch, note = gd.worktree_for(node("k", repo="r"), root, tmp)
+        self.assertIn("added off origin/master", note)
+
+
 class WorktreeSetup(unittest.TestCase):
     def _repo(self):
         import subprocess

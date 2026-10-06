@@ -465,6 +465,27 @@ class BaseMissing(RuntimeError):
     """The resolved start-from ref does not exist on origin."""
 
 
+def default_branch(src):
+    """origin's default branch as an origin/<name> ref: origin/HEAD, else
+    `gh repo view`, else whichever of origin/main, origin/master exists. None
+    when nothing resolves (never a guess)."""
+    h = git(["symbolic-ref", "--short", "refs/remotes/origin/HEAD"], src).stdout.strip()
+    if h:
+        return h
+    try:
+        r = subprocess.run(["gh", "repo", "view", "--json", "defaultBranchRef", "--jq", ".defaultBranchRef.name"],
+                           cwd=src, capture_output=True, text=True, timeout=60)
+        name = r.stdout.strip() if r.returncode == 0 else ""
+    except (OSError, subprocess.SubprocessError):
+        name = ""
+    if name:
+        return "origin/" + name
+    for cand in ("origin/main", "origin/master"):
+        if git(["rev-parse", "--verify", "-q", cand], src).returncode == 0:
+            return cand
+    return None
+
+
 def _origin_ref(b):
     b = (b or "").strip()
     return b if b.startswith("origin/") else "origin/" + b
@@ -525,10 +546,17 @@ def worktree_for(node, repo_root, state_dir, dry=False, graph_bases=None, regist
     path = os.path.join(repo_root, "%s-%s" % (repo, key))
     if os.path.isdir(path):
         return path, branch, "reused"
-    h = git(["symbolic-ref", "--short", "refs/remotes/origin/HEAD"], src).stdout.strip()
-    base, source = resolve_base(node, graph_bases, registry, h)
+    base, source = resolve_base(node, graph_bases, registry, None)
+    if source == "origin/HEAD":
+        base = default_branch(src)
+        if not base:
+            raise BaseMissing("cannot resolve origin's default branch (no origin/HEAD, gh repo view failed, "
+                              "no origin/main or origin/master)")
     if not dry:
-        git(["fetch", "-q", "origin"], src)
+        f = git(["fetch", "-q", "origin"], src)
+        if f.returncode != 0:
+            raise BaseMissing("git fetch origin failed (a stale ref would be used): %s"
+                              % (f.stderr or f.stdout).strip()[:200])
     check_base(base, source, src)
     if dry:
         return path, branch, "would add off " + base
@@ -1003,7 +1031,7 @@ class Dispatcher:
         """(ref, source) for node n, as the worktree, the ahead-count and the PR use."""
         h = None
         if cwd and os.path.isdir(cwd):
-            h = self._sh(["git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD"], cwd)[1] or None
+            h = default_branch(cwd)
         return resolve_base(n, self.graph_bases(), self.registry(), h)
 
     # --- warm sessions
@@ -1057,7 +1085,7 @@ class Dispatcher:
             path, branch, note = worktree_for(n, a.repo_root, self.state, dry=a.dry_run,
                                               graph_bases=self.graph_bases(), registry=self.registry())
         except BaseMissing as e:
-            self.say("refuse %s: %s; set data.base or fix the registry" % (n["key"], e))
+            self.say("refuse %s: %s; fix the repo's remote, or set data.base / the registry" % (n["key"], e))
             return
         if branch:
             note += " base=%s" % self.base_of(n, path)[0]
@@ -1172,7 +1200,8 @@ class Dispatcher:
         path = os.path.join(self.state, "work", tkey)
         os.makedirs(path, exist_ok=True)
         sess = Session(str(uuid.uuid4()), None, a.triage_model)
-        cmd = launch_cmd(triage_prompt(self.g, tnode, n, history), a.triage_model, a, tkey, session=sess.sid)
+        cmd = launch_cmd(triage_prompt(self.g, tnode, n, history), a.triage_model, a, tkey, session=sess.sid,
+                         max_turns=a.max_turns)
         log = os.path.join(self.logs, "%s.triage.jsonl" % key)
         w = Worker(tnode, log)
         w.triage_of, w.path, w.model, w.turns, w.session, w.resumed = n, path, a.triage_model, 0, sess, False
