@@ -15,6 +15,7 @@
 //   presigned (S3)        ask for a short-lived URL, PUT the bytes straight to
 //                         storage, then record the upload so it is listable;
 //   proxy (GCS, Storj)    send the bytes to enforcer-files as a multipart form.
+import { defaultFetch } from '../lib/api/client.mjs';
 import { isMain } from '../src/is-main.mjs';
 import { createWriteStream, existsSync, openAsBlob, renameSync, rmSync, statSync } from 'node:fs';
 import { basename, resolve } from 'node:path';
@@ -71,14 +72,14 @@ async function call(fetchImpl, base, path, { method = 'GET', query, body, header
   return json;
 }
 
-export async function provider({ fetchImpl = fetch, base = baseUrl() } = {}) {
+export async function provider({ fetchImpl = defaultFetch, base = baseUrl() } = {}) {
   const r = await call(fetchImpl, base, '/provider');
   const p = r?.data || r;
   if (!p?.configured) throw new Error('this workspace has no storage provider configured; an admin sets one up first.');
   return { provider: p.provider, mode: p.upload_mode };
 }
 
-export async function upload(path, opts = {}, { fetchImpl = fetch, base = baseUrl() } = {}) {
+export async function upload(path, opts = {}, { fetchImpl = defaultFetch, base = baseUrl() } = {}) {
   const abs = resolve(path);
   const size = statSync(abs).size;
   const name = opts.name || basename(abs);
@@ -105,7 +106,7 @@ export async function upload(path, opts = {}, { fetchImpl = fetch, base = baseUr
   return { provider: prov, path: fileName, bytes: size, file: r?.data };
 }
 
-export async function download(ref, opts = {}, { fetchImpl = fetch, base = baseUrl() } = {}) {
+export async function download(ref, opts = {}, { fetchImpl = defaultFetch, base = baseUrl() } = {}) {
   const { provider: prov, mode } = await provider({ fetchImpl, base });
   let res;
   if (mode === 'presigned') {

@@ -1,5 +1,6 @@
 // `enforcer dispatch preflight <graph>`: every way a dispatch fails before it spends, as one line each.
 // Checks: credential, gh, python3, repos, governor-lander, frontier. Exit 2 when any fails.
+import { defaultFetch } from '../lib/api/client.mjs';
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
@@ -42,7 +43,7 @@ export async function headers(env) {
 }
 
 async function get(base, path, h) {
-  const r = await fetch(base.replace(/\/$/, '') + path, { headers: h });
+  const r = await defaultFetch(base.replace(/\/$/, '') + path, { headers: h });
   let body = {};
   try { body = await r.json(); } catch {}
   return { status: r.status, body };

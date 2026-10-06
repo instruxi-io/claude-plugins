@@ -28,6 +28,7 @@
 // attribution until telemetry or a receipt creates the session, and lets a
 // named project replace a guessed one ('?name', see policy.mjs clientFor) but
 // never the reverse.
+import { hookFetch } from './http.mjs';
 import { authHeaders, baseUrl, credentialId } from './credentials.mjs';
 
 export const ATTRIBUTION_PATH = '/api/v1/governance/ingest/attributions';
@@ -46,7 +47,7 @@ export const ATTRIBUTION_TIMEOUT_MS = 1500;
  * @returns {Promise<{sent: boolean, status?: number, client?: string, skipped?: string, detail?: string}>}
  */
 export async function attributeSession({ agent, client } = {}, cfg = {},
-  { fetchImpl = globalThis.fetch, now = Date.now, timeoutMs = ATTRIBUTION_TIMEOUT_MS } = {}) {
+  { fetchImpl = hookFetch, now = Date.now, timeoutMs = ATTRIBUTION_TIMEOUT_MS } = {}) {
   // The same switch that stops receipts leaving the machine stops this: an
   // install told not to report does not report its projects either.
   if (cfg.shipOn === false) return { sent: false, skipped: 'shipping is switched off (shipOn)' };
