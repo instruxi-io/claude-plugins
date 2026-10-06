@@ -2136,6 +2136,24 @@ class ExitCodes(unittest.TestCase):
         self.assertEqual(d.run(), 0)
         self.assertFalse(os.path.exists(stop))
 
+    def test_exit_summary_list_comes_from_current_node_status(self):
+        out = io.StringIO()
+        d = gd.Dispatcher(FakeAPI([node("a", status="done"), node("b", status="failed"),
+                                   node("c", status="needs_review")]),
+                          args(state_dir=self.state, stop_file=os.path.join(self.state, "STOP"),
+                               interval=0.01, workers=1), out)
+        d.denied["a"] = "/wt"
+        self.assertEqual(d.run(), 6)
+        self.assertIn("remain: b, c (", out.getvalue())
+        self.assertNotIn("a,", out.getvalue())
+
+    def test_exit_summary_no_failed_nodes_gives_exit_0_despite_session_denials(self):
+        d = gd.Dispatcher(FakeAPI([node("a", status="done")]),
+                          args(state_dir=self.state, stop_file=os.path.join(self.state, "STOP"),
+                               interval=0.01, workers=1), io.StringIO())
+        d.denied["a"] = "/wt"
+        self.assertEqual(d.run(), 0)
+
 
 class CiUnavailable(unittest.TestCase):
     def disp(self):
