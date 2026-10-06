@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Everything the slash commands print. Plain text on stdout -- these are read
 // by a person mid-session, so money first and jargon never.
-import { loadState, loadConfig, saveConfig, saveState, verify, withLock, writeReceipt, RECEIPTS } from './store.mjs';
+import { loadState, loadConfig, saveConfig, saveState, verify, withLock, commit, RECEIPTS } from './store.mjs';
 import { readManaged, merge } from './managed.mjs';
 import { DEFAULTS, priceOf, dollarsForTokens, burnRate, release } from './policy.mjs';
 import { SETTINGS, GROUPS, RETIRED, validate, parseValue } from './settings.mjs';
@@ -127,9 +127,9 @@ if (cmd === 'resume') {
       return { msg: `${ids.length} agents are stopped. Name one:\n` + ids.map(id => `  /enforcer-governor:resume ${id.replace(/^claude:/, '')}`).join('\n') };
     }
     const id = ids[0];
+    const before = s.prevHash;
     const out = release(s, id);
-    writeReceipt(out.entry, out.hash);
-    saveState(s);
+    commit(s, out.entry, out.hash, before);
     const a = s.agents[id];
     return { msg: `${id} is running again, with its limit raised to ${usd(a.budget, a.model)}. Recorded as your decision.` };
   });

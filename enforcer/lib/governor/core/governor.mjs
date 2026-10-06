@@ -20,7 +20,7 @@ import { consult } from './central.mjs';
 import { evaluate as workerEvaluate } from './worker.mjs';
 import { evaluate as economics } from './economics.mjs';
 import { DEFAULTS, priceOf, tokensForDollars, dollarsForTokens, getAgent, setModel, clientFor, sha256 } from './policy.mjs';
-import { withLock, loadState, saveState, loadConfig, writeReceipt } from './store.mjs';
+import { withLock, loadState, saveState, loadConfig, writeReceipt, commit } from './store.mjs';
 import { effective, refresh, stale } from './managed.mjs';
 import { kick, SHIPPER } from './ship.mjs';
 import { brief as briefFor, markTold } from './brief.mjs';
@@ -138,9 +138,7 @@ export function createGovernor({ harness = 'unknown', adapterVersion = '', cost 
         spentUsd: reading.source === 'none' ? undefined
           : costUsd(dollarsForTokens(a.tokens, priceOf(a.model, cfg.model).in)) });
       const hash = sha256(state.prevHash + JSON.stringify(entry));
-      state.prevHash = hash;
-      writeReceipt(entry, hash);
-      saveState(state);
+      commit(state, entry, hash);
       return v;
     });
 
@@ -257,9 +255,7 @@ export function createGovernor({ harness = 'unknown', adapterVersion = '', cost 
           // ...and these after it, for the same reason.
           ...(harness ? { harness } : {}), ...(adapterVersion ? { adapter_version: adapterVersion } : {}) };
         const hash = createHash('sha256').update(state.prevHash + JSON.stringify(entry)).digest('hex');
-        writeReceipt(entry, hash);
-        state.prevHash = hash;
-        saveState(state);
+        commit(state, entry, hash);
       });
     },
   };
