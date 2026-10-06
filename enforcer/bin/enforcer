@@ -95,6 +95,12 @@ if (area === 'dispatch') {
   process.exit(r.status ?? 1);
 }
 
+if (area === 'plan') {
+  if (sub !== 'check') { process.stderr.write('usage: enforcer plan check <graph> [--repo-root dir]\n'); process.exit(2); }
+  const { main: planCheckMain } = await import('../src/plan-check.mjs');
+  process.exit(await planCheckMain(rest));
+}
+
 if (area === 'land') {
   const script = here('./land-pr.sh');
   if (sub === undefined || sub === '--help' || sub === '-h') {
