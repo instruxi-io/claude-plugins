@@ -11,6 +11,7 @@
 // it was fetched with (credentialId()): sign out, or sign in as someone else,
 // and it stops counting at once rather than naming the previous person until
 // the next refresh. An explicit `operator` setting always wins over it.
+import { hookFetch } from './http.mjs';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { DIR } from './store.mjs';
@@ -42,7 +43,7 @@ export function signedInOperator() {
 }
 
 /** Look the signed-in account up and cache its email. Best effort; never throws. */
-export async function refreshIdentity(cfg = {}, { fetchImpl = globalThis.fetch, now = Date.now, timeoutMs = 3000 } = {}) {
+export async function refreshIdentity(cfg = {}, { fetchImpl = hookFetch, now = Date.now, timeoutMs = 3000 } = {}) {
   const id = credentialId();
   if (!id || typeof fetchImpl !== 'function') return { ok: false, detail: 'not signed in to Enforcer' };
   try {

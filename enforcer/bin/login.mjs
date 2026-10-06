@@ -15,6 +15,7 @@
 // URL, catch the redirect on 127.0.0.1, redeem the code with the PKCE verifier.
 // The refresh token is kept, so the sign-in outlives the one-hour access
 // token (credentials.mjs rotates it).
+import { defaultFetch } from '../lib/api/client.mjs';
 import { isMain } from '../src/is-main.mjs';
 import { commandArgs } from '../src/args.mjs';
 import { readFileSync, existsSync } from 'node:fs';
@@ -96,7 +97,7 @@ export function extractScope(argv, env = process.env) {
   return { argv: rest, scope: scope ?? (env.ENFORCER_SCOPE || undefined) };
 }
 
-export async function discover(base, fetchImpl = fetch) {
+export async function discover(base, fetchImpl = defaultFetch) {
   const r = await fetchImpl(`${base}/.well-known/oauth-authorization-server`, { signal: AbortSignal.timeout(10_000) });
   if (!r.ok) throw new Error(`no OAuth metadata at ${base} (HTTP ${r.status})`);
   return r.json();
@@ -118,7 +119,7 @@ function openBrowser(url) {
  * `resource` is the RFC 8707 audience the token is for; `onUrl` receives the
  * authorization URL (printed and opened by the CLI, captured by the tests).
  */
-export async function browserSignIn({ base, resource, resources, scope, preset, tenantCode, fetchImpl = fetch, onUrl, timeoutMs = 5 * 60_000 }) {
+export async function browserSignIn({ base, resource, resources, scope, preset, tenantCode, fetchImpl = defaultFetch, onUrl, timeoutMs = 5 * 60_000 }) {
   // RFC 8707 lets one token name several resources. Asking for Enforcer's API
   // AND its MCP server is what makes this one sign-in serve both the governor
   // (which calls the API) and the MCP server (which serves tools): each server
@@ -200,7 +201,7 @@ export async function browserSignIn({ base, resource, resources, scope, preset, 
  * the server itself publishes it (RFC 9728), so a deployment that moves the MCP
  * endpoint does not need a new plugin.
  */
-export async function resourcesFor(base, fetchImpl = fetch) {
+export async function resourcesFor(base, fetchImpl = defaultFetch) {
   const out = [base];
   try {
     const r = await fetchImpl(`${base}/.well-known/oauth-protected-resource/mcp`, { signal: AbortSignal.timeout(10_000) });
@@ -215,7 +216,7 @@ const who = (me) => me.person?.primary_email || me.person?.name || me.account_id
 async function whoAmI(base) {
   const headers = await authHeaders();
   if (!headers['X-API-Key'] && !headers.Authorization) return null;
-  const r = await fetch(`${base}${API}/auth/me`, { headers, signal: AbortSignal.timeout(10_000) });
+  const r = await defaultFetch(`${base}${API}/auth/me`, { headers, signal: AbortSignal.timeout(10_000) });
   if (!r.ok) return { error: `HTTP ${r.status}` };
   return (await r.json())?.data || null;
 }
@@ -274,7 +275,7 @@ async function main(rawArgv) {
           if (meta.revocation_endpoint) {
             const body = new URLSearchParams({ token: oauth.refresh_token, token_type_hint: 'refresh_token' });
             if (oauth.client_id) body.set('client_id', oauth.client_id);
-            const r = await fetch(meta.revocation_endpoint, { method: 'POST', body, signal: AbortSignal.timeout(10_000) });
+            const r = await defaultFetch(meta.revocation_endpoint, { method: 'POST', body, signal: AbortSignal.timeout(10_000) });
             out(r.ok ? 'Revoked the refresh token on the server.' : `The server refused to revoke the refresh token (HTTP ${r.status}); it expires on its own.`);
           } else out('This server advertises no revocation endpoint; the refresh token stays valid there until it expires.');
         } catch (e) { out(`Could not revoke the refresh token (${e.message}); it stays valid on the server until it expires.`); }

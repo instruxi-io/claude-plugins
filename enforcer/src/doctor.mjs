@@ -1,4 +1,5 @@
 // `enforcer doctor`: one line per check, `ok`/`fail`, exit non-zero on any fail.
+import { defaultFetch } from '../lib/api/client.mjs';
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, statSync, mkdirSync, accessSync, constants } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -27,7 +28,7 @@ export function hookCommandsCheck(root = ROOT) {
   return missing.length ? { ok: false, detail: `missing under the plugin root: ${[...new Set(missing)].join(', ')}` } : { ok: true, detail: `${n} script paths resolve` };
 }
 
-export async function runChecks({ fetchImpl = globalThis.fetch, network = true } = {}) {
+export async function runChecks({ fetchImpl = defaultFetch, network = true } = {}) {
   const rows = [];
   const add = (name, c) => rows.push({ name, ...c });
   const major = Number(process.versions.node.split('.')[0]);

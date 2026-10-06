@@ -20,6 +20,7 @@
 // detached (see kick()), so a slow or absent network cannot add latency to a
 // tool call. Delivery is at-least-once; the server skips a receipt it holds.
 
+import { hookFetch } from './http.mjs';
 import { readFileSync, writeFileSync, mkdirSync, openSync, closeSync, unlinkSync, statSync } from 'node:fs';
 import { createHash, randomUUID } from 'node:crypto';
 const spawn = (...a) => process.getBuiltinModule('node:child_process').spawn(...a); // lazy: only the throttled kick spawns
@@ -119,7 +120,7 @@ export function toOtlp(lines, prev, install, version = '') {
  * Ship one batch. Never throws.
  * @returns {{ shipped?: number, rejected?: number, pending?: boolean, skipped?: string, error?: string }}
  */
-export async function shipOnce(cfg = {}, { fetchImpl = globalThis.fetch, now = Date.now, limit = 500 } = {}) {
+export async function shipOnce(cfg = {}, { fetchImpl = hookFetch, now = Date.now, limit = 500 } = {}) {
   if (cfg.shipOn === false) return { skipped: 'shipping is switched off (shipOn)' };
   if (!isFederated()) return { skipped: 'not signed in to Enforcer' };
   const batch = pending(limit);

@@ -8,6 +8,7 @@
 // The sign-in JWT is bound to ONE tenant. Switching asks Enforcer for a token
 // pair for another tenant the person belongs to (POST /auth/tenant/switch) and
 // writes it into ~/.enforcer/credentials.json, keeping scope/resources/client.
+import { defaultFetch } from '../lib/api/client.mjs';
 import { isMain } from '../src/is-main.mjs';
 import { commandArgs } from '../src/args.mjs';
 import { readCredentials, saveCredentials, authHeaders, DEFAULT_BASE_URL } from '../src/credentials.mjs';
@@ -89,7 +90,7 @@ async function getTenants(base, headers, fetchImpl) {
 }
 
 /** Workspaces for `list`, each with `current` set from the stored JWT's tenant_id. */
-export async function listWorkspaces({ fetchImpl = fetch } = {}) {
+export async function listWorkspaces({ fetchImpl = defaultFetch } = {}) {
   const doc = readCredentials();
   const base = baseOf(doc);
   const { me, headers } = await getMe(base, fetchImpl);
@@ -103,7 +104,7 @@ export async function listWorkspaces({ fetchImpl = fetch } = {}) {
 }
 
 /** Switch to a workspace and adopt the token pair it returns. Returns the new membership. */
-export async function switchWorkspace(query, { fetchImpl = fetch, now = Date.now, fuzzy = false } = {}) {
+export async function switchWorkspace(query, { fetchImpl = defaultFetch, now = Date.now, fuzzy = false } = {}) {
   const rows = await listWorkspaces({ fetchImpl });
   const target = resolveWorkspace(rows, query, { fuzzy });
   const doc = readCredentials();
@@ -136,7 +137,7 @@ export async function switchWorkspace(query, { fetchImpl = fetch, now = Date.now
 }
 
 /** Tenant, role, account and expiry of the stored sign-in. */
-export async function currentWorkspace({ fetchImpl = fetch } = {}) {
+export async function currentWorkspace({ fetchImpl = defaultFetch } = {}) {
   const doc = readCredentials();
   const o = doc?.enforcer?.oauth;
   if (!o?.access_token) throw new Error('not signed in with a browser sign-in. Run /enforcer:login.');

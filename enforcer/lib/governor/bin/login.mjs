@@ -12,6 +12,7 @@
 // URL, catch the redirect on 127.0.0.1, redeem the code with the PKCE verifier.
 // The refresh token is kept, so the sign-in outlives the one-hour access
 // token (credentials.mjs rotates it).
+import { defaultFetch } from '../../api/client.mjs';
 import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'node:http';
@@ -30,7 +31,7 @@ export function requestedScope(meta) {
   return s.length ? s.join(' ') : 'enforcer:read';
 }
 
-export async function discover(base, fetchImpl = fetch) {
+export async function discover(base, fetchImpl = defaultFetch) {
   const r = await fetchImpl(`${base}/.well-known/oauth-authorization-server`, { signal: AbortSignal.timeout(10_000) });
   if (!r.ok) throw new Error(`no OAuth metadata at ${base} (HTTP ${r.status})`);
   return r.json();
@@ -52,7 +53,7 @@ function openBrowser(url) {
  * `resource` is the RFC 8707 audience the token is for; `onUrl` receives the
  * authorization URL (printed and opened by the CLI, captured by the tests).
  */
-export async function browserSignIn({ base, resource, resources, scope, tenantCode, fetchImpl = fetch, onUrl, timeoutMs = 5 * 60_000 }) {
+export async function browserSignIn({ base, resource, resources, scope, tenantCode, fetchImpl = defaultFetch, onUrl, timeoutMs = 5 * 60_000 }) {
   // RFC 8707 lets one token name several resources. Asking for Enforcer's API
   // AND its MCP server is what makes this one sign-in serve both the governor
   // (which calls the API) and the MCP server (which serves tools): each server
@@ -133,7 +134,7 @@ export async function browserSignIn({ base, resource, resources, scope, tenantCo
  * the server itself publishes it (RFC 9728), so a deployment that moves the MCP
  * endpoint does not need a new plugin.
  */
-export async function resourcesFor(base, fetchImpl = fetch) {
+export async function resourcesFor(base, fetchImpl = defaultFetch) {
   const out = [base];
   try {
     const r = await fetchImpl(`${base}/.well-known/oauth-protected-resource/mcp`, { signal: AbortSignal.timeout(10_000) });
@@ -148,7 +149,7 @@ const who = (me) => me.person?.primary_email || me.person?.name || me.account_id
 async function whoAmI(base) {
   const headers = await authHeaders();
   if (!headers['X-API-Key'] && !headers.Authorization) return null;
-  const r = await fetch(`${base}${API}/auth/me`, { headers, signal: AbortSignal.timeout(10_000) });
+  const r = await defaultFetch(`${base}${API}/auth/me`, { headers, signal: AbortSignal.timeout(10_000) });
   if (!r.ok) return { error: `HTTP ${r.status}` };
   return (await r.json())?.data || null;
 }

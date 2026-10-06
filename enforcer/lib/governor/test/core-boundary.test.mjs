@@ -20,7 +20,7 @@ const scan = (sub, local) => {
       const spec = m[1] || m[2] || m[3];
       // One sanctioned exception: core/credentials.mjs re-exports the single
       // shared credentials module, so the plugin and governor cannot drift.
-      const shared = join(sub, f) === 'credentials.mjs' && spec === '../../../src/credentials.mjs';
+      const shared = (join(sub, f) === 'credentials.mjs' && spec === '../../../src/credentials.mjs') || (join(sub, f) === 'http.mjs' && spec === '../../api/client.mjs');
       const ok = spec.startsWith('node:') || local.test(spec) || shared;
       if (!ok) bad.push(`${join(sub, f)} imports ${spec}`);
     }

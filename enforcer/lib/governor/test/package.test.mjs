@@ -51,6 +51,7 @@ await ok('nothing packed reaches a file that is not packed', () => {
       // Sanctioned: core/credentials.mjs re-exports the one shared credentials
       // module. Publishing core must vendor it (prepack) before this ships.
       if (f === 'credentials.mjs' && target === join('..', '..', '..', 'src', 'credentials.mjs')) continue;
+      if (f === 'http.mjs' && target === join('..', '..', 'api', 'client.mjs')) continue;
       if (!packed.includes(target)) missing.push(`${f} -> ${target}`);
     }
   }

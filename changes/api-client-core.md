@@ -1,0 +1,1 @@
+- One shared Node API client (lib/api/client.mjs): timeouts, retry with jitter and Retry-After, X-Graph-Client/X-Request-Id on every call, typed ApiError; all Node callers routed through it.

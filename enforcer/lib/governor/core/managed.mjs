@@ -18,6 +18,7 @@
 // managed floor — the same failure-open direction as every other check here,
 // and the only honest one: a governor that refused to decide because a settings
 // endpoint was slow would stop work over its own configuration.
+import { hookFetch } from './http.mjs';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { DIR } from './store.mjs';
@@ -142,7 +143,7 @@ function writeManaged(settings, at) {
  *
  * @returns {Promise<{ok: boolean, settings?: object, detail?: string}>}
  */
-export async function refresh(cfg = {}, { fetchImpl = globalThis.fetch, now = Date.now, timeoutMs = 3000 } = {}) {
+export async function refresh(cfg = {}, { fetchImpl = hookFetch, now = Date.now, timeoutMs = 3000 } = {}) {
   if (typeof fetchImpl !== 'function') return { ok: false, detail: 'no fetch in this runtime' };
   if (!credentialId()) return { ok: false, detail: 'not signed in to Enforcer' };
   try {
