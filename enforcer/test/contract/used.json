@@ -220,7 +220,8 @@
       "reads": [
         "data.state",
         "data.lease_expires_at",
-        "data.started_at"
+        "data.started_at",
+        "warnings"
       ],
       "headers": [
         "X-Graph-Client"
