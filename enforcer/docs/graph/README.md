@@ -292,3 +292,7 @@ run to lapse rather than failing it, logs `HARNESS-LIMITED <key>: … until <res
 the reset named in the message (else `--limit-backoff`, default 1800 s). `--on-limit exit` makes it exit 4 instead,
 for a supervisor that restarts it. Before 1.0.0-rc.2 the limit counted as two failed attempts and the dispatcher
 exited with "nothing runnable" (2026-10-05).
+
+## Windows
+
+Windows support: MCP, files and the governor are supported. The graph hooks are supported after the Node port. The dispatcher is POSIX only (use WSL): no bash, `chmod` is a no-op so credential protection is advisory, and no process groups. `enforcer doctor` prints this on win32.

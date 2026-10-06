@@ -1,0 +1,1 @@
+Doctor prints the Windows support position on win32 and README and graph docs state it: MCP, files and governor supported, graph hooks after the port, dispatcher POSIX only (windows-support-statement).

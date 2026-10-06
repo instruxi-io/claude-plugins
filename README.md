@@ -152,3 +152,7 @@ default branch.
 `jev-hooks` sends commands, prompts and tool results to TypeSafe's Jev to be
 judged (see its README for exactly what each hook sends). The MCP servers talk
 to `api.instruxi.dev`.
+
+## Windows
+
+Windows support: MCP, files and the governor are supported. The graph hooks are supported once ported to Node. `enforcer dispatch` is POSIX only (use WSL): there is no bash, `chmod` is a no-op so credential file protection is advisory, and there are no process groups. `enforcer doctor` prints this position on win32.
