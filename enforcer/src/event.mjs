@@ -4,6 +4,7 @@
 import { readFileSync, existsSync, appendFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { stateBase } from './state.mjs';
+import { logHook, noteFailure } from './graph/hooklog.mjs';
 import { LEGACY_PROJECT_CONFIG } from '../hooks/claude/paths.mjs';
 
 export const GRAPH_TOOL = /^mcp__(plugin_enforcer_enforcer|enforcer|enforcer-graph)__graph_/;
@@ -84,11 +85,14 @@ export async function native(handlers, ev, deadline) {
     const left = deadline - Date.now();
     if (left <= 0) break;
     let timer;
+    const t0 = Date.now();
+    let outcome = 'ok';
     try {
       const mod = await import(`./graph/hooks/${NATIVE[h][0]}.mjs`);
       const r = await Promise.race([mod[NATIVE[h][1]](ev), new Promise((res) => { timer = setTimeout(() => res(null), left); })]);
       if (r) out = merge(out, r);
-    } catch {} finally { clearTimeout(timer); }
+    } catch { outcome = 'error'; const note = noteFailure(ev.session_id, h); if (note) out = merge(out, { systemMessage: note }); }
+    finally { clearTimeout(timer); logHook({ hook: h, event: ev.hook_event_name || '', actor: actorKey(ev), outcome, ms: Date.now() - t0, code: outcome === 'ok' ? 0 : 1 }); }
   }
   return { out, code: 0 };
 }
