@@ -573,9 +573,26 @@ def worktree_setup(src, path, dry=False):
     skipped. Returns (copied, linked, notes); dry counts without touching."""
     copied, linked, notes = 0, 0, []
     root = os.path.realpath(src)
-    for rel in _manifest(os.path.join(src, ".worktreeinclude")):
+    includes = []
+    for pat in _manifest(os.path.join(src, ".worktreeinclude")):
+        if os.path.isabs(pat) or ".." in pat.split("/"):
+            notes.append("skip %s (missing or outside repo)" % pat)
+        elif not any(ch in pat for ch in "*?["):
+            includes.append(pat)
+        else:
+            # gitignore-style pattern: unanchored ones match at any depth
+            pat = pat.rstrip("/")
+            specs = [":(glob)" + pat.lstrip("/")]
+            if "/" not in pat:
+                specs.append(":(glob)**/" + pat)
+            r = git(["ls-files", "-z", "--others", "--ignored", "--exclude-standard", "--"] + specs, src)
+            found = sorted(x for x in (r.stdout or "").split("\0") if x)
+            if not found:
+                notes.append("skip %s (matches no ignored file)" % pat)
+            includes.extend(found)
+    for rel in includes:
         f = os.path.realpath(os.path.join(src, rel))
-        if os.path.isabs(rel) or not f.startswith(root + os.sep) or not os.path.isfile(f):
+        if not f.startswith(root + os.sep) or not os.path.isfile(f):
             notes.append("skip %s (missing or outside repo)" % rel)
             continue
         if git(["ls-files", "--error-unmatch", "--", rel], src).returncode == 0:
@@ -592,7 +609,15 @@ def worktree_setup(src, path, dry=False):
     for rel in _manifest(os.path.join(src, ".worktreeshare")):
         target = os.path.normpath(os.path.join(src, rel))
         dest = os.path.normpath(os.path.join(path, rel))
-        if os.path.isabs(rel) or not os.path.isdir(target):
+        parts = rel.split("/")
+        lead = 0
+        while lead < len(parts) and parts[lead] == "..":
+            lead += 1
+        inside = os.path.realpath(target).startswith(root + os.sep)
+        if os.path.isabs(rel) or ".." in parts[lead:] or lead > 1 or (lead == 0 and not inside):
+            notes.append("skip %s (share escapes the source root)" % rel)
+            continue
+        if not os.path.isdir(target):
             notes.append("skip %s (not a directory in the main checkout)" % rel)
             continue
         if rel.startswith("..") and os.path.dirname(os.path.normpath(path)) != os.path.dirname(root):
@@ -604,6 +629,13 @@ def worktree_setup(src, path, dry=False):
         if not dry:
             os.makedirs(os.path.dirname(dest), exist_ok=True)
             os.symlink(target, dest)
+            if lead == 0:
+                ex = git(["rev-parse", "--git-path", "info/exclude"], path).stdout.strip()
+                if ex:
+                    ex = os.path.join(path, ex)
+                    os.makedirs(os.path.dirname(ex), exist_ok=True)
+                    with open(ex, "a") as fh:
+                        fh.write("/" + rel.rstrip("/") + "\n")
         linked += 1
     return copied, linked, notes
 
