@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, existsSync, statSync } from 'node:fs';
@@ -15,6 +16,6 @@ const r = spawnSync(shim, ['governor'], { encoding: 'utf8', env: { ...process.en
 assert.match(r.stderr, /usage: enforcer/);
 assert.match(r.stderr, /login/);
 ok('shim resolves the stable runtime');
-const s = spawnSync(process.execPath, [new URL('../bin/enforcer', import.meta.url).pathname, 'login', 'status'], { encoding: 'utf8', env: { ...process.env, HOME: home, ENFORCER_HOME: home } });
+const s = spawnSync(process.execPath, [fileURLToPath(new URL('../bin/enforcer', import.meta.url)), 'login', 'status'], { encoding: 'utf8', env: { ...process.env, HOME: home, ENFORCER_HOME: home } });
 assert.equal(s.status === null, false);
 ok('enforcer login status runs');

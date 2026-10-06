@@ -8,5 +8,7 @@ import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 if (!['openapi-typescript', 'openapi-fetch', 'typescript'].every((d) => existsSync(resolve(root, 'node_modules', d)))) {
-  execFileSync('npm', ['ci', '--no-audit', '--no-fund'], { cwd: root, stdio: 'inherit' });
+  // On Windows npm is `npm.cmd`, which Node refuses to spawn without a shell since the
+  // CVE-2024-27980 fix (spawnSync npm ENOENT without the suffix, EINVAL with it).
+  execFileSync('npm', ['ci', '--no-audit', '--no-fund'], { cwd: root, stdio: 'inherit', shell: process.platform === 'win32' });
 }
