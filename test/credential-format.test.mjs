@@ -107,7 +107,7 @@ await test('governor and plugin read the same credential file', () => {
   const doc = { enforcer: { api_key: 'env3_' + 'y'.repeat(43) } };
   G.saveCredentials(doc);
   assert.equal(G.SHARED_FILE(), E.SHARED_FILE());
-  assert.deepEqual(E.readCredentials(), doc);
+  assert.deepEqual(E.readCredentials(), { schema_version: 1, ...doc });
 });
 await test('refresh under the shared lock', async () => {
   assert.equal(G.refreshLockPath(), E.refreshLockPath());

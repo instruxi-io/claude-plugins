@@ -1,0 +1,1 @@
+- `enforcer uninstall [--purge]` removes the OTEL entries, headers shim, plugin-root and the Grok and Codex installs by manifest; state files carry schema_version and an older plugin refuses newer state; Codex install writes a manifest like Grok's.

@@ -87,6 +87,11 @@ if (area === 'land') {
   process.exit(await landMain([sub, ...rest]));
 }
 
+if (area === 'uninstall') {
+  const { main: uninstallMain } = await import('../src/uninstall.mjs');
+  process.exit(await uninstallMain([sub, ...rest].filter((x) => x !== undefined)));
+}
+
 if (area === 'governor' && GOV.includes(sub)) {
   const script = sub === 'decide' ? here('../lib/governor/bin/governor') : here('../lib/governor/core/report.mjs');
   const r = spawnSync(process.execPath, [script, sub, ...rest], { stdio: 'inherit' });
@@ -107,5 +112,5 @@ if (area === 'harness' && (sub === 'install' || sub === 'uninstall') && rest[0] 
   process.exit(r.ok ? 0 : 1);
 }
 
-process.stderr.write(`usage: enforcer doctor\n       enforcer login [args] | logout | status | workspace <list|switch|current>\n       enforcer event <${EVENT_NAMES.join('|')}>\n       enforcer governor <${GOV.join('|')}> [args]\n       enforcer harness <install|uninstall> <grok|codex> [--dry-run] [--yes]\n       enforcer hook <${Object.keys(HOOKS).join('|')}> [handler]\n`);
+process.stderr.write(`usage: enforcer doctor\n       enforcer uninstall [--purge] [--yes]\n       enforcer login [args] | logout | status | workspace <list|switch|current>\n       enforcer event <${EVENT_NAMES.join('|')}>\n       enforcer governor <${GOV.join('|')}> [args]\n       enforcer harness <install|uninstall> <grok|codex> [--dry-run] [--yes]\n       enforcer hook <${Object.keys(HOOKS).join('|')}> [handler]\n`);
 process.exit(2);

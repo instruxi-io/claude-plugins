@@ -7,6 +7,7 @@ import { readFileSync, mkdirSync, renameSync, chmodSync, openSync, writeSync, fs
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
+import { assertSchema, stamp } from './schema.mjs';
 
 // ONE sign-in for everything Enforcer on this machine.
 //
@@ -35,6 +36,8 @@ const readJson = (f) => { try { return JSON.parse(readFileSync(f, 'utf8')); } ca
 /** The stored credential document, shared file first. Null when there is none. */
 export function readCredentials() {
   const shared = readJson(SHARED_FILE());
+  try { if (shared) assertSchema(shared, SHARED_FILE()); }
+  catch (e) { process.stderr.write(`enforcer: ${e.message}\n`); return null; } // refuse newer state: signed out, never misread
   if (shared?.enforcer) return shared;
   const legacy = readJson(LEGACY_FILE);
   return legacy?.enforcer ? legacy : null;
@@ -46,6 +49,9 @@ export function readCredentials() {
  * file, and 0600 in a 0700 directory because this is a bearer secret.
  */
 export function saveCredentials(doc) {
+  const onDisk = readJson(SHARED_FILE());
+  if (onDisk) assertSchema(onDisk, SHARED_FILE()); // never overwrite a newer file with an older shape
+  doc = stamp(doc);
   const dir = SHARED_DIR();
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   try { chmodSync(dir, 0o700); } catch { /* not ours to chmod */ }
