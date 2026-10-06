@@ -3,14 +3,14 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 // Every *.test.mjs under test/ and lib/governor/test/ is discovered, so a new suite never needs a list edit
 // (package.json's test script is one fixed line). Each runs in its own process under the isolating preload
 // (test/tmp-cleanup.mjs) with a per-suite timeout. Slow end-to-end suites (graph/run, hooks-latency) run last.
 const TIMEOUT_MS = Number(process.env.SUITE_TIMEOUT_MS) || 300_000;
-const PRELOAD = join(ROOT, 'test', 'tmp-cleanup.mjs');
+const PRELOAD = pathToFileURL(join(ROOT, 'test', 'tmp-cleanup.mjs')).href;
 const walk = (dir) => readdirSync(join(ROOT, dir), { withFileTypes: true }).flatMap((e) =>
   e.isDirectory() ? (e.name === 'node_modules' || e.name === 'fixtures' ? [] : walk(`${dir}/${e.name}`)) : e.name.endsWith('.test.mjs') ? [`${dir}/${e.name}`] : []);
 // test/dispatch/runtime SIGTERMs its own process, which the preload's signal handler turns into exit 1: it runs bare
