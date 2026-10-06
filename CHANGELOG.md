@@ -4,6 +4,8 @@
 
 Changes since 1.0.5, promoted to a numbered heading by the release node.
 
+- enforcer-governor catalog entry is now an inert alias stub (aliases/enforcer-governor), so it no longer double-fires beside enforcer.
+
 ## 1.0.5
 
 Governor gate:

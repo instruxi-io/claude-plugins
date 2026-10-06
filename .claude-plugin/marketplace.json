@@ -11,17 +11,13 @@
       "description": "Connects your agent to your Enforcer workspace as an Agent Plugins 1.0 package (root plugin.json, mcp.json, skills) with a Claude Code fallback: the enforcer MCP server, one sign-in (/enforcer:login), /enforcer:setup, workspace switching. Includes the graph worker and the governor.",
       "category": "platform",
       "source": "./enforcer",
-      "version": "1.0.5"
+      "version": "1.0.6"
     },
     {
       "name": "enforcer-governor",
       "description": "DEPRECATED: now part of enforcer. Install enforcer instead (`claude plugin install enforcer@instruxi`); this alias goes away after one release.",
       "category": "deprecated",
-      "source": {
-        "source": "github",
-        "repo": "instruxi-io/enforcer-governor",
-        "ref": "v2.9.0"
-      }
+      "source": "./aliases/enforcer-governor"
     },
     {
       "name": "jev-hooks",
