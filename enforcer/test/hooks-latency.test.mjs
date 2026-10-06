@@ -13,8 +13,12 @@ delete env.GRAPH_ID; delete env.ENFORCER_STATE_DIR;
 const input = JSON.stringify({ hook_event_name: 'PostToolUse', session_id: 'lat-1', cwd, tool_name: 'Bash', tool_input: { command: 'ls' }, tool_response: { stdout: 'a' } });
 const run = () => { const t = process.hrtime.bigint(); const r = spawnSync(process.execPath, [cli, 'event', 'post-tool-use'], { input, env, encoding: 'utf8' }); assert.equal(r.status, 0, r.stderr); return Number(process.hrtime.bigint() - t) / 1e6; };
 run(); run(); // warm the file cache
-const ms = Array.from({ length: 15 }, run).sort((a, b) => a - b);
-const median = ms[7];
-console.log(`PostToolUse (no graph context) median ${median.toFixed(1)} ms over 15 runs (min ${ms[0].toFixed(1)}, max ${ms[14].toFixed(1)})`);
-assert.ok(median < 40, `median ${median.toFixed(1)} ms must be < 40 ms`);
+const med = (f) => Array.from({ length: 15 }, f).sort((a, b) => a - b)[7];
+const median = med(run);
+// A slow host (a shared CI runner, a node without the compile cache) pays its own startup on top:
+// the budget is 40 ms, or 20 ms over a bare `node -e 0` on this host when that is larger.
+const bare = med(() => { const t = process.hrtime.bigint(); spawnSync(process.execPath, ['-e', '0'], { env }); return Number(process.hrtime.bigint() - t) / 1e6; });
+const budget = Math.max(40, bare + 20);
+console.log(`PostToolUse (no graph context) median ${median.toFixed(1)} ms over 15 runs; bare node ${bare.toFixed(1)} ms; budget ${budget.toFixed(1)} ms`);
+assert.ok(median < budget, `median ${median.toFixed(1)} ms must be < ${budget.toFixed(1)} ms`);
 console.log('ok   hooks-latency');
