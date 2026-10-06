@@ -152,7 +152,8 @@ test('fail-open on 401, silent on ok, lease/3 gate', async () => {
   const env = (base) => ({ ENFORCER_STATE_DIR: join(root, 's'), HOME: root, GRAPH_ID: 'g1', ENFORCER_BASE_URL: base, GRAPH_API_KEY: 'k', ENFORCER_API_KEY: 'k', GRAPH_HEARTBEAT_MIN_GAP: '20' });
   await withServer(401, {}, async (base) => withEnv(env(base), async () => {
     liveRun('s3');
-    assert.equal(await heartbeat({ session_id: 's3', tool_name: 'Bash', cwd: root }), null);
+    const first = await heartbeat({ session_id: 's3', tool_name: 'Bash', cwd: root });
+    assert.match(first.systemMessage, /\/enforcer:login/); // a 401 is announced once per session (src/errors.mjs)
     assert.ok(!loadRun('s3').reclaimed);
   }));
   await withServer(200, { success: true, data: { state: 'ok', lease_expires_at: '2099-01-01T00:00:00Z' } }, async (base, seen) => withEnv(env(base), async () => {

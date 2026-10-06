@@ -1,7 +1,8 @@
 // PostToolUse: extend the lease when a third of it is spent (port of heartbeat.py). Returns a hook answer or null.
+import { notice, warningNotices } from '../../errors.mjs';
 import { actorKey } from '../state.mjs';
 import { loadRun, saveRun, clearRun } from '../run.mjs';
-import { httpStatus } from '../http.mjs';
+import { httpStatus, httpResult } from '../http.mjs';
 import { findConfig, isGraphTool, actorTranscript, transcriptUsage, typedUsage } from './common.mjs';
 
 const DEFAULT_LEASE = 300;
@@ -24,13 +25,15 @@ const callSeconds = (inp) => {
   return typeof d === 'number' ? d / 1000 : 0;
 };
 
-export async function beat(inp, run, sid, now = Date.now() / 1000, post = httpStatus) {
+let lastCall = null;
+export async function beat(inp, run, sid, now = Date.now() / 1000, post = httpResult) {
   const cfg = findConfig(inp.cwd);
   if (!cfg) return null;
   const usage = typedUsage(transcriptUsage(actorTranscript(inp), run.claimed_at));
-  // api-used: sends usage; reads data.state,data.lease_expires_at,data.started_at; headers X-Graph-Client
-  const [status, r] = await post(cfg, 'POST', `/graphs/${run.graph_id}/nodes/${run.node_id}/runs/${run.run_id}/heartbeat`, usage ? { usage } : {}, { runId: run.run_id });
+  // api-used: sends usage; reads data.state,data.lease_expires_at,data.started_at,warnings; headers X-Graph-Client
+  const [status, r, errBody] = await post(cfg, 'POST', `/graphs/${run.graph_id}/nodes/${run.node_id}/runs/${run.run_id}/heartbeat`, usage ? { usage } : {}, { runId: run.run_id });
   run.last_hb = now;
+  lastCall = { status, errBody, warnings: r && r.warnings };
   if (status === 404 || status === 409) { run.reclaimed = true; saveRun(sid, run); return 'reclaimed'; }
   const d = (r && r.data) || {};
   if (d.lease_expires_at) { run.lease_expires_at = d.lease_expires_at; run.claimed_at = run.claimed_at || d.started_at; }
@@ -47,8 +50,15 @@ export async function heartbeat(inp, post) {
     const now = Date.now() / 1000;
     const longCall = inp.tool_name === 'Bash' && callSeconds(inp) > leaseSeconds(run) / 2;
     if (!due(run, now, longCall)) return null;
+    lastCall = null;
     const state = await beat(inp, run, sid, now, post);
-    if (!state || state === 'ok') return null;
+    const said = [], ctxs = [];
+    if (lastCall) {
+      const n = lastCall.status >= 400 ? notice(sid, { status: lastCall.status, body: lastCall.errBody || {} }, { run: true }) : null;
+      if (n) { said.push(n.systemMessage); ctxs.push(n.additionalContext); }
+      for (const w of warningNotices(sid, lastCall.warnings)) { said.push(w); ctxs.push(w); }
+    }
+    if (!state || state === 'ok') return said.length ? { systemMessage: said.join('\n'), hookSpecificOutput: { hookEventName: 'PostToolUse', additionalContext: ctxs.join('\n') } } : null;
     const key = run.key || run.node_id;
     const msg = {
       cancel_requested: `enforcer-graph: cancellation was requested for node ${key}. Stop the work, graph_remember what is worth keeping, then graph_report it as cancelled.`,
