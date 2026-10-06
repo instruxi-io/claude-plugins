@@ -15,12 +15,13 @@ import { mergeTarget, repoOf, resourcesOf, lapsed, select, affinityOrder } from 
 import { summarize, failedOutcome, workerPrompt, remediationPrompt, harnessLimitText, limitResetAt, judgeLines, denialClass } from './summarize.mjs';
 import { countTurns } from './stream.mjs';
 import { unsafeIdent } from './triage.mjs';
+import HEADLESS_PROFILE from '../../lib/governor/profiles/headless-worker.mjs';
 import { loadRepoBases } from './prune.mjs';
 import { clip, parseTs } from './util.mjs';
 import { writeLog, redactFile, pruneLogs, DEFAULT_LOG_DAYS, DEFAULT_LOG_MAX_BYTES } from './logs.mjs';
 
 /** Per-worker spend cap passed as --max-budget-usd unless the operator overrides it. */
-export const DEFAULT_MAX_BUDGET_USD = 5;
+export const DEFAULT_MAX_BUDGET_USD = HEADLESS_PROFILE.spend.defaultMaxBudgetUsd;
 export const DEFAULT_TYPES = 'task,bug,chore,merge,scout,milestone,ops'; // gate stays human
 export const CI_UNAVAILABLE = 7;
 export const CI_STATUS_URL = 'https://www.githubstatus.com/api/v2/components.json';
