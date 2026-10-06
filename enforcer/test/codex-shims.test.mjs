@@ -1,13 +1,14 @@
 // The hooks/claude shims fed Codex-shaped stdin (same field names plus turn_id,
 // model, permission_mode). Fixtures are in test/fixtures/codex (see its README:
 // not recorded from a live Codex run).
+import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { readFileSync, readdirSync, existsSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-const root = new URL('..', import.meta.url).pathname;
+const root = fileURLToPath(new URL('..', import.meta.url));
 const fx = (n) => readFileSync(join(root, 'test/fixtures/codex', n), 'utf8');
 const home = mkdtempSync(join(tmpdir(), 'codex-shim-'));
 const run = (shim, input) => spawnSync(process.execPath, [join(root, 'hooks/claude', shim)],

@@ -1,5 +1,6 @@
 // The browser sign-in, end to end against a fake authorization server — the
 // real HTTP listener, the real redirect, the real PKCE check.
+import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { createHash } from 'node:crypto';
@@ -206,10 +207,10 @@ await ok('one credential at a time: a sign-in replaces a key and a key replaces 
   saveCredentials({ enforcer: { base_url: base, oauth: { access_token: 'at', client_id: 'c' } } });
   const keyFile = join(tmpdir(), 'k-' + process.pid);
   writeFileSync(keyFile, 'env3_' + 'z'.repeat(43) + '\n');
-  execFileSync(process.execPath, [new URL('../bin/login.mjs', import.meta.url).pathname, 'api-key', keyFile],
+  execFileSync(process.execPath, [fileURLToPath(new URL('../bin/login.mjs', import.meta.url)), 'api-key', keyFile],
     { env: { ...process.env, ENFORCER_API_KEY: '' }, encoding: 'utf8' });
   rmSync(keyFile);
-  const refused = spawnSync(process.execPath, [new URL('../bin/login.mjs', import.meta.url).pathname, 'api-key', 'env3_' + 'y'.repeat(43)],
+  const refused = spawnSync(process.execPath, [fileURLToPath(new URL('../bin/login.mjs', import.meta.url)), 'api-key', 'env3_' + 'y'.repeat(43)],
     { env: { ...process.env, ENFORCER_API_KEY: '' }, encoding: 'utf8' });
   assert.equal(refused.status, 2, 'a key passed as an argument is refused');
   assert.match(refused.stdout, /Do not pass the key as an argument/);
@@ -224,7 +225,7 @@ await ok('logout calls revoke', async () => {
   const { saveCredentials, readCredentials } = await import('../src/credentials.mjs');
   issued.meta = { revocation_endpoint: base + '/revoke' };
   saveCredentials({ enforcer: { base_url: base, oauth: { access_token: 'at', refresh_token: 'rt-1', client_id: 'c' } } });
-  const r = await run([new URL('../bin/login.mjs', import.meta.url).pathname, 'logout'], { ENFORCER_API_KEY: 'env3_' + 'q'.repeat(43) });
+  const r = await run([fileURLToPath(new URL('../bin/login.mjs', import.meta.url)), 'logout'], { ENFORCER_API_KEY: 'env3_' + 'q'.repeat(43) });
   assert.equal(issued.revoked, 'rt-1');
   assert.equal(readCredentials()?.enforcer?.oauth, undefined);
   assert.match(r.stdout, /Revoked the refresh token/);
@@ -237,7 +238,7 @@ await ok('ENFORCER_BASE_URL overrides saved base_url', async () => {
   const run = (args, env) => new Promise((res) => execFile(process.execPath, args, { env: { ...process.env, ...env }, encoding: 'utf8' }, (e, stdout) => res({ stdout })));
   const { saveCredentials } = await import('../src/credentials.mjs');
   saveCredentials({ enforcer: { base_url: 'http://127.0.0.1:1', oauth: { access_token: 'at' } } });
-  const r = await run([new URL('../bin/login.mjs', import.meta.url).pathname, 'scopes'], { ENFORCER_BASE_URL: base });
+  const r = await run([fileURLToPath(new URL('../bin/login.mjs', import.meta.url)), 'scopes'], { ENFORCER_BASE_URL: base });
   assert.match(r.stdout, new RegExp(base.replace(/\./g, '\\.')));
 });
 

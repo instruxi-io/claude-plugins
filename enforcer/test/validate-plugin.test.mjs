@@ -1,6 +1,7 @@
 // Validates plugin.json against the vendored Agent Plugins 1.0 schema (draft 2020-12 subset the
 // schema uses: type, const, required, properties, additionalProperties, items, minLength,
 // maxLength, pattern) and checks every version string in the package is identical.
+import { fileURLToPath } from 'node:url';
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import { DOT } from '../hooks/claude/paths.mjs';
@@ -152,7 +153,7 @@ console.log('ok   kit defaults: only enforcer and jev-hooks are selectable, only
       walk(p, false);
     }
   };
-  walk(new URL('..', import.meta.url).pathname.replace(/\/$/, ''), true);
+  walk(fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, ''), true);
   assert.deepEqual(nested, [], `nested plugin manifests: ${nested.join(', ')}`);
   console.log('ok   no nested plugin manifests');
 }

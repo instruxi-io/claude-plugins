@@ -3,6 +3,7 @@
 // the shared core. Fixtures in test/fixtures/grok were RECORDED from a live
 // `grok -p` run (grok 1.0.41, 2026-10-05) — Grok sends both camelCase and
 // snake_case copies of every field, and tool names like run_terminal_command.
+import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { readFileSync, mkdtempSync, existsSync } from 'node:fs';
@@ -10,7 +11,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { normalize } from '../hooks/grok/shim.mjs';
 
-const root = new URL('..', import.meta.url).pathname;
+const root = fileURLToPath(new URL('..', import.meta.url));
 const fx = (n) => readFileSync(join(root, 'test/fixtures/grok', n), 'utf8');
 const home = mkdtempSync(join(tmpdir(), 'grok-shim-'));
 const env = { ...process.env, HOME: home, ENFORCER_HOME: home, GOVERNOR_HOME: join(home, 'g') };

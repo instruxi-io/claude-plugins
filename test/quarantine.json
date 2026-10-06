@@ -32,5 +32,23 @@
     "owner": "austin@instruxi.io",
     "expires": "2026-11-15",
     "reason": "test_capture's concurrent-append case cannot find its evidence file under the macOS temp dir; the python library is scheduled for removal (remove-python)."
-  }
+  },
+  { "suite": "api-gen", "os": ["win32"], "owner": "austin@instruxi.io", "expires": "2026-11-15", "reason": "Windows: first matrix run 2026-10-06 (node windows-suite-portability holds the fix)." },
+  { "suite": "api-lock", "os": ["win32"], "owner": "austin@instruxi.io", "expires": "2026-11-15", "reason": "Windows: first matrix run 2026-10-06 (node windows-suite-portability)." },
+  { "suite": "bundle", "os": ["win32"], "owner": "austin@instruxi.io", "expires": "2026-11-15", "reason": "Windows: src/bundle.mjs shells out to tar with a C: path, which tar reads as a remote host ('Cannot connect to C: resolve failed'). Real product bug (node windows-suite-portability)." },
+  { "suite": "codex-shims", "os": ["win32"], "owner": "austin@instruxi.io", "expires": "2026-11-15", "reason": "Windows: paths from import.meta.url pathname carried a doubled drive letter; fixed in this PR, kept until the matrix confirms (node windows-suite-portability)." },
+  { "suite": "config", "os": ["win32"], "owner": "austin@instruxi.io", "expires": "2026-11-15", "reason": "Windows: first matrix run 2026-10-06 (node windows-suite-portability)." },
+  { "suite": "credentials", "os": ["win32"], "owner": "austin@instruxi.io", "expires": "2026-11-15", "reason": "Windows: first matrix run 2026-10-06 (node windows-suite-portability)." },
+  { "suite": "grok-install", "os": ["win32"], "owner": "austin@instruxi.io", "expires": "2026-11-15", "reason": "Windows: the installer writes a backslash path into hook JSON unescaped ('Bad escaped character in JSON'). Real product bug (node windows-suite-portability)." },
+  { "suite": "grok-shim", "os": ["win32"], "owner": "austin@instruxi.io", "expires": "2026-11-15", "reason": "Windows: doubled drive letter from URL pathname; fixed in this PR, kept until the matrix confirms (node windows-suite-portability)." },
+  { "suite": "grok-shims", "os": ["win32"], "owner": "austin@instruxi.io", "expires": "2026-11-15", "reason": "Windows: doubled drive letter from URL pathname; fixed in this PR, kept until the matrix confirms (node windows-suite-portability)." },
+  { "suite": "harness-shim", "os": ["win32"], "owner": "austin@instruxi.io", "expires": "2026-11-15", "reason": "Windows: first matrix run 2026-10-06 (node windows-suite-portability)." },
+  { "suite": "hooks", "os": ["win32"], "owner": "austin@instruxi.io", "expires": "2026-11-15", "reason": "Windows: first matrix run 2026-10-06 (node windows-suite-portability)." },
+  { "suite": "land", "os": ["win32"], "owner": "austin@instruxi.io", "expires": "2026-11-15", "reason": "Windows: first matrix run 2026-10-06; landing is documented as unsupported on Windows (node windows-suite-portability)." },
+  { "suite": "login", "os": ["win32"], "owner": "austin@instruxi.io", "expires": "2026-11-15", "reason": "Windows: doubled drive letter from URL pathname; fixed in this PR, kept until the matrix confirms (node windows-suite-portability)." },
+  { "suite": "migration", "os": ["win32"], "owner": "austin@instruxi.io", "expires": "2026-11-15", "reason": "Windows: first matrix run 2026-10-06 (node windows-suite-portability)." },
+  { "suite": "setup-command", "os": ["win32"], "owner": "austin@instruxi.io", "expires": "2026-11-15", "reason": "Windows: first matrix run 2026-10-06 (node windows-suite-portability)." },
+  { "suite": "validate-plugin", "os": ["win32"], "owner": "austin@instruxi.io", "expires": "2026-11-15", "reason": "Windows: first matrix run 2026-10-06 (node windows-suite-portability)." },
+  { "suite": "workspace", "os": ["win32"], "owner": "austin@instruxi.io", "expires": "2026-11-15", "reason": "Windows: first matrix run 2026-10-06 (node windows-suite-portability)." },
+  { "suite": "contract", "os": ["win32"], "owner": "austin@instruxi.io", "expires": "2026-11-15", "reason": "Windows: first matrix run 2026-10-06 (node windows-suite-portability)." }
 ]
