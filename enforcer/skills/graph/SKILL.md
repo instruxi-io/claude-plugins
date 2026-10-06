@@ -137,6 +137,14 @@ well-written report with nothing behind it scores like no report at all.
   with its path. It attaches the record to `graph_report` for you and replaces
   anything you put in `evidence`. Reads, greps and globs are not captured. Do
   not hand-write `evidence`, and do not paste output into the report as proof.
+- **Run `enforcer evidence run <graph>:<node-key> --cwd .` before `graph_report`.** It runs each of the node's
+  `<command> prints|exits ...` acceptance lines with the rules every completion path had to relearn: the quoted
+  literal is kept in the output, Go tests get `-tags integration -run <Name> -v`, `<graph>` and `<test db>` are
+  filled in, `cd dir &&` sets the directory, a suite that collides with a concurrent run is retried once, and PR
+  and prose lines are skipped (you prove those by merging). It prints one JSON evidence item per command and ends
+  with `literals found: <k>/<n>`; because it runs through `Bash`, the plugin captures it as your evidence. Fix
+  the work, not the wording, until every literal is found. The dispatcher's landing completion and
+  `enforcer plan check` use the same code.
 - **Prove each line with a command that runs in your own session.** If you
   claim a test passes, run it. If you claim a file changed, show
   `git diff --stat`. If you claim a PR is merged, run

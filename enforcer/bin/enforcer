@@ -82,6 +82,11 @@ if (area === 'plan') {
   process.exit(await planCheckMain(rest));
 }
 
+if (area === 'evidence') {
+  const { main: evidenceMain } = await import('../src/evidence-run.mjs');
+  process.exit(await evidenceMain([sub, ...rest].filter((x) => x !== undefined)));
+}
+
 if (area === 'land') {
   if (sub === undefined) { process.stderr.write('usage: enforcer land <pr> [-R owner/repo] [--timeout <s>]   waits for green, then merges\n'); process.exit(2); }
   const { main: landMain } = await import('../src/land.mjs');

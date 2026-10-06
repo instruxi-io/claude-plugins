@@ -2,6 +2,7 @@
 // completes the run with the node's own acceptance commands run on the merged commit as evidence.
 import { spawnSync } from 'node:child_process';
 import { clip } from './util.mjs';
+import { runEvidence } from '../evidence-run.mjs';
 
 export const LAND_CODES = { 0: 'merged', 2: 'CI failed', 3: 'conflict with the base', 4: 'timed out', 5: 'usage or gh error', 7: 'CI unavailable' };
 export const ACCEPT_RUNNERS = ['node', 'bash', 'grep', 'ls'];
@@ -20,18 +21,10 @@ export function acceptanceCommands(node) {
   return out;
 }
 
-/** Run each acceptance command in cwd with the harness env cleared; one {kind:'command'} record each. */
+/** Run each acceptance command in cwd with the harness env cleared; one {kind:'command'} record each.
+ *  The rules (Go test flags, cd prefix, one retry on a collision, head+tail output) are `enforcer evidence run`'s. */
 export function landingEvidence(node, cwd, { run = spawnSync, env = process.env } = {}) {
-  const clean = Object.fromEntries(Object.entries(env).filter(([k]) => ['PATH', 'HOME', 'LANG', 'TMPDIR'].includes(k)));
-  return acceptanceCommands(node).map((cmd) => {
-    const r = run('bash', ['-c', cmd], { cwd, env: clean, stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8', timeout: 600000 });
-    let rc, out;
-    if (r.error && r.error.code === 'ETIMEDOUT') { rc = 124; out = 'timed out after 600 s'; }
-    else if (r.error) { rc = 127; out = String(r.error.message); }
-    else { rc = r.status ?? 1; out = ((r.stdout || '') + (r.stderr || '')).trim(); }
-    if (out.length > 3000) out = out.slice(0, 1200) + '\n...\n' + out.slice(-1800);
-    return { kind: 'command', cmd, exit: rc, output: out };
-  });
+  return runEvidence(node, { cwd, env, run, runners: ACCEPT_RUNNERS, graph: node.graph_id ?? '' }).items;
 }
 
 /** The completion body for a landed (or not) PR; `evidence` is the acceptance output, attached on success. */
