@@ -342,6 +342,36 @@ class APIError(Exception):
         super().__init__("HTTP %s: %s" % (status, body[:300]))
         self.status, self.body = status, body
 
+    def detail(self):
+        """The server's error `detail` (else its message) from a JSON body, else the str()."""
+        try:
+            j = json.loads(self.body)
+            e = j.get("error") if isinstance(j, dict) else None
+            d = (j.get("detail") if isinstance(j, dict) else None) or (e.get("detail") if isinstance(e, dict) else None)
+            if d:
+                return "HTTP %s: %s" % (self.status, clip(d if isinstance(d, str) else json.dumps(d), 600))
+        except ValueError:
+            pass
+        return str(self)
+
+
+TITLE_MAX = 120
+
+
+def clip_words(text, n):
+    """text cut to at most n chars at a word boundary (with an ellipsis)."""
+    text = " ".join(str(text).split())
+    if len(text) <= n:
+        return text
+    cut = text[:n - 1].rsplit(" ", 1)[0] or text[:n - 1]
+    return cut.rstrip(".,;:- ") + "\u2026"
+
+
+def safe_key(key):
+    """A node key limited to lowercase letters, digits, - and _ ."""
+    k = re.sub(r"[^a-z0-9_-]+", "-", str(key).lower()).strip("-")
+    return k[:80] or "gate"
+
 
 def default_helper():
     found = sorted(glob.glob(claude_paths.plugin_cache_glob(
@@ -1242,10 +1272,22 @@ class Dispatcher:
         if t is None:
             self.say("TRIAGE-NONE %s: %s; left for a person" % (key, why))
             return None
+        if t["action"] == "gate" and not t.get("gate_key"):
+            # a gate that only waits on landing is the LANDING-BLOCKED path: PR open + green -> land it
+            pw = Worker(failed, "")
+            lb = self.landing_blocked_info(pw, {})
+            if lb:
+                self.say("LANDING-BLOCKED %s: PR #%s open, landing (triage said gate: %s)"
+                         % (key, lb["pr"], clip(t["decision"], 120)))
+                if self.start_landing(pw, {}, lb):
+                    return ["landing PR #%s" % lb["pr"]]
+                self.landing.pop(key, None)
+        step = {}
         try:
-            writes = self.apply_triage(failed, tkey, t)
+            writes = self.apply_triage(failed, tkey, t, step)
         except APIError as e:
-            self.say("TRIAGE-WRITE-FAILED %s (%s): %s" % (key, t["action"], e))
+            self.say("TRIAGE-WRITE-FAILED %s (%s) at %s: %s; body sent: %s" % (
+                key, t["action"], step.get("what", "?"), e.detail(), json.dumps(step.get("body"))[:2000]))
             return None
         self.say("TRIAGE %s -> %s: %s (%s)" % (key, t["action"], "; ".join(writes), clip(t["reason"], 200)))
         if getattr(w, "triage_any", False):
@@ -1261,7 +1303,7 @@ class Dispatcher:
         except APIError as e:
             self.say("TRIAGE-MARK-FAILED %s: %s (in-session mark still holds)" % (failed["key"], e))
 
-    def apply_triage(self, failed, tkey, t):
+    def apply_triage(self, failed, tkey, t, step=None):
         """The graph writes of one decision; returns them as log strings.
         revise: the failed node's description/acceptance/brief, with
         data.revised_by=triage. prerequisite: each new node plus a `requires`
@@ -1269,6 +1311,7 @@ class Dispatcher:
         decision plus the `requires` edge that holds the failed node behind it,
         and nothing else."""
         g, act, reason = self.g, t["action"], t["reason"]
+        step = step if step is not None else {}
         if t.get("dropped"):
             self.say("TRIAGE-DROPPED %s: %s" % (failed["key"], "; ".join(t["dropped"])))
         fdata = failed.get("data") or {}
@@ -1285,7 +1328,8 @@ class Dispatcher:
             self.api.patch_node(g, failed["id"], body)
             return ["patched %s (%s)" % (failed["key"], ", ".join(sorted(set(body) - {"merge_data"} | set(data))))]
         specs = t["nodes"] if act == "prerequisite" else [{
-            "key": t.get("gate_key") or "gate-" + failed["key"], "type": "gate", "title": t["decision"],
+            "key": t.get("gate_key") or safe_key("gate-" + failed["key"]), "type": "gate",
+            "title": clip_words(t["decision"], TITLE_MAX),
             "description": "%s\n\nWhy (triage %s): %s" % (t["decision"], tkey, reason),
             "data": {"decision": t["decision"]}, "existing": bool(t.get("gate_key"))}]
         out = []
@@ -1304,13 +1348,17 @@ class Dispatcher:
                     data[k] = spec[k]
             if act == "prerequisite" and fdata.get("repo") and "repo" not in data:
                 data["repo"] = fdata["repo"]
-            created = self.api.create_node(g, {"key": spec["key"], "title": spec["title"],
-                                               "type": spec.get("type") or ("gate" if act == "gate" else "task"),
-                                               "description": spec.get("description") or "", "data": data})
+            nbody = {"key": spec["key"], "title": spec["title"],
+                     "type": spec.get("type") or ("gate" if act == "gate" else "task"),
+                     "description": spec.get("description") or "", "data": data}
+            step.update(what="create node " + spec["key"], body=nbody)
+            created = self.api.create_node(g, nbody)
             nid = (created or {}).get("id")
             if not nid:
                 raise APIError("triage", "created node %s came back with no id" % spec["key"])
-            self.api.create_edge(g, {"from_node_id": failed["id"], "to_node_id": nid, "type": "requires"})
+            ebody = {"from_node_id": failed["id"], "to_node_id": nid, "type": "requires"}
+            step.update(what="create edge to " + spec["key"], body=ebody)
+            self.api.create_edge(g, ebody)
             out.append("created %s %s + requires edge %s -> %s"
                        % ("gate" if act == "gate" else "node", spec["key"], failed["key"], spec["key"]))
         return out
