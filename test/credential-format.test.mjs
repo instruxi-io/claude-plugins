@@ -9,6 +9,7 @@
 //
 //   GOVERNOR_DIR=../enforcer-governor node test/credential-format.test.mjs
 import assert from 'node:assert/strict';
+import test from 'node:test';
 import { createServer } from 'node:http';
 import { execFile, execFileSync } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -95,6 +96,26 @@ await ok('a token Node refreshes is read by the graph hooks without refreshing a
 await ok('the file stays private (0600) whoever wrote it last', () => {
   const mode = execFileSync('stat', ['-c', '%a', E.SHARED_FILE()]).toString().trim();
   assert.equal(mode, '600');
+});
+
+// One module, not two copies: the governor's file only re-exports the plugin's.
+await test('governor and plugin export the same functions', () => {
+  assert.deepEqual(Object.keys(G).sort(), Object.keys(E).sort());
+  for (const k of Object.keys(E)) assert.equal(G[k], E[k], k);
+});
+await test('governor and plugin read the same credential file', () => {
+  const doc = { enforcer: { api_key: 'env3_' + 'y'.repeat(43) } };
+  G.saveCredentials(doc);
+  assert.equal(G.SHARED_FILE(), E.SHARED_FILE());
+  assert.deepEqual(E.readCredentials(), doc);
+});
+await test('refresh under the shared lock', async () => {
+  assert.equal(G.refreshLockPath(), E.refreshLockPath());
+  const release = await G.acquireRefreshLock();
+  assert.equal(typeof release, 'function');
+  assert.equal(await E.acquireRefreshLock(100), null, 'held lock is seen by the other copy');
+  release();
+  (await E.acquireRefreshLock())();
 });
 
 srv.close();
