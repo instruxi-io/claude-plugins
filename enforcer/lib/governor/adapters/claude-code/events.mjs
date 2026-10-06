@@ -12,6 +12,7 @@
 // 'Bash', and a rewrite comes back as a tool_input Claude Code can run as it
 // is -- with its description and timeout still in it.
 
+import { join, dirname } from 'node:path';
 import { workerContext, runIdOf } from './worktree.mjs';
 import { SHELL, EDIT, WRITE, READ, WEB, MCP, OTHER } from '../../core/tools.mjs';
 
@@ -79,7 +80,22 @@ export function matchText(tool, toolInput) {
   return `${name}:${[...front, rest].join('\n').slice(0, CAP)}`;
 }
 
-export const agentOf = ev => ev.session_id ? 'claude:' + String(ev.session_id).slice(0, 8) : 'claude-code';
+// A subagent's hooks carry agent_id next to the parent's session_id. Key by it
+// so parallel subagents each get their own loop window, budget and burn; the
+// parent keeps the bare session key (as lib/graph/lib.py actor_key does).
+const idPart = v => String(v).replace(/[^\w-]/g, '').slice(0, 8);
+export const agentOf = ev => {
+  const base = ev.session_id ? 'claude:' + String(ev.session_id).slice(0, 8) : 'claude-code';
+  return ev.agent_id && idPart(ev.agent_id) ? base + ':' + idPart(ev.agent_id) : base;
+};
+
+// Claude Code writes a subagent's transcript beside the parent's:
+// <parent dir>/<session_id>/subagents/agent-<agent_id>.jsonl
+export function subagentTranscript(ev) {
+  if (!ev.agent_id || !ev.transcript_path || !ev.session_id) return undefined;
+  const id = String(ev.agent_id).replace(/[^\w-]/g, '');
+  return join(dirname(ev.transcript_path), String(ev.session_id), 'subagents', `agent-${id}.jsonl`);
+}
 
 // Which wallet is paying. On a plan Claude Code is flat-rate; an API key in the
 // environment moves the same work onto per-token billing, which is where the
@@ -107,6 +123,7 @@ export function toolEvent(ev) {
     billing: billing(),
     session: ev.session_id,
     transcript: ev.transcript_path,
+    subagent: ev.agent_id ? { id: String(ev.agent_id), transcript: subagentTranscript(ev) } : undefined,
     // For the graph-worker rules (core/worker.mjs) and the decision record.
     worker: workerContext(ev),
     runId: runIdOf(ev),
