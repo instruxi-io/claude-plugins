@@ -163,10 +163,30 @@ await ok('a timeout is unreachable, is not cached, and names the wait', async ()
       rej(Object.assign(new Error('t'), { name: 'TimeoutError' }));
     }));
   } };
-  const r = await consult(rule('git.rewrite_history'), { policyTimeoutMs: 100, policyTtlSec: 60 }, slow);
+  const t0 = Date.now();
+  const r = await consult(rule('git.rewrite_history'), { policyTimeoutMs: 100, policyTtlSec: 60 }, { ...slow, now: () => t0 });
   assert.equal(r.opinion, 'unreachable'); assert.match(r.detail, /100ms/);
-  await consult(rule('git.rewrite_history'), { policyTimeoutMs: 100, policyTtlSec: 60 }, slow);
+  // past the 60 s negative cache, so what is tested is the decision cache never holding unreachable
+  await consult(rule('git.rewrite_history'), { policyTimeoutMs: 100, policyTtlSec: 60 }, { ...slow, now: () => t0 + 61_000 });
   assert.equal(n, 2, 'an unreachable answer must not be pinned for the TTL');
+});
+
+await ok('second call within 60 s after ECONNREFUSED makes no network call', async () => {
+  let n = 0; const t = Date.now() + 1_000_000;
+  const refuse = { fetchImpl: async () => { n++; throw Object.assign(new Error('refused'), { code: 'ECONNREFUSED' }); } };
+  const r1 = await consult(rule('deploy.publish'), { policyTtlSec: 30 }, { ...refuse, now: () => t });
+  assert.equal(r1.opinion, 'unreachable');
+  const calls = n;
+  const r2 = await consult(rule('deploy.publish'), { policyTtlSec: 30 }, { ...refuse, now: () => t + 5_000 });
+  assert.equal(r2.opinion, 'unreachable'); assert.equal(n, calls, 'no network call within the negative TTL');
+  await consult(rule('deploy.publish'), { policyTtlSec: 30 }, { ...refuse, now: () => t + 61_000 });
+  assert.ok(n > calls, 'asked again after 60 s');
+});
+
+await ok('policy cache file mode is 600', async () => {
+  const mode = (statSync(join(process.env.GOVERNOR_HOME, 'policy-cache.json')).mode & 0o777).toString(8);
+  console.log('  mode ' + mode);
+  assert.equal(mode, '600');
 });
 
 await ok('an HTTP error is unreachable, never a decision', async () => {
