@@ -53,6 +53,24 @@ exit 0 and no output. These fixtures are written from Codex's documented payload
 install commands above have not been run against a live Codex: Codex CLI is not installed
 on the build machine.
 
+### Grok Build (experimental)
+
+Grok has no plugin marketplace here, so `enforcer` installs by copying itself into
+place. This is experimental: the hook fixtures come from one grok 1.0.41 run, and
+the dispatcher refuses `--harness grok` unless you pass `--experimental`.
+
+```sh
+enforcer harness install grok --dry-run   # list every file it would write
+enforcer harness install grok             # asks before writing; --yes skips the question
+enforcer harness uninstall grok           # removes only what the install manifest lists
+```
+
+It copies the runtime to `~/.config/enforcer/grok/<version>`, writes
+`~/.grok/hooks/enforcer.json` and `~/.grok/agents/graph-worker.md`, adds an
+`[mcp_servers.enforcer]` section to `~/.grok/config.toml` (and refuses if one exists and differs), and
+puts an `enforcer` shim in `~/.local/bin`. Changed files are backed up first. Then sign in
+with `enforcer login`.
+
 **Instruxi staff** can also install `jev-hooks@instruxi` (put your Jev key in
 `~/.claude/settings.json` as `{ "env": { "TYPESAFE_API_KEY": "<your key>" } }`),
 or run the `claude-loadout` wizard from the private jev-hooks releases, which
@@ -98,11 +116,13 @@ them: `/enforcer:login --scope "enforcer:read policy:self"` (or set
 `ENFORCER_SCOPE`). `/enforcer:login scopes` lists what is offered, and a scope
 that is not offered is refused before the browser opens.
 
-That one browser sign-in is what the `enforcer` MCP server and
-`enforcer-governor` both use. Don't sign in through `/mcp` instead: that covers
-the MCP tools but leaves the governor signed out.
+That one browser sign-in is what the `enforcer` MCP server and the governor
+(inside `enforcer`) both use. Don't sign in through `/mcp` instead: that covers
+the MCP tools but leaves the governor signed out. The credential is stored in
+`~/.enforcer/credentials.json`; governor records and session state are under
+`~/.config/enforcer/`.
 
-That sign-in is also what `enforcer-graph`'s hooks use, so nobody needs an API
+That sign-in is also what the graph worker hooks use, so nobody needs an API
 key. It grants the graph's work loop (claim, heartbeat, report, remember) and
 plan authoring (import, templates, nodes, edges); deleting and sharing plans
 stay with a person. If you added the server by hand earlier as `enforcer-graph`
@@ -122,9 +142,10 @@ claude plugin marketplace update instruxi
 claude plugin update <plugin>@instruxi
 ```
 
-`enforcer-governor` is pinned to a release tag and changes only when this
-catalog moves the tag. `enforcer` and `enforcer-graph` live in this repo and
-follow its `main`; `jev-hooks` follows its own default branch.
+`enforcer` lives in this repo and follows its `main`. The deprecated
+`enforcer-governor` alias is pinned to tag `v2.9.0`; the `enforcer-graph` and
+`enforcer-files` aliases are empty stubs in this repo. `jev-hooks` follows its own
+default branch.
 
 ## What leaves your machine
 
