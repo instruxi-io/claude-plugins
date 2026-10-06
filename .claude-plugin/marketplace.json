@@ -17,11 +17,7 @@
       "name": "enforcer-governor",
       "description": "DEPRECATED: now part of enforcer. Install enforcer instead (`claude plugin install enforcer@instruxi`); this alias goes away after one release.",
       "category": "deprecated",
-      "source": {
-        "source": "github",
-        "repo": "instruxi-io/enforcer-governor",
-        "ref": "v2.9.0"
-      }
+      "source": "./aliases/enforcer-governor"
     },
     {
       "name": "jev-hooks",
