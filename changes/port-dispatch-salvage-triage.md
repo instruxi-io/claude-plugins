@@ -1,0 +1,1 @@
+- Salvage, remediation, triage gate and landing completion ported to Node (src/dispatch: salvage, remediate, land-complete): PR reuse, auto-link neutralising, lander heartbeats, acceptance output as landing evidence, no launch mid-landing.
