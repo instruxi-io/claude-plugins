@@ -166,6 +166,7 @@ The record is written three places: as the `decision` field, last, on the hash-c
 | `graph_push_allowed` | headless worker pushing its own graph/<key> branch, as the whole command |
 | `graph_pr_allowed` | headless worker opening a pull request from its graph/<key> branch |
 | `graph_land_allowed` | headless worker landing its graph/<key> pull request with land-pr.sh |
+| `worktree_delete_allowed` | headless worker deleting a tree inside its own worktree (`rm -rf dist`); outside it, the worktree itself or `.git` keep the capability ask |
 | `graph_push_confirm` | graph/<key> push from a session with a person present: they confirm |
 | `graph_pr_confirm` | pull request from a graph/<key> branch in a session with a person present |
 | `graph_land_confirm` | land-pr.sh in a session with a person present |

@@ -95,3 +95,24 @@ ok('cache lander with a foreign flag or home is not exempt', () => {
 });
 
 console.log(`\n  ${pass} passed`);
+
+// Worktree-scoped tree deletes (2026-10-06): housekeeping inside the worker's own worktree is allowed headless.
+{
+  const WT = '/home/u/apps/repo-k1';
+  const hev = (command, cwd = WT) => ({ ...ev(command), cwd });
+  const okd = (label, fn) => { fn(); console.log('  ok  ' + label); };
+  okd('headless rm -rf dist inside the worktree is allowed', () => {
+    const v = evaluate(hev('rm -rf dist')); assert.equal(v.action, 'allow'); assert.equal(v.code ?? v.of?.code, 'worktree_delete_allowed'); });
+  okd('headless rm -r -f ./build node_modules inside the worktree is allowed', () => {
+    assert.equal(evaluate(hev('rm -r -f ./build node_modules')).action, 'allow'); });
+  okd('rm -rf of a path outside the worktree is not a worker opinion', () => {
+    assert.equal(evaluate(hev('rm -rf ../other')), null); assert.equal(evaluate(hev('rm -rf /tmp/x')), null); assert.equal(evaluate(hev('rm -rf ~/x')), null); });
+  okd('rm -rf of the worktree itself or .git is not a worker opinion', () => {
+    assert.equal(evaluate(hev('rm -rf .')), null); assert.equal(evaluate(hev('rm -rf .git')), null); assert.equal(evaluate(hev(`rm -rf ${WT}`)), null); });
+  okd('a chained or globbed delete is not a worker opinion', () => {
+    assert.equal(evaluate(hev('rm -rf dist && echo x')), null); assert.equal(evaluate(hev('rm -rf dist/*')), null); });
+  okd('interactive sessions keep the capability ask', () => {
+    assert.equal(evaluate({ ...ev('rm -rf dist', { headless: false, branch: 'graph/k1' }), cwd: WT }), null); });
+  okd('a worker not on a graph branch keeps the capability ask', () => {
+    assert.equal(evaluate({ ...ev('rm -rf dist', { headless: true, branch: 'main' }), cwd: WT }), null); });
+}

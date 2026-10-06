@@ -1,0 +1,1 @@
+- Governor: a headless worker may delete a tree inside its own worktree (`rm -rf dist`); deletes outside it, of the worktree itself or of .git keep the ask.

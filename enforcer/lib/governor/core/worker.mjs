@@ -34,6 +34,7 @@ export const WORKER_RULES = Object.freeze([
   { id: 'git.push_default_branch', name: 'push to a default branch' },
   { id: 'git.force_push', name: 'force-push without a lease' },
   { id: 'governor.settings', name: 'edit plugin or governor settings' },
+  { id: 'fs.delete_tree', name: "delete a tree inside the worker's own worktree" },
 ]);
 const RULE = Object.fromEntries(WORKER_RULES.map(r => [r.id, r]));
 
@@ -226,6 +227,31 @@ function settings(ev, ctx, cmd) {
     : verdict('ask', 'governor.settings', 'settings_write', 'this changes plugin or governor settings');
 }
 
+
+// A headless worker deleting a tree INSIDE its own worktree (build output, a temp dir) is
+// housekeeping, not destruction: the worktree is disposable and the dispatcher prunes it anyway.
+// Measured 2026-10-06: two workers finished their work, ran `rm -rf dist` in their worktree, got
+// `ask` with nobody to answer, and exited without reporting. Only the plain shape qualifies: one
+// `rm` with -r and -f flags, no metacharacters, every operand a relative path (or an absolute path
+// under cwd) that resolves inside cwd and is neither cwd itself nor .git. Anything else keeps the
+// capability rule's ask.
+const RM_TREE = /^rm\s+((?:-[a-zA-Z]+\s+|--(?:recursive|force)\s+)+)(.+)$/;
+function worktreeDelete(cmd, ev, ctx) {
+  if (!ctx.headless || !isGraph(ctx.branch) || META.test(cmd)) return null;
+  const m = RM_TREE.exec(cmd.trim()); if (!m) return null;
+  const flags = m[1]; if (!/(^|\s)(-[a-zA-Z]*r|--recursive)/i.test(flags) || !/(^|\s)(-[a-zA-Z]*f|--force)/.test(flags)) return null;
+  const cwd = typeof ev.cwd === 'string' && ev.cwd ? ev.cwd.replace(/\/+$/, '') : null; if (!cwd) return null;
+  const ops = words(m[2]); if (!ops.length) return null;
+  for (const op of ops) {
+    if (op.startsWith('-') || op.startsWith('~') || op.includes('$') || op.includes('*') || op.includes('?')) return null;
+    const parts = (op.startsWith('/') ? op : cwd + '/' + op).split('/').filter(Boolean); const out = [];
+    for (const part of parts) { if (part === '.') continue; if (part === '..') { if (!out.length) return null; out.pop(); } else out.push(part); }
+    const abs = '/' + out.join('/');
+    if (abs === cwd || !abs.startsWith(cwd + '/') || /\/\.git(\/|$)/.test(abs)) return null;
+  }
+  return verdict('allow', 'fs.delete_tree', 'worktree_delete_allowed', `headless worker deleting ${ops.join(' ')} inside its own worktree`);
+}
+
 /**
  * Evaluate the graph-worker rules.
  * @returns {Verdict|null} null: none of these rules has an opinion, and the
@@ -248,6 +274,8 @@ export function evaluate(ev) {
     return verdict('deny', 'graph.push', 'push_not_alone', 'a push, pull request or land must be the whole command, on its own');
   const s = settings(ev, ctx, cmd);
   if (s) return s;
+  const wd = worktreeDelete(raw, ev, ctx);
+  if (wd) return wd;
   if (!(ctx.headless ? mentionsDeliveryWide(cmd) : mentionsDelivery(cmd))) return null;
   if (META.test(cmd)) return ctx.headless
     ? verdict('deny', 'graph.push', 'push_not_alone', 'a push, pull request or land must be the whole command, on its own')
