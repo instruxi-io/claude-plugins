@@ -8,3 +8,10 @@ CI (`version-bump` job) fails a PR that changes `enforcer/` without a new versio
 4. Merge the PR to `main`.
 5. Tag the merge commit (`git tag v<version>`) and publish the tag to origin. The tag check must pass.
 6. Smoke: `claude plugin marketplace update instruxi && claude plugin update enforcer@instruxi`, then confirm `claude plugin list` shows `<version>`.
+
+## Supply-chain pins
+
+- Before tagging, set `ref` (a 40-char commit sha) on every github-source entry in `.claude-plugin/marketplace.json`; jev-hooks also carries `source.ref` (its tag) and `source.sha`. Check: `python3 -c "import json;print(all(len(str(p.get('ref','')))==40 for p in json.load(open('.claude-plugin/marketplace.json'))['plugins'] if p.get('source',{}).get('source')=='github'))"` prints `True`.
+- Workflow `uses:` lines stay pinned to a 40-char sha with a version comment; `.github/dependabot.yml` proposes updates.
+- Run `npm run sbom` and attach `dist/sbom.cdx.json` (CycloneDX) to the GitHub release.
+- Repository ruleset (Settings > Rules): signed tags (`v*`) required and a reviewed PR before merging to `main`. Confirm it is active before every release.

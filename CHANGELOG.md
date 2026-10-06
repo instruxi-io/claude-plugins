@@ -4,6 +4,8 @@
 
 Changes since 1.0.5, promoted to a numbered heading by the release node.
 
+- Supply chain: jev-hooks marketplace entry pinned by sha, workflow actions sha-pinned, Dependabot for actions and npm, `npm run sbom` (CycloneDX), ruleset check in the release checklist.
+
 - enforcer-governor catalog entry is now an inert alias stub (aliases/enforcer-governor), so it no longer double-fires beside enforcer.
 
 ## 1.0.5

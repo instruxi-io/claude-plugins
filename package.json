@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "bump": "node scripts/release.mjs bump"
+    "bump": "node scripts/release.mjs bump",
+    "sbom": "mkdir -p dist && cd enforcer && npm sbom --sbom-format cyclonedx > ../dist/sbom.cdx.json"
   }
 }
