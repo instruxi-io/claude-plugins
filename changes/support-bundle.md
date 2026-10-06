@@ -1,0 +1,1 @@
+- `enforcer doctor --bundle` writes a redacted tar.gz under the state dir (versions, config sources, credential metadata, doctor, log tails, receipts verify, outbox error, worker streams) and prints its path and size.
