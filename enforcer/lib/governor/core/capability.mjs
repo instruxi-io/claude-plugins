@@ -15,6 +15,15 @@
 import { Verdict, CAPABILITY } from './verdict.mjs';
 import { toolMatches, nativeField } from './tools.mjs';
 import { ruleCode } from './codes.mjs';
+import { SETTINGS_PATHS } from './worker.mjs';
+
+// PowerShell-native spellings. Parameters may be abbreviated to any unambiguous
+// prefix (-r, -rec, -fo), so the flags are matched as prefixes.
+const PS_FETCH = '(?:iwr|irm|invoke-webrequest|invoke-restmethod|curl|wget|downloadstring)';
+const PS_IEX = '(?:iex|invoke-expression)';
+const PS_WRITE = '(?:set-content|out-file|add-content|clear-content|tee-object|sc|ac)';
+// Windows paths use a backslash; the shared settings paths use a slash.
+const SETTINGS_ANY = SETTINGS_PATHS.replace(/\\\//g, '[\\\\/]');
 
 // `action` is the text a rule matches; `tool` scopes it ('' means any tool).
 // `field` names the input key a rewrite edits. Both are in the core's own
@@ -41,7 +50,15 @@ export const DEFAULT_RULES = [
     match: '(?:(?:curl|wget)\\b|base64\\s+(?:-d|--decode)\\b)[^|;&\\n]*(?:\\|[^|;&\\n]*)*?\\|\\s*(?:(?:(?:ba|z|fi|da|k|a)?sh)\\b|(?:python[\\d.]*|perl|ruby|node|php)\\b(?=\\s*(?:-\\s*)?(?:$|[|;&)])))'
       + '|\\b(?:ba|z|da|k)?sh\\s+(?:-\\S+\\s+)*<\\(\\s*(?:curl|wget)\\b'
       + '|(?:^|[\\s;&|(])(?:\\.|source)\\s+<\\(\\s*(?:curl|wget)\\b'
-      + '|\\b(?:(?:ba|z|da|k)?sh\\s+-\\w*c|eval)\\s+["\']?(?:\\$\\(|`)\\s*(?:curl|wget)\\b' },
+      + '|\\b(?:(?:ba|z|da|k)?sh\\s+-\\w*c|eval)\\s+["\']?(?:\\$\\(|`)\\s*(?:curl|wget)\\b'
+      // PowerShell: iex fed by a fetch, as an argument or down a pipe.
+      + '|(?:^|[\\s;&|(])' + PS_IEX + '\\b[^;&\\n]*\\b' + PS_FETCH + '\\b'
+      + '|\\b' + PS_FETCH + '\\b[^;&\\n]*\\|\\s*' + PS_IEX + '\\b' },
+  // A shell command that writes to plugin or governor settings: a PowerShell
+  // writer cmdlet or a redirection whose operands name a settings path.
+  { id: 'governor.settings', authz: 'write',
+    name: 'edit plugin or governor settings', tool: 'shell', action: 'deny',
+    match: '(?:(?:^|[\\s;&|(])' + PS_WRITE + '\\b|[^0-9&<]>{1,2}(?!&))[^;&\\n]*?(?:^|[\\s"\'=/\\\\])(?:' + SETTINGS_ANY + ')' },
 
   // A force-push is the one dangerous git action with a strictly safer form
   // that preserves the intent: --force-with-lease refuses when someone else
@@ -63,7 +80,10 @@ export const DEFAULT_RULES = [
     name: 'delete a whole tree', tool: 'shell', action: 'ask',
     // Any spelling of recursive + force, split across flags or not:
     // -rf, -fr, -r -f, -R --force, --recursive -f.
-    match: '\\brm\\s+(?=(?:[^;&|\\n]*\\s)?(?:-[a-zA-Z]*r[a-zA-Z]*|--recursive)(?=\\s|$))(?=(?:[^;&|\\n]*\\s)?(?:-[a-zA-Z]*f[a-zA-Z]*|--force)(?=\\s|$))' },
+    match: '\\brm\\s+(?=(?:[^;&|\\n]*\\s)?(?:-[a-zA-Z]*r[a-zA-Z]*|--recursive)(?=\\s|$))(?=(?:[^;&|\\n]*\\s)?(?:-[a-zA-Z]*f[a-zA-Z]*|--force)(?=\\s|$))'
+      // PowerShell: Remove-Item and its aliases, -Recurse and -Force in any
+      // order, abbreviated or not.
+      + '|(?:^|[\\s;&|(])(?:remove-item|ri|del|erase|rd|rmdir|rm)\\s+(?=(?:[^;&|\\n]*\\s)?-r(?:e(?:c(?:u(?:r(?:se?)?)?)?)?)?(?=[\\s:]|$))(?=(?:[^;&|\\n]*\\s)?-f(?:o(?:r(?:ce?)?)?)?(?=[\\s:]|$))' },
   { id: 'git.rewrite_history', authz: 'write',
     name: 'rewrite git history', tool: 'shell', action: 'ask',
     match: 'reset\\s+--hard|filter-branch' },

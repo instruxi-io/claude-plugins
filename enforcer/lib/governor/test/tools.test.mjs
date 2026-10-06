@@ -30,7 +30,7 @@ const codex = (command) => ({ agent: 'codex:1', tool: 'shell', name: 'exec_comma
 ok('the default rules speak the core vocabulary, and their policy ids have not moved', () => {
   for (const r of DEFAULT_RULES) assert.ok(!r.tool || TOOLS.includes(r.tool), `${r.id} names a harness tool: ${r.tool}`);
   assert.deepEqual(DEFAULT_RULES.map(r => r.id),
-    ['shell.pipe_to_shell', 'git.force_push', 'fs.delete_tree', 'git.rewrite_history', 'secrets.access', 'secrets.edit', 'enforcer.api_write', 'enforcer.credential', 'deploy.publish']);
+    ['shell.pipe_to_shell', 'governor.settings', 'git.force_push', 'fs.delete_tree', 'git.rewrite_history', 'secrets.access', 'secrets.edit', 'enforcer.api_write', 'enforcer.credential', 'deploy.publish']);
 });
 
 ok('Claude Code tools map onto the kinds', () => {
