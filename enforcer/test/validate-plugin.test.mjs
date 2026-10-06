@@ -135,4 +135,19 @@ console.log('ok   kit defaults: only enforcer and jev-hooks are selectable, only
   console.log('ok   no suite reads the real home directory');
 }
 
+{
+  const nested = [];
+  const walk = (dir, top) => {
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      if (!e.isDirectory() || e.name === 'node_modules' || e.name === '.git') continue;
+      const p = `${dir}/${e.name}`;
+      if (e.name === DOT + '-plugin' && !top) nested.push(p);
+      walk(p, false);
+    }
+  };
+  walk(new URL('..', import.meta.url).pathname.replace(/\/$/, ''), true);
+  assert.deepEqual(nested, [], `nested plugin manifests: ${nested.join(', ')}`);
+  console.log('ok   no nested plugin manifests');
+}
+
 console.log('\nOK');
