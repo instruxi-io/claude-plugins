@@ -1,5 +1,5 @@
 // `enforcer dispatch preflight <graph>`: every way a dispatch fails before it spends, as one line each.
-// Checks: credential, gh, python3, repos, governor-lander, frontier. Exit 2 when any fails.
+// Checks: credential, gh, repos, governor-lander, frontier. Exit 2 when any fails.
 import { defaultFetch } from '../lib/api/client.mjs';
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
@@ -85,10 +85,6 @@ export async function preflight({ graph, repoRoot = join(homedir(), 'apps'), typ
   // 2 gh
   const gh = run('gh', ['auth', 'status'], { env });
   add('gh', gh.status === 0, gh.status === 0 ? 'ok' : 'gh is not signed in: run `gh auth login`');
-
-  // 3 python3 + fcntl
-  const py = run('python3', ['-c', 'import fcntl'], { env });
-  add('python3', py.status === 0, py.status === 0 ? 'ok' : py.error || py.status === null ? 'python3 is not on PATH: install python3' : 'python3 cannot import fcntl (the dispatcher lease needs a POSIX python3)');
 
   // 4 repos
   let nodes = null;

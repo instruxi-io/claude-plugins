@@ -1,15 +1,11 @@
 // One hook process per event: `enforcer event <name>` runs the governor's decision and the graph
-// handlers in this process and prints ONE merged JSON answer. Python starts only when a graph
+// handlers in this process and prints ONE merged JSON answer. The graph handlers run only when a graph
 // context is live (a run file for the actor, GRAPH_ID, or a project graph config).
-// child_process loads lazily: the no-graph hot path never spawns, and the module costs milliseconds.
-const spawnSync = (...a) => process.getBuiltinModule('node:child_process').spawnSync(...a);
 import { readFileSync, existsSync, appendFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { stateBase } from './state.mjs';
 import { LEGACY_PROJECT_CONFIG } from '../hooks/claude/paths.mjs';
 
-const root = (p) => fileURLToPath(new URL(`../${p}`, import.meta.url));
 export const GRAPH_TOOL = /^mcp__(plugin_enforcer_enforcer|enforcer|enforcer-graph)__graph_/;
 const PRE_GRAPH = /^mcp__(plugin_enforcer_enforcer|enforcer|enforcer-graph)__graph_(next_work|report|remember|heartbeat)$/;
 const POST_GRAPH = /^mcp__(plugin_enforcer_enforcer|enforcer|enforcer-graph)__graph_(next_work|report|heartbeat)$/;
@@ -38,9 +34,7 @@ export function graphContextLive(ev) {
   }
 }
 
-export const python3Missing = () => { const r = spawnSync('python3', ['--version'], { stdio: 'ignore' }); return !!r.error || r.status === null; };
-
-// event -> { gov: governor shim, budget: ms for the python handlers }
+// event -> { gov: governor shim, budget: ms for the graph handlers }
 const EVENTS = {
   PreToolUse: { gov: 'pre-tool-use.mjs', budget: 28000 },
   PostToolUse: { gov: 'post-tool-use.mjs', budget: 4500 },
@@ -81,21 +75,9 @@ async function governor(file, raw) {
   try { return st.out ? JSON.parse(st.out) : null; } catch { return null; }
 }
 
-function python(handlers, raw, deadline) {
-  let out = null; let code = 0;
-  for (const h of handlers) {
-    const left = deadline - Date.now();
-    if (left <= 0) break;
-    const r = spawnSync('python3', [root(`lib/graph/${h}.py`)], { input: raw, encoding: 'utf8', stdio: ['pipe', 'pipe', 'inherit'], timeout: left });
-    if (r.status) code = r.status;
-    const t = (r.stdout || '').trim();
-    if (t) { try { out = merge(out, JSON.parse(t)); } catch { try { process.stderr.write(t + '\n'); } catch {} } }
-  }
-  return { out, code };
-}
-
-// PostToolUse and PostToolUseFailure handlers run in this process: no python on the hot path.
-const NATIVE = { track_run: ['track-run', 'trackRun'], capture_evidence: ['capture', 'captureEvidence'], heartbeat: ['heartbeat', 'heartbeat'], attach_evidence: ['attach', 'attachEvidence'] };
+// Every graph handler runs in this process.
+const NATIVE = { track_run: ['track-run', 'trackRun'], capture_evidence: ['capture', 'captureEvidence'], heartbeat: ['heartbeat', 'heartbeat'], attach_evidence: ['attach', 'attachEvidence'],
+  session_start: ['session', 'sessionStart'], remember_on_compact: ['session', 'rememberOnCompact'], open_run_guard: ['session', 'openRunGuard'] };
 export async function native(handlers, ev, deadline) {
   let out = null;
   for (const h of handlers) {
@@ -134,16 +116,9 @@ export async function runEvent(name) {
   else if (event === 'Stop' || event === 'SubagentStop') handlers = ['open_run_guard'];
   if (denied) handlers = [];
   let code = 0;
-  if (handlers.length) {
-    const noPy = event === 'SessionStart' && python3Missing(); // the attach hook is Node: no python needed
-    if (noPy && event === 'SessionStart') {
-      const msg = 'enforcer: python3 is not on PATH, so the graph hooks (evidence capture, heartbeats, attestation) cannot run. Install python3, then run `enforcer doctor`. Graph calls are attested hooks=off:python3.';
-      out = merge(out, { systemMessage: msg, hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: msg } });
-    } else if (!noPy && (event === 'SessionStart' || graphContextLive(ev))) { // session-start notices print with or without a graph
-      const deadline = Date.now() + (spec.budget || 5000);
-      const r = handlers.every((h) => NATIVE[h]) ? await native(handlers, ev, deadline) : python(handlers, raw, deadline);
-      out = merge(out, r.out); code = r.code;
-    }
+  if (handlers.length && (event === 'SessionStart' || graphContextLive(ev))) { // session-start notices print with or without a graph
+    const r = await native(handlers, ev, Date.now() + (spec.budget || 5000));
+    out = merge(out, r.out); code = r.code;
   }
   if (out) process.stdout.write(JSON.stringify(out) + '\n');
   return code;

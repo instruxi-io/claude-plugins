@@ -12,13 +12,13 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { homedir } from 'node:os';
 import { stateBase } from '../src/state.mjs';
-import { graphContextLive, python3Missing, runEvent, EVENT_NAMES } from '../src/event.mjs';
+import { graphContextLive, native, runEvent, EVENT_NAMES } from '../src/event.mjs';
 
 const here = (p) => fileURLToPath(new URL(p, import.meta.url));
 const [area, sub, ...rest] = process.argv.slice(2);
 
 const GOV = ['decide', 'status', 'config', 'limit', 'verify'];
-// event -> python handlers (lib/graph/<handler>.py), run in order
+// event -> graph handlers (src/graph/hooks), run in order
 const HOOKS = {
   'session-start': ['session_start'],
   'pre-tool-use': ['attach_evidence'],
@@ -54,27 +54,12 @@ if (area === 'hook' && HOOKS[sub]) {
     if (process.env.CLAUDE_ENV_FILE) { try { appendFileSync(process.env.CLAUDE_ENV_FILE, 'export ENFORCER_GOVERNOR=1\n'); } catch {} }
     process.env.ENFORCER_GOVERNOR = '1';
   }
-  const GRAPH_STAMPED = sub === 'pre-tool-use' && /^mcp__(plugin_enforcer_enforcer|enforcer|enforcer-graph)__graph_(next_work|heartbeat|report)$/.test(ev.tool_name || '');
-  const noPy = (sub === 'session-start' || GRAPH_STAMPED) && python3Missing(); // only where it matters: the no-context path stays fast
-  if (noPy && sub === 'session-start') { // python is the hooks' runtime: say so where a person sees it
-    const msg = 'enforcer: python3 is not on PATH, so the graph hooks (evidence capture, heartbeats, attestation) cannot run. Install python3, then run `enforcer doctor`. Graph calls are attested hooks=off:python3.';
-    process.stdout.write(JSON.stringify({ systemMessage: msg, hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: msg } }) + '\n');
-  }
-  if (noPy && GRAPH_STAMPED) {
-    const v = (() => { try { return JSON.parse(readFileSync(here('../plugin.json'), 'utf8')).version; } catch { return 'unknown'; } })();
-    process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', updatedInput: { ...(ev.tool_input || {}), client: `enforcer-graph-plugin/${v}; hooks=off:python3` } } }) + '\n');
-    process.exit(0);
-  }
-  if (noPy) process.exit(0);
-  if (!graphContextLive(ev)) process.exit(0); // no graph context: no output, no python
+  if (sub !== 'session-start' && !graphContextLive(ev)) process.exit(0); // no graph context: no output
   const only = rest[0] ? rest[0].replace(/-/g, '_') : null;
   const handlers = HOOKS[sub].filter((h) => !only || h === only);
-  let code = 0;
-  for (const h of handlers) {
-    const r = spawnSync('python3', [here(`../lib/graph/${h}.py`)], { input, stdio: ['pipe', 'inherit', 'inherit'] });
-    if (r.status) code = r.status;
-  }
-  process.exit(code);
+  const r = await native(handlers, ev, Date.now() + 9000);
+  if (r.out) process.stdout.write(JSON.stringify(r.out) + '\n');
+  process.exit(r.code);
 }
 
 if (area === 'dispatch') {

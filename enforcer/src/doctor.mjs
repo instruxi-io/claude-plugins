@@ -1,6 +1,5 @@
 // `enforcer doctor`: one line per check, `ok`/`fail`, exit non-zero on any fail.
 import { defaultFetch } from '../lib/api/client.mjs';
-import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, statSync, mkdirSync, accessSync, constants } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
@@ -9,13 +8,6 @@ import { readCredentials, enforcerKey } from './credentials.mjs';
 import { resolveConfig, validateEnv } from './config.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
-
-/** python3 on PATH: {ok, detail}. A null status / error means it could not be spawned. */
-export function python3Check(args = ['--version']) {
-  const r = spawnSync('python3', args, { encoding: 'utf8', timeout: 10_000 });
-  if (r.error || r.status === null) return { ok: false, detail: `python3 not found on PATH (${r.error?.code || 'cannot spawn'}); the graph hooks cannot run` };
-  return { ok: r.status === 0, detail: (r.stdout || r.stderr || '').trim() || (r.status === 0 ? 'present' : `exit ${r.status}`) };
-}
 
 export function hookCommandsCheck(root = ROOT) {
   let doc;
@@ -34,12 +26,6 @@ export async function runChecks({ fetchImpl = defaultFetch, network = true } = {
   const add = (name, c) => rows.push({ name, ...c });
   const major = Number(process.versions.node.split('.')[0]);
   add('node version', { ok: major >= 18, detail: process.versions.node });
-  const py = python3Check();
-  add('python3 present', py);
-  if (py.ok) {
-    const f = python3Check(['-c', 'import fcntl']);
-    add('fcntl importable', { ok: f.ok, detail: f.ok ? 'import fcntl ok' : 'python3 cannot import fcntl (Windows?)' });
-  } else add('fcntl importable', { ok: false, detail: 'skipped: python3 absent' });
   add('dispatch platform', { ok: true, detail: process.platform === 'win32' ? 'enforcer dispatch is not supported on Windows (process groups and POSIX signals): use WSL' : `${process.platform}: enforcer dispatch supported` });
   try {
     const d = stateBase(); mkdirSync(d, { recursive: true }); accessSync(d, constants.W_OK);

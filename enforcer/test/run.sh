@@ -28,7 +28,7 @@ export ENFORCER_BASE_URL="http://127.0.0.1:$PORT" ENFORCER_HOME="$WORK/eh"   # v
 SID=s1
 pass=0; fail=0
 check() { if eval "$2"; then echo "PASS  $1"; pass=$((pass+1)); else echo "FAIL  $1"; fail=$((fail+1)); fi; }
-hook() { printf '%s' "$2" | python3 "lib/graph/$1"; }
+hook() { case "$1" in session_start.py) h=session-start;; remember_on_compact.py) h=pre-compact;; open_run_guard.py) h=stop;; *) printf "%s" "$2" | python3 "lib/graph/$1"; return;; esac; printf "%s" "$2" | node bin/enforcer hook "$h"; }
 runfile="$CLAUDE_PLUGIN_DATA/runs/$SID.json"
 stale() { python3 -c 'import json,sys;p=sys.argv[1];d=json.load(open(p));d["last_hb"]=1;json.dump(d,open(p,"w"))' "$CLAUDE_PLUGIN_DATA/runs/$1.json"; }  # lease third long spent
 
@@ -102,7 +102,7 @@ check "remember_on_compact: no run held, no HTTP" '[ ! -s "$STUB_LOG" ]'
 
 # --- stop guard
 out=$(hook open_run_guard.py "{\"session_id\":\"$SID\",\"last_assistant_message\":\"Done for today.\",\"stop_hook_active\":false}")
-check "open_run_guard: blocks a stop with a run open and unreported" 'echo "$out" | grep -q "\"decision\": \"block\"" && echo "$out" | grep -q "api-contract"'
+check "open_run_guard: blocks a stop with a run open and unreported" 'echo "$out" | grep -q "\"decision\": *\"block\"" && echo "$out" | grep -q "api-contract"'
 out=$(hook open_run_guard.py "{\"session_id\":\"$SID\",\"last_assistant_message\":\"Done for today.\",\"stop_hook_active\":true}")
 check "open_run_guard: never blocks twice" '[ -z "$out" ]'
 out=$(hook open_run_guard.py "{\"session_id\":\"$SID\",\"last_assistant_message\":\"Progress is in graph_remember.\nstill running: r1\",\"stop_hook_active\":false}")
@@ -253,7 +253,7 @@ hook track_run.py "$(python3 -c 'import json,sys;print(json.dumps({"session_id":
 stale "$SID"
 out=$(GRAPH_BASE_URL=http://127.0.0.1:1 hook heartbeat.py "{\"session_id\":\"$SID\",\"cwd\":\"$WORK/proj\",\"tool_name\":\"Read\",\"tool_input\":{}}"); rc=$?
 check "heartbeat: API down is silent and exit 0" '[ -z "$out" ] && [ "$rc" -eq 0 ]'
-out=$(printf 'not json' | env -u ENFORCER_BASE_URL python3 lib/graph/session_start.py); rc=$?   # unconfigured: no server named, nothing to say
+out=$(printf 'not json' | env -u ENFORCER_BASE_URL node bin/enforcer hook session-start); rc=$?   # unconfigured: no server named, nothing to say
 check "any hook: garbage stdin is silent and exit 0" '[ -z "$out" ] && [ "$rc" -eq 0 ]'
 
 # --- a claimed pull request is resolved, not taken on trust (2026-09-20)
@@ -359,7 +359,7 @@ creds() { # $1 access token, $2 expires_at
   printf '{"enforcer":{"base_url":"http://127.0.0.1:%s","oauth":{"access_token":"%s","refresh_token":"rt-1","expires_at":"%s","token_endpoint":"http://127.0.0.1:%s/token","client_id":"mcp_test","scope":"enforcer:read"}}}\n' "$PORT" "$1" "$2" "$PORT" > "$EH/credentials.json"
 }
 mkdir -p "$WORK/oproj/.enforcer"; printf '{"graph_id":"g1"}\n' > "$WORK/oproj/.enforcer/graph.json"
-ohook() { printf '%s' "$2" | env -u GRAPH_API_KEY -u ENFORCER_API_KEY ENFORCER_HOME="$EH" python3 "lib/graph/$1"; }
+ohook() { printf "%s" "$2" | env -u GRAPH_API_KEY -u ENFORCER_API_KEY ENFORCER_HOME="$EH" node bin/enforcer hook session-start; }
 start="{\"session_id\":\"$SID\",\"cwd\":\"$WORK/oproj\",\"hook_event_name\":\"SessionStart\",\"source\":\"startup\"}"
 
 creds stub-token 2099-01-01T00:00:00.000Z
@@ -489,7 +489,7 @@ printf '{"name":"enforcer-graph","version":"9.1.0"}' > "$MK/enforcer-graph/$CPD/
 printf '{"name":"enforcer","version":"0.5.0"}' > "$MK/enforcer/$CPD/plugin.json"
 printf '{"instruxi":{"installLocation":"%s"}}' "$MK" > "$CLAUDE_CONFIG_DIR/plugins/known_marketplaces.json"
 printf '{"version":2,"plugins":{"enforcer-graph@instruxi":[{"scope":"user","version":"0.15.0"},{"scope":"local","version":"0.13.0"},{"scope":"project","version":"9.1.0"}]}}' > "$CLAUDE_CONFIG_DIR/plugins/installed_plugins.json"
-python3 -c 'import json;print(json.dumps({"version":"0.9.14","tools":json.load(open("lib/graph/known_tools.json"))}))' > "$STUB_HEALTH_FILE"
+python3 -c 'import json;print(json.dumps({"version":"0.9.14","tools":[t["name"] for t in json.load(open("lib/api/spec/mcp-manifest.json"))["tools"]]}))' > "$STUB_HEALTH_FILE"
 ss() { hook session_start.py "{\"session_id\":\"$SID\",\"cwd\":\"/\",\"hook_event_name\":\"SessionStart\",\"source\":\"startup\"}"; }
 out=$(ss); raw="$out"; out=$(echo "$raw" | python3 -c "import json,sys; print(json.load(sys.stdin)['systemMessage'])")
 check "version check: one line per stale install, with scope and the update command" '[ "$(echo "$out" | grep -c "^enforcer-graph .* installed (")" = 2 ] && echo "$out" | grep -q "enforcer-graph 0.15.0 installed (user) — 9.1.0 available: claude plugin update enforcer-graph@instruxi" && echo "$out" | grep -q "enforcer-graph 0.13.0 installed (local) — 9.1.0 available"'
@@ -501,13 +501,14 @@ check "version check: each notice is said once" '[ -z "$out" ]'
 printf '{"version":2,"plugins":{"enforcer-graph@instruxi":[{"version":"9.1.0","auto":true}],"enforcer@instruxi":[{"version":"0.5.0"}]}}' > "$CLAUDE_CONFIG_DIR/plugins/installed_plugins.json"
 rm -f "$CLAUDE_PLUGIN_DATA/notices.json"; out=$(ss)
 check "version check: aligned (no credential), nothing to say" '[ -z "$out" ]'
-python3 -c 'import json;print(json.dumps({"version":"0.9.14","tools":json.load(open("lib/graph/known_tools.json"))+["workspace_list","workspace_switch","zeta"]}))' > "$STUB_HEALTH_FILE"
+python3 -c 'import json;print(json.dumps({"version":"0.9.14","tools":[t["name"] for t in json.load(open("lib/api/spec/mcp-manifest.json"))["tools"]]+["gizmo_a","gizmo_b","zeta"]}))' > "$STUB_HEALTH_FILE"
 rm -f "$CLAUDE_PLUGIN_DATA/notices.json"; out=$(ss | python3 -c "import json,sys; print(json.load(sys.stdin)['systemMessage'])")
-check "version check: MCP tools the plugin does not know are one line" '[ "$(echo "$out" | grep -c "^MCP ")" = 1 ] && echo "$out" | grep -q "MCP 0.9.14 serves tools this plugin (.*) does not know: workspace_\*, zeta"'
-python3 -c 'import json;print(json.dumps({"version":"0.9.14","tools":json.load(open("lib/graph/known_tools.json"))}))' > "$STUB_HEALTH_FILE"
+check "version check: MCP tools the plugin does not know are one line" '[ "$(echo "$out" | grep -c "^MCP ")" = 1 ] && echo "$out" | grep -q "MCP 0.9.14 serves tools this plugin (.*) does not know: gizmo_\*, zeta"'
+python3 -c 'import json;print(json.dumps({"version":"0.9.14","tools":[t["name"] for t in json.load(open("lib/api/spec/mcp-manifest.json"))["tools"]]}))' > "$STUB_HEALTH_FILE"
 JWT=$(python3 -c 'import base64,json;e=lambda d:base64.urlsafe_b64encode(json.dumps(d).encode()).decode().rstrip("=");print(e({"alg":"none"})+"."+e({"tenant":"Acme","tenant_id":"t-1","role":"admin"})+".x")')
 printf '{"enforcer":{"oauth":{"access_token":"%s","expires_at":"2099-01-01T00:00:00Z"}}}' "$JWT" > "$ENFORCER_HOME/credentials.json"
 rm -f "$CLAUDE_PLUGIN_DATA/notices.json"; out=$(ss)
+out=$(echo "$out" | python3 -c "import json,sys; print(json.load(sys.stdin)['hookSpecificOutput']['additionalContext'])")
 check "version check: prints the credential's workspace" '[ "$out" = "enforcer workspace: Acme (t-1) · role admin" ]'
 rm -rf "$CLAUDE_CONFIG_DIR/plugins" "$ENFORCER_HOME"
 

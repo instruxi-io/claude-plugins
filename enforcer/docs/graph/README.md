@@ -177,7 +177,7 @@ come from the plugin's `hooks/hooks.json`.
 
 Dispatching hands a finished plan to background workers: each ready node gets its own git worktree and a headless Claude worker that does the node, opens the pull request and lands it, while you do something else. Nothing here asks you to know a cache path or a flag.
 
-The one command is `/enforcer:dispatch <graph-id>` (or `enforcer dispatch <graph-id>` in a shell). It first checks sign-in, `gh`, python3, the repo checkouts, that the installed governor allows a headless land, and that a node is claimable, and refuses to start if any check fails. Then it starts the dispatcher in the background with 3 workers, a sonnet cap, salvage and triage on and warm workers off. `enforcer dispatch status [<graph-id>]` says what is running and what needs you; `enforcer dispatch stop <graph-id>` lets running workers finish and exits. The full flag reference is in [DISPATCHER.md](DISPATCHER.md).
+The one command is `/enforcer:dispatch <graph-id>` (or `enforcer dispatch <graph-id>` in a shell). It first checks sign-in, `gh`, the repo checkouts, that the installed governor allows a headless land, and that a node is claimable, and refuses to start if any check fails. Then it starts the dispatcher in the background with 3 workers, a sonnet cap, salvage and triage on and warm workers off. `enforcer dispatch status [<graph-id>]` says what is running and what needs you; `enforcer dispatch stop <graph-id>` lets running workers finish and exits. The full flag reference is in [DISPATCHER.md](DISPATCHER.md).
 
 It will ask three things of you: resolve the gates (smoke tests and releases are never dispatched), look at the review items where a verdict needs a person, and unblock a node marked "landing blocked" (a conflict or CI outage the dispatcher could not clear) or "needs you". Merged work is reported as done, never as failed.
 
@@ -207,13 +207,13 @@ standalone server added with `claude mcp add`). Keep the one your session shows.
 
 | Event | Script | What it does |
 |---|---|---|
-| SessionStart (startup, resume, compact) | `session_start.py` | Prints plan status: counts, frontier, running, failed, and whether THIS session still holds a run. Two HTTP GETs. |
+| SessionStart (startup, resume, compact) | `src/graph/hooks/session.mjs` (sessionStart) | Prints plan status: counts, frontier, running, failed, and whether THIS session still holds a run. Two HTTP GETs. |
 | PostToolUse on `graph_next_work` / `graph_report` / `graph_heartbeat` | `track_run.py` | Records the run this session holds in `${CLAUDE_PLUGIN_DATA}/runs/<session_id>.json` from the tool result; clears it on report or when a heartbeat says `reclaimed` / `finished`. No HTTP. |
 | PostToolUse on every tool | `capture_evidence.py` | While a run is held, appends what the tool actually did to `~/.config/enforcer/sessions/<harness>/evidence/<session_id>.jsonl`: `Bash` as `{kind:"command", cmd, exit, output}` (output clipped to 4000 chars), `Edit`/`Write`/`MultiEdit` as `{kind:"file", path, excerpt}`. `Read`/`Grep`/`Glob` are not captured. No HTTP. |
 | PreToolUse on `graph_report` | `attach_evidence.py` | Reads the capture, caps it at the 20 items the server accepts (failing commands first, then the most recent commands, then file changes) and merges it into the tool's arguments as `evidence` via `hookSpecificOutput.updatedInput`. Anything the model wrote in `evidence` is replaced. No HTTP. |
 | PostToolUse on every tool | `heartbeat.py` | Every 10th tool call, if a run is held, one HTTP heartbeat (1.5s timeout, 3s hook timeout). Silent on `ok`. On `cancel_requested`, `reclaimed` or `finished` it says so in one line to you and to the model, and forgets a run that is no longer ours. |
-| PreCompact (manual, auto) | `remember_on_compact.py` | If a run is held, writes one progress observation (the last assistant message) on the node, so the state of the work survives in the graph, not only in the summary. |
-| Stop | `open_run_guard.py` | If a run is held and the final message does not say it was reported or deliberately left open, sends the session back once with the reason. `stop_hook_active` prevents a second block. |
+| PreCompact (manual, auto) | `src/graph/hooks/session.mjs` (rememberOnCompact) | If a run is held, writes one progress observation (the last assistant message) on the node, so the state of the work survives in the graph, not only in the summary. |
+| Stop | `src/graph/hooks/session.mjs` (openRunGuard) | If a run is held and the final message does not say it was reported or deliberately left open, sends the session back once with the reason. `stop_hook_active` prevents a second block. |
 
 ## Evidence the model did not author
 
@@ -267,7 +267,7 @@ enforcer-graph/
   skills/graph/SKILL.md
   agents/graph-worker.md
   hooks/hooks.json  hooks/lib.py
-  hooks/{session_start,track_run,heartbeat,remember_on_compact,open_run_guard}.py
+  hooks/{session_start,track_run,heartbeat,remember_on_compact,open_run_guard}.py (now src/graph/hooks/*.mjs)
   hooks/{capture_evidence,attach_evidence}.py
   bin/land-pr.sh  bin/graph-dispatch   # land one PR; keep N headless workers busy
   bin/land-pr.sh  bin/graph-dispatch   # land one PR; keep N headless workers busy
