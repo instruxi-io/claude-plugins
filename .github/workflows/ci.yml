@@ -36,6 +36,12 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 20
+      - name: install the real Claude Code CLI
+        run: npm install -g @anthropic-ai/claude-code
+      - name: claude plugin validate enforcer
+        run: claude plugin validate enforcer
+      - name: manifests agree, hooks.json loads in a real session, login passes stdin
+        run: node --test test/validate-plugin.test.mjs
       - name: enforcer plugin tests (package, governor, graph worker)
         working-directory: enforcer
         env:

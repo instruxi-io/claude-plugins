@@ -1,0 +1,1 @@
+- Plugin manifest conformance: validate-plugin test (six manifests agree, hooks.json loads in a real session, login passes arguments via stdin), `claude plugin validate` in CI, and /enforcer:login reads its arguments from stdin.

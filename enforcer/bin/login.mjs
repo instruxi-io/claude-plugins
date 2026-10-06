@@ -17,7 +17,7 @@
 // token (credentials.mjs rotates it).
 import { defaultFetch } from '../lib/api/client.mjs';
 import { isMain } from '../src/is-main.mjs';
-import { commandArgs } from '../src/args.mjs';
+import { commandArgs, splitArgs } from '../src/args.mjs';
 import { readFileSync, existsSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { createHash, randomBytes } from 'node:crypto';
@@ -354,5 +354,5 @@ async function main(rawArgv) {
 }
 
 if (isMain(import.meta.url)) {
-  main(commandArgs()).catch((e) => { out(`Sign-in failed: ${e.message}`); process.exitCode = 1; });
+  main(process.argv[2] === '--args-stdin' ? splitArgs(readFileSync(0, 'utf8')) : commandArgs()).catch((e) => { out(`Sign-in failed: ${e.message}`); process.exitCode = 1; });
 }
