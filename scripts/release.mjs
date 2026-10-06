@@ -1,4 +1,5 @@
 // Shared by `npm run bump` and the CI version-bump job.
+import { execSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -53,11 +54,19 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     if (cmd === "bump") console.log("bumped six manifests to " + bump(arg));
     else if (cmd === "check-tag") console.log("tag ok: " + checkTag(arg));
     else if (cmd === "check-changed") {
-      // arg = last tag; the version must differ from it and the changelog must cover it.
+      // arg = last tag, process.argv[4] = base ref (default origin/main). A PR that touches enforcer/ either
+      // bumps the version (and the changelog covers it) or adds one fragment under changes/ — one small file per
+      // PR so parallel PRs never conflict on CHANGELOG.md; the release node folds the fragments into the heading.
       const cur = readVersions()[0].version;
-      if (cur === arg.replace(/^v/, "")) throw new Error(`enforcer/ changed but version is still ${cur} (last tag ${arg}); run npm run bump <version>`);
-      if (!changelogHas(cur)) throw new Error(`CHANGELOG.md has no "## ${cur}" or "## Unreleased" entry`);
-      console.log(`version ${cur} differs from ${arg} and CHANGELOG.md covers it`);
+      const base = process.argv[4] || "origin/main";
+      if (cur !== arg.replace(/^v/, "")) {
+        if (!changelogHas(cur)) throw new Error(`CHANGELOG.md has no "## ${cur}" or "## Unreleased" entry`);
+        console.log(`version ${cur} differs from ${arg} and CHANGELOG.md covers it`);
+      } else {
+        const added = execSync(`git diff --name-only --diff-filter=A ${base}...HEAD -- changes/`, { encoding: "utf8" }).split("\n").filter((f) => /^changes\/[^/]+\.md$/.test(f));
+        if (!added.length) throw new Error(`enforcer/ changed at version ${cur} (last tag ${arg}) with no changes/<slug>.md fragment; add one line under changes/ (or run npm run bump <version> for a release)`);
+        console.log(`version unchanged; fragment(s) added: ${added.join(", ")}`);
+      }
     } else throw new Error("usage: release.mjs bump <v> | check-tag <tag> | check-changed <last-tag>");
   } catch (e) { console.error("FAIL " + e.message); process.exit(1); }
 }

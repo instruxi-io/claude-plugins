@@ -27,7 +27,7 @@ jobs:
         run: |
           if git diff --quiet "origin/${{ github.base_ref }}...HEAD" -- enforcer/; then echo "enforcer/ unchanged"; exit 0; fi
           LAST=$(git describe --tags --abbrev=0 --match 'v*' "origin/${{ github.base_ref }}")
-          node scripts/release.mjs check-changed "$LAST"
+          node scripts/release.mjs check-changed "$LAST" "origin/${{ github.base_ref }}"
 
   test:
     runs-on: ubuntu-latest
