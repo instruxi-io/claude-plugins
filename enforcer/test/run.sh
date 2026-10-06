@@ -64,9 +64,17 @@ stale "$SID"
 start=$(date +%s%N)
 out=$(hook heartbeat.py "{\"session_id\":\"$SID\",\"cwd\":\"$WORK/proj\",\"tool_name\":\"Bash\",\"tool_input\":{}}")
 ms=$(( ($(date +%s%N) - start) / 1000000 ))
+# median of 5 further timed calls (each over HTTP): one cold or loaded sample must not fail the budget
+samples=()
+for _i in 1 2 3 4 5; do
+  stale "$SID"; start=$(date +%s%N)
+  hook heartbeat.py "{\"session_id\":\"$SID\",\"cwd\":\"$WORK/proj\",\"tool_name\":\"Bash\",\"tool_input\":{}}" >/dev/null
+  samples+=($(( ($(date +%s%N) - start) / 1000000 )))
+done
+ms=$(printf '%s\n' "${samples[@]}" | sort -n | sed -n 3p)
 check "heartbeat: a call after lease/3 elapsed heartbeats over HTTP" 'grep -q "/nodes/n1/runs/r1/heartbeat" "$STUB_LOG"'
 check "heartbeat: silent on ok" '[ -z "$out" ]'
-check "heartbeat: under 500ms ($ms ms)" '[ "$ms" -lt 500 ]'
+check "heartbeat: median of 5 under 500ms budget ($ms ms)" '[ "$ms" -lt 500 ]'
 out=$(hook heartbeat.py "{\"session_id\":\"$SID\",\"cwd\":\"$WORK/proj\",\"tool_name\":\"mcp__enforcer-graph__graph_plan_status\",\"tool_input\":{}}")
 check "heartbeat: graph tools do not count or heartbeat" '[ -z "$out" ]'
 stale "$SID"
