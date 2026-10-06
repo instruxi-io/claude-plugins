@@ -2206,9 +2206,10 @@ class Dispatcher:
                 idle += 1
                 if idle >= 2:
                     blocked = sorted(self.landing)
-                    left = sorted(n["key"] for n in nodes if n.get("status") == "failed" and n.get("key") != LEASE_KEY
-                                  and n.get("key") not in self.landing)
-                    left += sorted(k for k in self.denied if k not in left and k not in self.landing)
+                    left = sorted(n["key"] for n in nodes if n.get("status") in ("failed", "needs_review")
+                                  and n.get("key") != LEASE_KEY and n.get("key") not in self.landing)
+                    # the list comes from current graph status, not the session's denial memory
+                    left = sorted(set(left))
                     if blocked:
                         self.say("landing-blocked (PR open, not landed; never triaged): %s" % ", ".join(blocked))
                     left += blocked
