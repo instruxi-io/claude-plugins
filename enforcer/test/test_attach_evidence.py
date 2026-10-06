@@ -98,11 +98,19 @@ class Base(unittest.TestCase):
         os.makedirs(os.path.join(self.proj, ".enforcer"))
         self.env = {k: v for k, v in os.environ.items()
                     if k not in ("GRAPH_FILES_BASE_URL", "GRAPH_BASE_URL", "GRAPH_ID", "ENFORCER_API_KEY")}
-        self.env.update(CLAUDE_PLUGIN_DATA=self.data, GRAPH_API_KEY="user-key",
+        self.home = os.path.join(self.work, "home")  # isolated HOME per test: no real credentials, no leakage
+        os.makedirs(self.home)
+        self.env.update(CLAUDE_PLUGIN_DATA=self.data, GRAPH_API_KEY="user-key", HOME=self.home,
                         ENFORCER_HOME=os.path.join(self.work, "no-enforcer-home"))
+        self._saved_home = os.environ.get("HOME")
+        os.environ["HOME"] = self.home
         lib._provider_cache.clear()
 
     def tearDown(self):
+        if self._saved_home is None:
+            os.environ.pop("HOME", None)
+        else:
+            os.environ["HOME"] = self._saved_home
         self.stub.close()
         shutil.rmtree(self.work, ignore_errors=True)
 
