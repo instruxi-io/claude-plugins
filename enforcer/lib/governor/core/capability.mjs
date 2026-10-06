@@ -80,6 +80,16 @@ export const DEFAULT_RULES = [
   { id: 'secrets.edit', authz: 'write',
     name: 'read or write credentials', tool: '', field: 'path', action: 'ask',
     match: '(?:^|/)(?:\\.env(?:\\.[\\w-]+)?|id_rsa\\w*|id_ed25519\\w*|[\\w.-]+\\.pem|credentials\\.json|\\.npmrc|\\.netrc|\\.git-credentials|\\.pgpass|policy-cache\\.json)$|(?:^|/)\\.(?:aws|ssh|enforcer)/' },
+  // Enforcer MCP writes. enforcer_api_write can reach any route and the
+  // agent_credential_* tools mint or revoke credentials; both were ungated.
+  // Headless there is nobody to ask, so these are refused outright, except a
+  // graph route from a session that carries GRAPH_ID (see graphRoute).
+  { id: 'enforcer.api_write', authz: 'write', headless: 'deny', graphExempt: true,
+    name: 'write through the Enforcer API', tool: '', action: 'ask',
+    match: '^mcp__[\\w-]*__enforcer_api_write:' },
+  { id: 'enforcer.credential', authz: 'write', headless: 'deny',
+    name: 'issue, rotate or revoke an agent credential', tool: '', action: 'ask',
+    match: '^mcp__[\\w-]*__agent_credential_(?:issue|rotate|revoke)\\w*:' },
   { id: 'deploy.publish', authz: 'write',
     name: 'publish or deploy', tool: 'shell', action: 'ask',
     match: 'npm\\s+publish|vercel\\s+.*--prod|kubectl\\s+(apply|delete)|terraform\\s+apply' },
@@ -292,12 +302,20 @@ function compile(r) {
  * the earlier rule on a tie. Returns {rule, segs} (segs: the top-level commands
  * a segment-scoped rule hit, which a rewrite edits) or null.
  */
+// A graph route called from a session that holds a graph (GRAPH_ID).
+function graphRoute(ev) {
+  if (!ev?.worker?.graphId) return false;
+  const p = String(ev.raw?.path ?? ev.input?.path ?? ev.raw?.url ?? '');
+  return /^\/?graphs?(?:\/|$|\?)/i.test(p.replace(/^https?:\/\/[^/]+/i, '').replace(/^\/(?:api\/)?(?:v\d+\/)?/, '/'));
+}
+
 function scan(rules, ev) {
   const text = String(ev.action || '');
   const cache = new Map();   // command analysis per subject text
   let best = null;
   for (const r of rules || []) {
     if (!toolMatches(r.tool, ev)) continue;
+    if (r.graphExempt && graphRoute(ev)) continue;
     const re = compile(r);
     if (!re) continue;
     // A rule that names a field matches THAT field only (the canonical one,
@@ -389,6 +407,9 @@ export function evaluate(rules, ev) {
     if (input) return Verdict.rewrite(input, `${hit.name} — ${hit.why}`, of);
     return Verdict.ask(`would ${hit.name}`, of);   // could not make it safer; ask instead
   }
+
+  if (hit.headless === 'deny' && ev.worker?.headless)
+    return Verdict.deny(`not allowed to ${hit.name} headless`, of);
 
   // Deliberately does not latch anything: every separate dangerous action
   // deserves its own answer, not one blanket approval for the session.

@@ -22,6 +22,7 @@ import { SHELL, EDIT, WRITE, READ, WEB, MCP, OTHER } from '../../core/tools.mjs'
 // ('Glob', 'Task') still match it, and so does any rule with no tool at all.
 const KINDS = {
   Bash: [SHELL, { command: 'command' }],
+  PowerShell: [SHELL, { command: 'command' }],
   Edit: [EDIT, { path: 'file_path' }],
   MultiEdit: [EDIT, { path: 'file_path' }],
   NotebookEdit: [EDIT, { path: 'notebook_path' }],
@@ -43,6 +44,8 @@ export function kindOf(name) {
   const n = String(name || '');
   const k = BY_LOWER[n.toLowerCase()];
   if (k) return { tool: k[0], fields: k[1] };
+  // An MCP tool that runs a command is a shell, or every `tool: shell` rule misses it.
+  if (/^mcp__.*__(?:run|execute|exec|shell|bash|powershell)[\w-]*$/i.test(n)) return { tool: SHELL, fields: { command: 'command' } };
   if (n.startsWith('mcp__')) return { tool: MCP, fields: {}, server: n.split('__')[1] || '' };
   return { tool: OTHER, fields: {} };
 }
@@ -125,7 +128,7 @@ export function toolEvent(ev) {
     transcript: ev.transcript_path,
     subagent: ev.agent_id ? { id: String(ev.agent_id), transcript: subagentTranscript(ev) } : undefined,
     // For the graph-worker rules (core/worker.mjs) and the decision record.
-    worker: workerContext(ev),
+    worker: { ...workerContext(ev), graphId: process.env.GRAPH_ID || null },
     runId: runIdOf(ev),
   };
 }
