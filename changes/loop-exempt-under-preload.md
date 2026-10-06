@@ -1,0 +1,1 @@
+- governor: loop-exempt.test.mjs runs under the isolating preload (fixes main CI after #148).
