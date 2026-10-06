@@ -2,9 +2,33 @@ name: ci
 on:
   push:
     branches: [main]
+    tags: ['v*']
   pull_request:
 
 jobs:
+  # A customer only receives a change when the version moves, so a change under
+  # enforcer/ needs a bump and a changelog entry; a tag must match the manifests.
+  version-bump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: version identity tests
+        run: node --test test/version-identity.test.mjs
+      - name: tag equals plugin.json version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: node scripts/release.mjs check-tag "$GITHUB_REF_NAME"
+      - name: enforcer/ changed => version bumped and changelog entry
+        if: github.event_name == 'pull_request'
+        run: |
+          if git diff --quiet "origin/${{ github.base_ref }}...HEAD" -- enforcer/; then echo "enforcer/ unchanged"; exit 0; fi
+          LAST=$(git describe --tags --abbrev=0 --match 'v*' "origin/${{ github.base_ref }}")
+          node scripts/release.mjs check-changed "$LAST"
+
   test:
     runs-on: ubuntu-latest
     steps:
