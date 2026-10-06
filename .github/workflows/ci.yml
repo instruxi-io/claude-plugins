@@ -53,9 +53,9 @@ jobs:
           node -e '
             const h = JSON.parse(require("fs").readFileSync("enforcer/hooks/hooks.json", "utf8")).hooks;
             for (const e of ["PreToolUse","PostToolUse","PreCompact","SessionStart","Stop"]) {
-              if (!JSON.stringify(h[e] || []).includes("bin/enforcer\\\" hook")) { console.error("FAIL no bin/enforcer hook for " + e); process.exit(1); }
+              if (!JSON.stringify(h[e] || []).includes("bin/enforcer\\\" event")) { console.error("FAIL no bin/enforcer hook for " + e); process.exit(1); }
             }
-            console.log("enforcer hooks.json routes the graph events through bin/enforcer hook");'
+            console.log("enforcer hooks.json routes the graph events through bin/enforcer event");'
       - name: manifests are valid JSON
         run: |
           for f in .claude-plugin/marketplace.json kit.json enforcer/.claude-plugin/plugin.json enforcer/.mcp.json enforcer/hooks/hooks.json enforcer/docs/graph/settings.example.json test/fixtures/mcp-tool-names.json; do

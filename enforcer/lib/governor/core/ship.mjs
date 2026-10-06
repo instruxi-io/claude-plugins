@@ -22,7 +22,7 @@
 
 import { readFileSync, writeFileSync, mkdirSync, openSync, closeSync, unlinkSync, statSync } from 'node:fs';
 import { createHash, randomUUID } from 'node:crypto';
-import { spawn } from 'node:child_process';
+const spawn = (...a) => process.getBuiltinModule('node:child_process').spawn(...a); // lazy: only the throttled kick spawns
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DIR } from './store.mjs';

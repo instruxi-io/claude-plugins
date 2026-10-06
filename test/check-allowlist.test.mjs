@@ -12,7 +12,7 @@ const run = (...a) => spawnSync('node', [script, ...a], { encoding: 'utf8' });
 const copy = () => {
   const d = mkdtempSync(join(tmpdir(), 'allowlist-'));
   for (const p of ['enforcer/docs/graph/settings.example.json', 'enforcer/agents/graph-worker.md',
-    'enforcer/hooks/hooks.json', 'enforcer/commands', 'enforcer/skills', 'enforcer/harness/grok/hooks/enforcer.json', 'enforcer/harness/grok/agents', 'test/fixtures/mcp-tool-names.json']) {
+    'enforcer/hooks/hooks.json', 'enforcer/src/event.mjs', 'enforcer/commands', 'enforcer/skills', 'enforcer/harness/grok/hooks/enforcer.json', 'enforcer/harness/grok/agents', 'test/fixtures/mcp-tool-names.json']) {
     cpSync(join(repo, p), join(d, p), { recursive: true });
   }
   return d;

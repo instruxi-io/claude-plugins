@@ -156,7 +156,10 @@ export function createGovernor({ harness = 'unknown', adapterVersion = '', cost 
    * check: the rate-limited call is cheap, the retry after it is what costs.
    */
   function after(event, { failed = false } = {}) {
-    withLock(() => {
+    // The common case (a call that worked, nothing pending) changes no state: peek without the lock.
+    let pending = true;
+    if (!failed) { try { pending = !!((loadState().agents || {})[event.agent]?.pendingAsk); } catch { pending = true; } }
+    if (failed || pending) withLock(() => {
       const state = loadState();
       const a = getAgent(state, event.agent, { ...DEFAULTS, ...loadConfig() });
       // The tool ran, so a pending ask was answered yes.

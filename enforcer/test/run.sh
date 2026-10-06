@@ -386,8 +386,10 @@ rm -f "$runfile"
 check "hooks.json matchers cover all three server names, and nothing else" 'python3 - <<PY
 import json,re
 d=json.load(open("hooks/hooks.json"))["hooks"]
-pre=[m["matcher"] for m in d["PreToolUse"] if "graph_" in m["matcher"]][0]
-post=[m["matcher"] for m in d["PostToolUse"] if "graph_" in m["matcher"]][0]
+import importlib.util
+src=open("src/event.mjs").read()
+pre=re.search(r"const PRE_GRAPH = /(.*)/;",src).group(1)
+post=re.search(r"const POST_GRAPH = /(.*)/;",src).group(1)
 for s in ("plugin_enforcer_enforcer","enforcer","enforcer-graph"):
     assert re.fullmatch(pre,"mcp__%s__graph_report"%s) and re.fullmatch(pre,"mcp__%s__graph_remember"%s)
     for t in ("next_work","report","heartbeat"): assert re.fullmatch(post,"mcp__%s__graph_%s"%(s,t))
@@ -397,7 +399,7 @@ check "heartbeat: skips graph tools under the plugin server name too" 'python3 -
 check "attach: the attach hook's timeout covers the upload budget and the PR check" 'python3 -c "
 import json
 d=json.load(open(\"hooks/hooks.json\"))[\"hooks\"][\"PreToolUse\"]
-t=[h[\"timeout\"] for m in d for h in m[\"hooks\"] if \"hook pre-tool-use\" in h[\"command\"]][0]
+t=[h[\"timeout\"] for m in d for h in m[\"hooks\"] if \"event pre-tool-use\" in h[\"command\"]][0]
 assert t >= 25, t"'
 
 # --- full outputs beyond the clip go to the user's enforcer-files (adapter-files)
@@ -453,7 +455,7 @@ check "client: other graph tools are left alone" '[ -z "$out" ]'
 out=$(GRAPH_EVIDENCE_MODE=context hook attach_evidence.py "{\"session_id\":\"client-c\",\"tool_name\":\"mcp__plugin_enforcer_enforcer__graph_next_work\",\"tool_input\":{\"graph\":\"g1\"}}")
 check "client: context mode (rewrites not applied) does not pretend to stamp" '! echo "$out" | grep -q updatedInput'
 check "client: hooks.json routes next_work, heartbeat and report through the stamping hook" 'python3 -c "
-import json,re; m=[h[\"matcher\"] for h in json.load(open(\"hooks/hooks.json\"))[\"hooks\"][\"PreToolUse\"] if any(\"hook pre-tool-use\" in x[\"command\"] for x in h[\"hooks\"])][0]
+import json,re; m=re.search(r\"const PRE_GRAPH = /(.*)/;\",open(\"src/event.mjs\").read()).group(1)
 import sys; sys.exit(0 if all(re.fullmatch(m, p+\"graph_\"+t) for p in (\"mcp__plugin_enforcer_enforcer__\",\"mcp__enforcer__\",\"mcp__enforcer-graph__\") for t in (\"next_work\",\"heartbeat\",\"report\")) else 1)"'
 SID2=client-hb; rf2="$CLAUDE_PLUGIN_DATA/runs/$SID2.json"
 in=$(python3 -c 'import json,sys;print(json.dumps({"session_id":sys.argv[1],"tool_name":"mcp__enforcer-graph__graph_next_work","tool_input":{},"tool_response":sys.argv[2]}))' "$SID2" "$card")
