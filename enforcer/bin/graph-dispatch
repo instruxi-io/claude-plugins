@@ -819,6 +819,11 @@ class Dispatcher:
         self.denied = {}  # node key -> worktree path: denied by the environment, not relaunched this session
         self.limited_until = 0.0  # harness usage limit: no launches before this instant
         self.limit_noted = 0.0
+        # CI outage hold (same wait machinery as a usage limit): set by a lander
+        # exit 7 or a degraded githubstatus.com Actions component
+        self.ci_hold = 0.0  # the limited_until value this hold set; 0 = none
+        self.ci_checked = time.time()  # the status feed is polled at most every ci_probe_interval
+        self.ci_fetch = None  # test hook: callable returning the feed's JSON text
         self.mcp_down = 0
         self.last_skip = {}
         self.drain_said = False
@@ -1566,8 +1571,37 @@ class Dispatcher:
         self.say("landing %s pid=%d run=%s: %s log=%s" % (key, lw.proc.pid, lw.run_id, " ".join(cmd), log))
         return True
 
+    def ci_unavailable(self, key, why):
+        """CI is down, not the node: hold every launch and landing like a usage limit."""
+        until = time.time() + getattr(self.args, "ci_backoff", 300)
+        if self.limited_until < until:
+            self.limited_until = self.ci_hold = until
+        self.say("CI-UNAVAILABLE %s: %s; holding launches and landings until %s"
+                 % (key, why, time.strftime("%Y-%m-%d %H:%M %Z", time.localtime(until))))
+
+    def ci_probe(self, force=False):
+        """Poll the Actions status feed (at most every ci_probe_interval): a
+        component that is not operational holds launches; operational releases a
+        CI hold; an unreachable feed changes nothing."""
+        now = time.time()
+        if not force and now - self.ci_checked < getattr(self.args, "ci_probe_interval", 300):
+            return
+        self.ci_checked = now
+        st = actions_status(self.ci_fetch, getattr(self.args, "ci_status_url", CI_STATUS_URL))
+        if st is None:
+            return
+        if st != "operational":
+            self.ci_unavailable("github-actions", "status feed says Actions is %s" % st)
+        elif self.ci_hold and self.limited_until == self.ci_hold:
+            self.limited_until = self.ci_hold = 0.0
+            self.say("CI-UNAVAILABLE cleared: GitHub Actions is operational")
+
     def finish_landing(self, w):
         rc = w.proc.returncode
+        if rc == CI_UNAVAILABLE:
+            # not the node's fault: leave the run to lapse, hold, and try again
+            self.ci_unavailable(w.key, "the lander found CI unavailable (PR #%s)" % w.lb["pr"])
+            return
         with open(w.log_path, errors="replace") as f:
             out = f.read()
         ow, os_ = w.orig
@@ -1703,6 +1737,8 @@ class Dispatcher:
         def skip(why):
             self.say("SALVAGE-SKIPPED %s: %s" % (key, why))
             return False
+        if rc == CI_UNAVAILABLE:
+            self.ci_unavailable(key, "land-pr.sh found CI unavailable (PR #%s)" % pr)
         if rc:
             return skip("PR #%s: land-pr exited %d (%s): %s" % (pr, rc, LAND_CODES.get(rc, "unknown"), clip(out, 200)))
         sess = getattr(w, "session", None)
@@ -1729,6 +1765,9 @@ class Dispatcher:
 
     def finish_merge(self, w):
         rc = w.proc.returncode
+        if rc == CI_UNAVAILABLE:
+            self.ci_unavailable(w.key, "land-pr.sh found CI unavailable")
+            return
         with open(w.log_path, errors="replace") as f:
             out = f.read()
         ev = {"kind": "command", "cmd": " ".join(w.cmd), "exit": rc, "output": clip(out)}
@@ -1981,6 +2020,7 @@ class Dispatcher:
         self.say("dispatching graph %s with %d workers; stop file %s" % (self.g, a.workers, a.stop_file))
         idle = 0
         while True:
+            self.ci_probe()
             if self.limited_until > time.time():
                 self.reap()
                 if self.args.on_limit == "exit" and not self.workers:
@@ -2065,7 +2105,28 @@ class Dispatcher:
 
 NOT_FOUND_HINT = " Check the workspace (enforcer workspace) and graph id: a graph in another workspace is a 404"
 
-LAND_CODES = {0: "merged", 2: "CI failed", 3: "conflict with the base", 4: "timed out", 5: "usage or gh error"}
+LAND_CODES = {0: "merged", 2: "CI failed", 3: "conflict with the base", 4: "timed out", 5: "usage or gh error",
+              7: "CI unavailable"}
+CI_UNAVAILABLE = 7
+CI_STATUS_URL = "https://www.githubstatus.com/api/v2/components.json"
+
+
+def actions_status(fetch=None, url=CI_STATUS_URL):
+    """The GitHub Actions component status from the githubstatus.com feed
+    ("operational", "degraded_performance", "partial_outage", "major_outage"),
+    or None when the feed cannot be reached or read: unknown is not a hold."""
+    try:
+        if fetch is not None:
+            text = fetch()
+        else:
+            with urllib.request.urlopen(url, timeout=10) as r:
+                text = r.read().decode("utf-8", "replace")
+        for c in json.loads(text).get("components") or []:
+            if c.get("name") == "Actions":
+                return c.get("status")
+    except Exception:
+        pass
+    return None
 
 # A harness usage limit is the HARNESS's state, not the node's: the worker
 # exits at its first turn with a message like
@@ -2736,6 +2797,11 @@ def parse_args(argv):
                    help="when the harness reports a usage limit: wait for the reset (default) or exit 4")
     p.add_argument("--limit-backoff", type=float, default=1800,
                    help="seconds to hold when a limit message names no reset time")
+    p.add_argument("--ci-backoff", type=float, default=300,
+                   help="seconds to hold launches after a lander reports CI unavailable (exit 7)")
+    p.add_argument("--ci-probe-interval", type=float, default=300,
+                   help="seconds between polls of the githubstatus.com Actions component")
+    p.add_argument("--ci-status-url", default=CI_STATUS_URL)
     p.add_argument("--plugin-dir", action="append", default=[],
                    help="extra plugin dirs (default: the newest cached enforcer plugin, for the MCP server)")
     p.add_argument("--no-salvage", action="store_true",

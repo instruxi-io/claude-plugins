@@ -30,7 +30,8 @@ case "$1 $2" in
       *nameWithOwner*) echo o/r ;;
       *) echo "$FAKE_SQUASH true true" ;;
     esac ;;
-  "run list") echo "${FAKE_RUNS:-0}" ;;
+  "run view") echo "${FAKE_STEPS:-5}" ;;
+  "run list") [[ "$*" == *databaseId* ]] && { echo 42; exit 0; }; echo "${FAKE_RUNS:-0}" ;;
   "api repos/o/r/compare/main...mergesha") echo "$FAKE_COMPARE" ;;
   *) exit 1 ;;
 esac
@@ -65,6 +66,18 @@ export FAKE_SQUASH=false
 run 1 -R o/r --timeout 30
 [ "$(cat "$tmp/rc")" = 0 ] && grep -q "pr merge 1 -R o/r --merge" "$tmp/log" \
   && ok "squash disallowed falls back to merge" || bad "merge fallback ($(cat "$tmp/rc")): $(cat "$tmp/err")"
+
+reset
+export FAKE_ROLLUP='[{"name":"ci","status":"COMPLETED","conclusion":"CANCELLED"}]' FAKE_RUNS=0 FAKE_STEPS=0
+run 1 -R o/r --timeout 30
+[ "$(cat "$tmp/rc")" = 7 ] && grep -q "CI unavailable" "$tmp/err" \
+  && ok "zero-step cancelled check exits 7" || bad "zero-step cancelled check exits 7 ($(cat "$tmp/rc"))"
+
+reset
+export FAKE_ROLLUP='[{"name":"ci","status":"COMPLETED","conclusion":"CANCELLED"}]' FAKE_RUNS=0 FAKE_STEPS=3
+run 1 -R o/r --timeout 30
+[ "$(cat "$tmp/rc")" = 2 ] && ok "cancelled check with steps run is a real failure (exit 2)" || bad "cancelled with steps ($(cat "$tmp/rc"))"
+unset FAKE_STEPS
 
 reset
 run 1 --timeout
