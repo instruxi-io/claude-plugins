@@ -6,6 +6,16 @@ import { readFileSync } from 'node:fs';
 import { headlessFrom } from '../core/worker.mjs';
 import { loadConfig } from '../src/store.mjs';
 
+// In-process mode (bin/enforcer event): the runner sets globalThis.__enforcerEvent = { input, out }
+// and imports a shim. Where a shim would write JSON and exit, it records the JSON and throws
+// HookExit instead, so one node process can run the governor and the graph handlers and merge them.
+export class HookExit extends Error {}
+function exit0() {
+  if (globalThis.__enforcerEvent) throw new HookExit('exit');
+  process.exit(0);
+}
+const rethrowExit = (e) => { if (e instanceof HookExit) throw e; };
+
 // Codex names its tools apply_patch and shell (command may be an argv array).
 // Map them to Edit and Bash so the Edit/Write and Bash rules match.
 export function codexNormalize(ev) {
@@ -34,12 +44,12 @@ export function codexNormalize(ev) {
 export function input(...allowed) {
   let ev = {};
   try {
-    const raw = readFileSync(0, 'utf8');
+    const raw = globalThis.__enforcerEvent ? globalThis.__enforcerEvent.input : readFileSync(0, 'utf8');
     ev = raw.trim() ? JSON.parse(raw) : {};
     if (!raw.trim()) Object.defineProperty(ev, 'badStdin', { value: true });
   } catch { ev = {}; Object.defineProperty(ev, 'badStdin', { value: true }); return ev; }
   if (!ev || typeof ev !== 'object' || Array.isArray(ev)) { ev = {}; Object.defineProperty(ev, 'badStdin', { value: true }); return ev; }
-  if (allowed.length && ev && typeof ev.hook_event_name === 'string' && !allowed.includes(ev.hook_event_name)) process.exit(0);
+  if (allowed.length && ev && typeof ev.hook_event_name === 'string' && !allowed.includes(ev.hook_event_name)) exit0();
   return codexNormalize(ev);
 }
 
@@ -47,8 +57,9 @@ export function input(...allowed) {
 // at the top level of the JSON, not inside hookSpecificOutput; nested there,
 // Claude Code never showed them.
 export function emit(eventName, out, top = {}) {
-  process.stdout.write(JSON.stringify({ ...top, hookSpecificOutput: { hookEventName: eventName, ...out } }));
-  process.exit(0);
+  const json = JSON.stringify({ ...top, hookSpecificOutput: { hookEventName: eventName, ...out } });
+  if (globalThis.__enforcerEvent) globalThis.__enforcerEvent.out = json; else process.stdout.write(json);
+  exit0();
 }
 
 // No objection: say nothing. A PreToolUse hook that returns no
@@ -67,7 +78,7 @@ export const pass = (event, top = {}) => emit(event, {}, top);
 
 // Events with no hookSpecificOutput schema (SessionEnd, SubagentStop): Claude
 // Code rejects any JSON naming them, so the only valid answer is none at all.
-export function done() { process.exit(0); }
+export function done() { exit0(); }
 
 // What Claude Code's hook JSON MEANS -- the tool map, the match text, the agent
 // id, the billing mode -- is in adapters/claude-code/events.mjs. This file is
@@ -87,6 +98,7 @@ export function failDecision() {
 export async function guardPre(event, fn) {
   try { await fn(); }
   catch (e) {
+    rethrowExit(e);
     let msg = ''; try { msg = String(e?.message || e).slice(0, 300); } catch {}
     try { process.stderr.write(`enforcer-governor: governor_error: ${msg}\n`); } catch {}
     emit(event, { permissionDecision: failDecision(),
@@ -97,7 +109,8 @@ export async function guardPre(event, fn) {
 // Every other entry: a failure here decides nothing, so report it and exit 0.
 export async function guard(fn) {
   try { await fn(); } catch (e) {
+    rethrowExit(e);
     try { process.stderr.write(`enforcer-governor: hook error: ${String(e?.message || e).slice(0, 300)}\n`); } catch {}
-    process.exit(0);
+    exit0();
   }
 }
