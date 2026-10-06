@@ -21,10 +21,17 @@ export async function http(cfg, method, path, body, o = {}) {
   } catch { return null; }
 }
 
-/** [status, body|null]; status 0 when no response came back. */
-export async function httpStatus(cfg, method, path, body, o = {}) {
+/** [status, body|null, errorBody|null]; status 0 when no response came back. errorBody is the parsed body of a non-2xx answer. */
+export async function httpResult(cfg, method, path, body, o = {}) {
   try {
     const [res, out] = await call(cfg, method, path, body, o);
-    return [res.status, res.ok && out && typeof out === 'object' && !Array.isArray(out) ? out : null];
-  } catch { return [0, null]; }
+    const obj = out && typeof out === 'object' && !Array.isArray(out) ? out : null;
+    return [res.status, res.ok ? obj : null, res.ok ? null : obj];
+  } catch { return [0, null, null]; }
+}
+
+/** [status, body|null]; status 0 when no response came back. */
+export async function httpStatus(cfg, method, path, body, o = {}) {
+  const [status, out] = await httpResult(cfg, method, path, body, o);
+  return [status, out];
 }
