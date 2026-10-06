@@ -150,10 +150,11 @@ const REFRESH_SKEW_MS = 60_000;
  * grant, #361) and the rotated pair written back, because the refresh token
  * is single-use: dropping the successor would sign the machine out.
  *
- * Never throws. A failed refresh returns {} — signed out — rather than a token
- * the server is about to refuse.
+ * Never throws. A transient refresh failure (timeout, network, 5xx) retries once and keeps the
+ * current pair, returning the access token while it is still unexpired; only a 4xx rejection
+ * (invalid_grant, 400, 401) returns {} — signed out. The reason is written to oauth.last_refresh_error.
  */
-export async function authHeaders({ fetchImpl = globalThis.fetch, now = Date.now } = {}) {
+export async function authHeaders({ fetchImpl = globalThis.fetch, now = Date.now, backoffMs = 250 } = {}) {
   const key = enforcerKey();
   if (key) return { 'X-API-Key': key };
   const doc = readCredentials();
@@ -179,15 +180,39 @@ export async function authHeaders({ fetchImpl = globalThis.fetch, now = Date.now
     const doc2 = cur || doc; const o2 = c || o;
     if (!o2.refresh_token || !isAllowedUrl(o2.token_endpoint)) return {};
     const body = new URLSearchParams({ grant_type: 'refresh_token', refresh_token: o2.refresh_token, client_id: o2.client_id || o.client_id });
-    const res = await fetchImpl(o2.token_endpoint, {
-      method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body,
-      signal: AbortSignal.timeout(1800),
-    });
-    if (!res.ok) return {};
-    const t = await res.json();
-    if (!t?.access_token) return {};
+    // A token the server has not yet expired is still good: reuse it on a transient failure.
+    const usable = o2.access_token && o2.expires_at && Date.parse(o2.expires_at) > now()
+      ? { Authorization: `Bearer ${o2.access_token}` } : {};
+    const record = (reason) => {
+      try { saveCredentials({ ...doc2, enforcer: { ...doc2.enforcer, oauth: { ...o2, last_refresh_error: { at: new Date(now()).toISOString(), reason } } } }); } catch { /* best effort */ }
+    };
+    // Transient (timeout, network, 5xx): retry once after a short backoff, then keep the old pair untouched.
+    // The refresh token is single-use, so after a lost response it may already be rotated server-side;
+    // keeping it unchanged lets the next call replay it (the server answers a replay of the last-used token).
+    let res = null; let reason = null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      if (attempt) await sleep(backoffMs);
+      try {
+        res = await fetchImpl(o2.token_endpoint, {
+          method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body,
+          signal: AbortSignal.timeout(1800),
+        });
+      } catch (e) { res = null; reason = `transient: ${e?.name || 'error'}`; continue; }
+      if (res.status >= 500 || res.status === 429 || res.status === 408) { reason = `transient: HTTP ${res.status}`; res = null; continue; }
+      break;
+    }
+    if (!res) { record(reason); return usable; }
+    if (!res.ok) {
+      // Only a definite rejection (invalid_grant / 400 / 401 / other 4xx) signs the machine out.
+      let code = ''; try { code = (await res.json())?.error || ''; } catch { /* no body */ }
+      record(`signed out: HTTP ${res.status}${code ? ` ${code}` : ''}`);
+      return {};
+    }
+    let t; try { t = await res.json(); } catch { record('transient: unreadable response'); return usable; }
+    if (!t?.access_token) { record('transient: no access_token in response'); return usable; }
+    const { last_refresh_error: _drop, ...clean } = o2;
     const next = {
-      ...o2,
+      ...clean,
       access_token: t.access_token,
       refresh_token: t.refresh_token || o2.refresh_token,
       expires_at: new Date(now() + (Number(t.expires_in) || 900) * 1000).toISOString(),
