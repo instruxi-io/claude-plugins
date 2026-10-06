@@ -1,6 +1,6 @@
 // The edge credential, and specifically that its identifier is not the key.
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, statSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, statSync, rmdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -96,4 +96,55 @@ await okAsync('a held lock times out and the stale token is used', async () => {
   assert.equal(calls, 0); assert.equal(h.Authorization, 'Bearer old');
 });
 
-console.log(`\n  ${pass} passed`);
+const resp = (status, body) => ({ ok: status >= 200 && status < 300, status, json: async () => body });
+const future = () => new Date(Date.now() + 30_000).toISOString(); // inside the refresh skew, not yet expired
+const seedSoon = () => { try { rmdirSync(join(SHARED_DIR(), '.refresh.lock')); } catch {} seedOauth('https://api.instruxi.dev/oauth/token'); const d = readCredentials(); d.enforcer.oauth.expires_at = future(); saveCredentials(d); };
+
+await okAsync('timeout keeps the old token', async () => {
+  seedSoon();
+  const fetchImpl = async () => { const e = new Error('t'); e.name = 'TimeoutError'; throw e; };
+  const h = await authHeaders({ fetchImpl, backoffMs: 1 });
+  assert.equal(h.Authorization, 'Bearer old');
+  const o = readCredentials().enforcer.oauth;
+  assert.equal(o.refresh_token, 'r1'); assert.equal(o.access_token, 'old');
+  assert.match(o.last_refresh_error.reason, /transient: TimeoutError/);
+});
+
+await okAsync('5xx keeps the old token and retries once', async () => {
+  seedSoon();
+  let calls = 0;
+  const h = await authHeaders({ fetchImpl: async () => { calls++; return resp(503, {}); }, backoffMs: 1 });
+  assert.equal(calls, 2);
+  assert.equal(h.Authorization, 'Bearer old');
+  assert.equal(readCredentials().enforcer.oauth.refresh_token, 'r1');
+});
+
+await okAsync('invalid_grant signs out', async () => {
+  seedSoon();
+  let calls = 0;
+  const h = await authHeaders({ fetchImpl: async () => { calls++; return resp(400, { error: 'invalid_grant' }); }, backoffMs: 1 });
+  assert.equal(calls, 1); assert.deepEqual(h, {});
+  assert.match(readCredentials().enforcer.oauth.last_refresh_error.reason, /signed out: HTTP 400 invalid_grant/);
+});
+
+await okAsync('lost response after rotation recovers', async () => {
+  seedSoon();
+  // The server rotates r1 -> r2 and answers a replay of the last-used token with the same pair.
+  let rotated = null; let drop = true;
+  const fetchImpl = async (_u, { body }) => {
+    const rt = new URLSearchParams(body).get('refresh_token');
+    if (rt === 'r1') rotated = { access_token: 'new', refresh_token: 'r2', expires_in: 900 };
+    else if (rt !== 'r2' || !rotated) return resp(400, { error: 'invalid_grant' });
+    if (drop) { drop = false; const e = new Error('t'); e.name = 'TimeoutError'; throw e; } // response lost
+    return resp(200, rotated);
+  };
+  const first = await authHeaders({ fetchImpl, backoffMs: 1 });
+  assert.equal(first.Authorization, 'Bearer new'); // the in-call retry got the replay
+  assert.equal(readCredentials().enforcer.oauth.refresh_token, 'r2');
+  // and a client that never got any answer still holds r1, which the server replays
+  seedSoon(); drop = true;
+  const second = await authHeaders({ fetchImpl: async (u, o) => { if (drop) { drop = false; throw new Error('lost'); } return fetchImpl(u, o); }, backoffMs: 1 });
+  assert.equal(second.Authorization, 'Bearer new');
+});
+
+console.log(`\n  ${pass} passed, 0 failed\n  fail 0`);
