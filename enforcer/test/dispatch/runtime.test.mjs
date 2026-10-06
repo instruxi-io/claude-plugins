@@ -149,7 +149,9 @@ test('pids.json orphans from a dead dispatcher are reaped', async () => {
   writeFileSync(join(state, 'pids.json'), JSON.stringify({ dispatcher: 2147483000, host: (await import('node:os')).hostname(), workers: { x: p.pid } }));
   const d = new Dispatcher(new FakeAPI([]), mkArgs(state), () => {});
   assert.deepEqual(await d.reapOrphans(), ['x']);
-  await p.done;
+  // the worker handle is unref'd, so hold the loop open until its exit is delivered (macOS reports the group gone before the zombie is reaped)
+  const hold = setInterval(() => {}, 50);
+  try { await p.done; } finally { clearInterval(hold); }
   assert.ok(!pidAliveGroup(p.pid));
   assert.ok(!existsSync(join(state, 'pids.json')));
 });
