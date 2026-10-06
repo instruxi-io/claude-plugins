@@ -868,6 +868,53 @@ class SalvageDenied(unittest.TestCase):
         time.sleep(0.3)
         return d, ok, out.getvalue()
 
+    def test_salvage_existing_pr_is_reused(self):
+        self.script("gh", '#!/bin/sh\necho "gh $*" >> %s\ncase "$2" in list) echo 42;; create) echo https://github.com/o/r/pull/7;; esac\n' % self.log)
+        self.setup_branch()
+        d, ok, text = self.run_salvage()
+        self.assertTrue(ok, text)
+        c = self.calls()
+        self.assertNotIn("gh pr create", c)
+        self.assertIn("land 42 --timeout", c)
+
+    def test_salvage_fixes_12_is_neutralised_in_the_body(self):
+        self.setup_branch()
+        d, ok, text = self.run_salvage(text="Fixes #12\nping @someone")
+        self.assertTrue(ok, text)
+        c = self.calls()
+        self.assertNotIn("Fixes #12", c)
+        self.assertNotIn("@someone", c)
+        self.assertIn("> ", c)
+
+    def test_salvage_land_heartbeats_the_run(self):
+        os.environ["FAKE_LAND_SLEEP"] = "1"
+        self.setup_branch()
+        beats = []
+        api = FakeAPI([])
+        api.heartbeat = lambda g, n, r: beats.append(r) or {"state": "ok"}
+        d = gd.Dispatcher(api, args(state_dir=self.state, claude=self.cbin, heartbeat=0), io.StringIO())
+        w = gd.Worker(node("a"), os.path.join(self.tmp, "w.log"))
+        w.path, w.model, w.max_turns = self.wt, "sonnet", 10
+        w.session = gd.Session("sess-1", "r", "sonnet")
+        s = {"denied_tools": ["Bash"], "result_text": "r", "card_skills": ["deliver-via-github-pr"], "run_id": "run-a",
+             "denied_inputs": [{"tool_name": "Bash", "tool_input": {"command": "git push"}}]}
+        self.assertTrue(d.salvage(w, s))
+        d.reap()
+        time.sleep(0.05)
+        d.reap()
+        self.assertIn("run-a", beats)
+        for x in list(d.workers.values()):
+            if x.proc:
+                x.proc.wait()
+
+    def test_salvage_denied_is_cleared_on_the_next_attempt(self):
+        self.setup_branch()
+        d = gd.Dispatcher(FakeAPI([]), args(state_dir=self.state, claude=self.cbin), io.StringIO())
+        d.denied["a"] = self.wt
+        d2, ok, text = self.run_salvage(d=d)
+        self.assertTrue(ok, text)
+        self.assertNotIn("a", d.denied)
+
     def test_happy_path_pushes_opens_pr_lands_and_resumes(self):
         self.setup_branch()
         d, ok, text = self.run_salvage()
