@@ -26,6 +26,7 @@
     ],
     "SessionStart": [
       {
+        "matcher": "startup|resume|compact|clear",
         "hooks": [
           { "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/enforcer\" event session-start", "timeout": 10 }
         ]
@@ -57,6 +58,13 @@
         "matcher": "manual|auto",
         "hooks": [
           { "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/enforcer\" event pre-compact", "timeout": 10 }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          { "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/enforcer\" event subagent-stop", "timeout": 5 }
         ]
       }
     ],

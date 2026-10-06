@@ -97,8 +97,8 @@ out=$(hook open_run_guard.py "{\"session_id\":\"$SID\",\"last_assistant_message\
 check "open_run_guard: blocks a stop with a run open and unreported" 'echo "$out" | grep -q "\"decision\": \"block\"" && echo "$out" | grep -q "api-contract"'
 out=$(hook open_run_guard.py "{\"session_id\":\"$SID\",\"last_assistant_message\":\"Done for today.\",\"stop_hook_active\":true}")
 check "open_run_guard: never blocks twice" '[ -z "$out" ]'
-out=$(hook open_run_guard.py "{\"session_id\":\"$SID\",\"last_assistant_message\":\"I am leaving the run open; progress is in graph_remember.\",\"stop_hook_active\":false}")
-check "open_run_guard: an explicit leave-open passes" '[ -z "$out" ]'
+out=$(hook open_run_guard.py "{\"session_id\":\"$SID\",\"last_assistant_message\":\"Progress is in graph_remember.\nstill running: r1\",\"stop_hook_active\":false}")
+check "open_run_guard: an explicit still-running marker passes" '[ -z "$out" ]'
 in=$(python3 -c 'import json,sys;print(json.dumps({"session_id":sys.argv[1],"tool_name":"mcp__enforcer-graph__graph_report","tool_input":{"node_id":"n1","run_id":"r1","status":"succeeded"},"tool_response":"{\"run\":{}}"}))' "$SID")
 hook track_run.py "$in"
 check "track_run: graph_report clears the run file" '[ ! -e "$runfile" ]'
