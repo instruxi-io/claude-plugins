@@ -19,10 +19,12 @@ const nodes = (acc) => [
   { key: 'old', status: 'done', data: { repo: 'r1', acceptance: [`${say} prints 'never'`] } },
 ];
 let acceptance = [];
+let lintWarnings = [];
 const srv = http.createServer((req, res) => {
   const send = (c, b) => { res.writeHead(c, { 'content-type': 'application/json' }); res.end(JSON.stringify(b)); };
   if (req.headers['x-api-key'] !== 'good') return send(401, {});
   if (req.url.startsWith('/graphs/g1/nodes')) { const d = nodes(acceptance); return send(200, { data: d, meta: { total: d.length } }); }
+  if (req.method === 'POST' && req.url === '/graphs/g1/acceptance/lint') return send(200, { success: true, warnings: lintWarnings });
   send(404, {});
 });
 await new Promise((r) => srv.listen(0, '127.0.0.1', r));
@@ -51,6 +53,14 @@ await t('exit code mismatch is a MISMATCH', async () => {
   acceptance = ['bash -c "exit 3" exits 0'];
   const r = await run();
   assert.equal(r.code, 1); assert.match(r.out, /exit 3, expected 0/);
+});
+await t('server warnings are merged into the report', async () => {
+  acceptance = [`${say} prints \`0 failed\``, 'it works'];
+  lintWarnings = [{ index: 1, code: 'vague_phrase', hint: 'name a command', line: 'it works' }];
+  const r = await run();
+  lintWarnings = [];
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /^ok fx:/m); assert.match(r.out, /^WARN fx: \[vague_phrase\] name a command/m);
 });
 srv.close(); rmSync(tmp, { recursive: true, force: true });
 console.log(`${pass} passed, ${fail} failed`);
