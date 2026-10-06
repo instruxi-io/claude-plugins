@@ -293,6 +293,36 @@ class WorktreeSetup(unittest.TestCase):
         # tracked.txt came from git checkout, not a copy; a second run changes nothing
         self.assertEqual(gd.worktree_setup(src, path)[:2], (0, 0))
 
+    def test_worktree_shared_dir_is_excluded_git_status_clean(self):
+        import subprocess
+        tmp, root, src = self._repo()
+        path, _, _ = gd.worktree_for(node("k", repo="r"), root, tmp)
+        gd.worktree_setup(src, path)
+        st = subprocess.run(["git", "status", "--porcelain"], cwd=path, capture_output=True, text=True).stdout
+        self.assertEqual(st.strip(), "")
+
+    def test_worktree_env_star_include_pattern_copies_env_local(self):
+        tmp, root, src = self._repo()
+        with open(os.path.join(src, ".worktreeinclude"), "w") as f:
+            f.write(".env*\n")
+        with open(os.path.join(src, ".gitignore"), "a") as f:
+            f.write(".env.local\n")
+        with open(os.path.join(src, ".env.local"), "w") as f:
+            f.write("L=1")
+        path, _, _ = gd.worktree_for(node("k", repo="r"), root, tmp)
+        gd.worktree_setup(src, path)
+        self.assertEqual(open(os.path.join(path, ".env.local")).read(), "L=1")
+
+    def test_worktree_share_escaping_the_root_is_refused(self):
+        tmp, root, src = self._repo()
+        os.makedirs(os.path.join(tmp, "x"), exist_ok=True)
+        with open(os.path.join(src, ".worktreeshare"), "w") as f:
+            f.write("a/../../x\n")
+        path, _, _ = gd.worktree_for(node("k", repo="r"), root, tmp)
+        c, l, notes = gd.worktree_setup(src, path)
+        self.assertEqual(l, 0)
+        self.assertTrue(any("escapes" in n for n in notes))
+
     def test_dry_run_logs_setup_line(self):
         tmp, root, src = self._repo()
         out = io.StringIO()
