@@ -100,4 +100,4 @@ await t('a command past --timeout is SKIPPED, not a MISMATCH, and the exit code 
   const r = await run([...only, '--timeout', '1']);
   assert.equal(r.code, 0, r.out); assert.match(r.out, /^SKIPPED fx:.*timed out after 1s/m);
 });
-after(() => { srv.close(); rmSync(tmp, { recursive: true, force: true }); });
+after(() => { srv.close(); try { rmSync(tmp, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* Windows can hold the cwd of a just-exited child */ } });
