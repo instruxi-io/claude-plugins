@@ -50,6 +50,7 @@ export async function statusLines(inp, post = http) {
   const cfg = findConfig(inp.cwd || process.env.CLAUDE_PROJECT_DIR);
   if (!cfg) return [];
   const g = cfg.graph_id;
+  // api-used: reads data,data.key,data.status
   const [fr, nodes] = await Promise.all([post(cfg, 'GET', `/graphs/${g}/frontier`), post(cfg, 'GET', `/graphs/${g}/nodes?limit=100`)]);
   if (fr == null && nodes == null) return [];
   const lines = [`## enforcer-graph plan status (graph ${g})`];
@@ -110,6 +111,7 @@ export async function rememberOnCompact(inp, post = http) {
     if (!cfg) return null;
     const text = lastAssistantText(inp.transcript_path || '') || 'context was compacted while this run was open; no assistant summary was available';
     const body = `Progress at compaction (${inp.trigger || 'auto'}), run ${run.run_id} in session ${sid}:\n${text}`;
+    // api-used: sends body,source,data
     await post(cfg, 'POST', `/graphs/${run.graph_id}/nodes/${run.node_id}/observations`,
       { body, source: `claude-code:compact:${sid}`, data: { session_id: sid, run_id: run.run_id, kind: 'progress' } });
   } catch {}

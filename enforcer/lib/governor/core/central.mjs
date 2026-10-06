@@ -157,6 +157,7 @@ export async function consult(rule, cfg = {}, { fetchImpl = hookFetch, now = Dat
     // the tenant policy is ever consulted.
     let who = cache.identity?.[cred];
     if (!who || !Number.isFinite(who.at) || who.at > now() || now() - who.at > IDENTITY_TTL_MS) {
+      // api-used: reads data.account_id,data.id,data.tenant.id,data.tenant_id
       const me = await call(fetchImpl, `${base}${API}/auth/me`, { headers }, timeoutMs);
       const d = me.body?.data;
       // /auth/me nests these: account_id at the top, the tenant under tenant.id.
@@ -169,6 +170,7 @@ export async function consult(rule, cfg = {}, { fetchImpl = hookFetch, now = Dat
       cache.identity = { ...(cache.identity || {}), [cred]: who };
     }
 
+    // api-used: sends action,resource.type,resource.id,resource.owner_id,resource.tenant_id
     const r = await call(fetchImpl, `${base}${API}/authz/check`, {
       method: 'POST',
       headers: { ...headers, 'Content-Type': 'application/json' },

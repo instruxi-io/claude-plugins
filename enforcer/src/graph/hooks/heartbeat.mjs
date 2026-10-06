@@ -28,6 +28,7 @@ export async function beat(inp, run, sid, now = Date.now() / 1000, post = httpSt
   const cfg = findConfig(inp.cwd);
   if (!cfg) return null;
   const usage = typedUsage(transcriptUsage(actorTranscript(inp), run.claimed_at));
+  // api-used: sends usage; reads data.state,data.lease_expires_at,data.started_at; headers X-Graph-Client
   const [status, r] = await post(cfg, 'POST', `/graphs/${run.graph_id}/nodes/${run.node_id}/runs/${run.run_id}/heartbeat`, usage ? { usage } : {}, { runId: run.run_id });
   run.last_hb = now;
   if (status === 404 || status === 409) { run.reclaimed = true; saveRun(sid, run); return 'reclaimed'; }

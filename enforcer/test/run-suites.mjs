@@ -16,6 +16,7 @@ const SUITES = [
   ...top,
   ['tsc (generated API types)', { cmd: join(ROOT, 'node_modules/.bin/tsc'), args: ['--noEmit', '-p', 'lib/api/tsconfig.json'] }],
   ['dispatch/injection', node('test/dispatch/injection.test.mjs')],
+  ['contract', node('test/contract/contract.test.mjs')],
   ['dispatch/pure', nodeTest('test/dispatch/pure.test.mjs')],
   ['dispatch/env', nodeTest('test/dispatch/env.test.mjs')],
   ['governor', { cmd: 'npm', args: ['test'], cwd: join(ROOT, 'lib/governor') }],
