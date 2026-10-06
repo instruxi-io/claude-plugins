@@ -31,7 +31,7 @@ export function installedRoot(env = process.env) {
 
 const pluginVersion = (root) => { try { return JSON.parse(readFileSync(join(root, 'plugin.json'), 'utf8')).version || 'unknown'; } catch { return 'unknown'; } };
 
-async function headers(env) {
+export async function headers(env) {
   if (env.GRAPH_AUTH_HELPER) {
     const r = spawnSync(env.GRAPH_AUTH_HELPER.replace(/^~/, homedir()), { shell: true, encoding: 'utf8', timeout: 30000 });
     if (r.status !== 0) return {};
@@ -50,7 +50,7 @@ async function get(base, path, h) {
 
 const run = (cmd, args, o = {}) => { try { return spawnSync(cmd, args, { encoding: 'utf8', timeout: 60000, env: o.env, ...o }); } catch (e) { return { status: 1, error: e }; } };
 
-async function allNodes(base, graph, h) {
+export async function allNodes(base, graph, h) {
   const out = [];
   for (let off = 0; ; off += 200) {
     const r = await get(base, `/graphs/${graph}/nodes?limit=200&offset=${off}`, h);

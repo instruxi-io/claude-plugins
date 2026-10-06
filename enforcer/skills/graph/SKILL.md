@@ -348,6 +348,15 @@ cold:
   read whole (name them and their size). Its acceptance: the file exists, is
   <= 8 KB, has those five sections, and is merged. Workers read `CLAUDE.md` and
   `docs/WORKER_BRIEF.md` first, so the brief replaces their exploration.
+- **Write every acceptance line as `<command> prints <literal the tool emits>`**
+  (or `exits <n>`), and run `enforcer plan check <graph>` before dispatching.
+  It runs each open node's read-only acceptance commands in the node's repo
+  checkout and reports ok, MISMATCH (the command ran and the quoted literal
+  never appears; the real last line is shown) or SKIPPED, exiting 1 on any
+  MISMATCH. Fix the wording until none remain ("prints all passed" against a
+  tool that prints "126 passed, 0 failed" is a judge rejection waiting to
+  happen). `enforcer dispatch <graph> --check-acceptance` prints the mismatches
+  as warnings at start.
 - **`data.max_turns` is optional.** Workers have an 80-turn cap; a deep node may
   raise it, and the dispatcher passes it on.
 - Contested resources (a migration number, a reservation file) go in the node

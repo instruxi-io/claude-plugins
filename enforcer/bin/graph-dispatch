@@ -2815,6 +2815,8 @@ def parse_args(argv):
                    help="after the last failed attempt, leave the node for a person instead of triaging it")
     p.add_argument("--triage-model", default=TIER_MODEL["deep"],
                    help="model of the triage worker (default the deep tier, %s)" % TIER_MODEL["deep"])
+    p.add_argument("--check-acceptance", action="store_true",
+                   help="run `enforcer plan check` at start and print its MISMATCH lines as warnings")
     p.add_argument("--no-warm", action="store_true",
                    help="start every worker cold (no session reuse across nodes)")
     p.add_argument("--warm-max-nodes", type=int, default=5,
@@ -2864,6 +2866,14 @@ def main(argv=None):
     if helper:
         helper = os.path.expanduser(helper)
     api = API(os.environ.get("GRAPH_BASE_URL", "https://api.instruxi.dev/api/v1/graph"), helper, key)
+    if a.check_acceptance:
+        r = subprocess.run([os.path.join(HERE, "enforcer"), "plan", "check", a.graph, "--repo-root", a.repo_root],
+                           capture_output=True, text=True)
+        for ln in (r.stdout or "").splitlines():
+            if ln.startswith("MISMATCH"):
+                print("WARNING acceptance %s" % ln, file=sys.stderr)
+        if r.returncode == 2:
+            print("WARNING acceptance check could not run: %s" % (r.stderr or "").strip(), file=sys.stderr)
     if not a.dry_run:
         os.makedirs(a.state_dir, exist_ok=True)
     try:
