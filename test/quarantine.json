@@ -4,5 +4,33 @@
     "owner": "austin@instruxi.io",
     "expires": "2026-12-31",
     "reason": "Timing suites that assert a p95 budget are listed here while their budget is calibrated on macOS and Windows runners. An entry past its expiry fails the run."
+  },
+  {
+    "suite": "files",
+    "os": ["darwin"],
+    "owner": "austin@instruxi.io",
+    "expires": "2026-11-15",
+    "reason": "macOS resolves the temp dir through /private/var; files.test.mjs compares a realpath against the unresolved path (first matrix run, 2026-10-06)."
+  },
+  {
+    "suite": "graph (hooks, evidence, session, run.test against the stub graph)",
+    "os": ["darwin"],
+    "owner": "austin@instruxi.io",
+    "expires": "2026-11-15",
+    "reason": "Four dispatch dry-run and worktree cases fail on macOS (temp dir realpath and symlink handling); first matrix run, 2026-10-06."
+  },
+  {
+    "suite": "dispatch/runtime",
+    "os": ["darwin"],
+    "owner": "austin@instruxi.io",
+    "expires": "2026-11-15",
+    "reason": "Runtime suite fails on macOS on the same temp dir realpath difference; first matrix run, 2026-10-06."
+  },
+  {
+    "suite": "python lib/graph",
+    "os": ["darwin"],
+    "owner": "austin@instruxi.io",
+    "expires": "2026-11-15",
+    "reason": "test_capture's concurrent-append case cannot find its evidence file under the macOS temp dir; the python library is scheduled for removal (remove-python)."
   }
 ]

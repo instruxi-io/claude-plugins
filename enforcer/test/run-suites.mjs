@@ -32,11 +32,13 @@ const SUITES = [
 // Per-platform profile: on Windows only hooks and CLIs run; the dispatcher, governor and python suites are skipped with a reason.
 const WIN_SKIP = /^(dispatch\/|governor|python |graph \()/;
 const skipReason = (name) => (process.platform === 'win32' && WIN_SKIP.test(name) ? 'dispatcher/governor/python suites are not supported on Windows (hooks and CLIs only)' : null);
-// test/quarantine.json: [{suite, owner, expires: YYYY-MM-DD, reason}]. A quarantined suite still runs; its failure is
-// reported as skipped, not red, until the expiry date, after which it fails the run again.
+// test/quarantine.json: [{suite, owner, expires: YYYY-MM-DD, reason, os?}]. A quarantined suite still runs; its failure is
+// reported as skipped, not red, until the expiry date, after which it fails the run again. An optional `os` list
+// (process.platform values: darwin, win32, linux) scopes the entry, so a suite red only on macOS stays a gate on Linux.
 const QFILE = join(ROOT, '..', 'test', 'quarantine.json');
 const quarantine = existsSync(QFILE) ? JSON.parse(readFileSync(QFILE, 'utf8')) : [];
-const quarantined = (name) => quarantine.find((q) => name.includes(q.suite) && q.expires >= new Date().toISOString().slice(0, 10));
+const quarantined = (name) =>
+  quarantine.find((q) => name.includes(q.suite) && (!q.os || q.os.includes(process.platform)) && q.expires >= new Date().toISOString().slice(0, 10));
 
 const esc = (s) => String(s).replace(/[<>&"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c])).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, '');
 const only = process.argv[2] ? new RegExp(process.argv[2]) : null;
