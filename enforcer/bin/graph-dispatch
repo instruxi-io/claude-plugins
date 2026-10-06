@@ -449,6 +449,14 @@ class Worker:
         return self.proc is not None and self.proc.poll() is None
 
 
+def quote_body(text):
+    """Worker text as a quoted block with auto-linking markers neutralised:
+    `Fixes #N` (and close/resolve verbs) no longer close issues, @mentions no ping."""
+    t = re.sub(r"(?i)\b(fix(?:e[sd])?|close[sd]?|resolve[sd]?)(:?)\s+(?=[\w./-]*#\d)", lambda m: m.group(1) + "\u200b" + m.group(2) + " ", text)
+    t = t.replace("@", "@\u200b")
+    return "\n".join("> " + ln for ln in t.splitlines()) or "> "
+
+
 def git(args, cwd):
     return subprocess.run(["git"] + args, cwd=cwd, capture_output=True, text=True)
 
@@ -1259,6 +1267,14 @@ class Dispatcher:
     def reap(self):
         for key, w in list(self.workers.items()):
             if w.kind == "salvage":
+                if w.alive() and getattr(w, "run_id", None) and time.time() - w.last_hb > self.args.heartbeat:
+                    try:  # the land can take 50 minutes: keep the worker's run lease alive
+                        st = self.api.heartbeat(self.g, w.node["id"], w.run_id).get("state")
+                        w.last_hb = time.time()
+                        if st and st != "ok":
+                            self.say("heartbeat %s: %s" % (key, st))
+                    except APIError as e:
+                        self.say("heartbeat %s failed: %s" % (key, e))
                 if not w.alive():
                     del self.workers[key]
                     self.finish_salvage(w)
@@ -1463,14 +1479,23 @@ class Dispatcher:
         rc, out = self._sh(["git", "push", "-u", "origin", branch], path)
         if rc:
             return skip("push failed: %s" % clip(out, 200))
-        body = (s["result_text"] or "(no final report)") + "\n\n" + ATTRIBUTION
+        body = quote_body(s["result_text"] or "(no final report)") + "\n\n" + ATTRIBUTION
         if base == "origin/HEAD":
             rc, h = self._sh(["git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD"], path)
             base = h if rc == 0 and h else "origin/main"
         pr_base = base[len("origin/"):] if base.startswith("origin/") else base
-        rc, out = self._sh(["gh", "pr", "create", "--base", pr_base, "--head", branch, "--title", w.node.get("title") or key,
-                            "--body", body], path)
-        m = re.search(r"/pull/(\d+)", out) if rc == 0 else None
+        # a PR for this branch may already exist (the worker opened it, or a retry)
+        rc, out = self._sh(["gh", "pr", "list", "--head", branch, "--state", "open", "--json", "number",
+                            "--jq", ".[0].number"], path)
+        m = re.fullmatch(r"(\d+)", out.strip()) if rc == 0 else None
+        if m:
+            out = "/pull/" + m.group(1)
+            self.say("salvage %s: reusing open PR #%s" % (key, m.group(1)))
+            m = re.search(r"/pull/(\d+)", out)
+        else:
+            rc, out = self._sh(["gh", "pr", "create", "--base", pr_base, "--head", branch, "--title",
+                                w.node.get("title") or key, "--body", body], path)
+            m = re.search(r"/pull/(\d+)", out) if rc == 0 else None
         if not m:
             return skip("gh pr create failed: %s" % clip(out, 200))
         pr = m.group(1)
@@ -1481,6 +1506,7 @@ class Dispatcher:
         log = os.path.join(self.logs, "%s.%d.salvage-land.log" % (key, self.attempts.get(key, 1)))
         sw = Worker(w.node, log)
         sw.kind, sw.cmd, sw.path, sw.pr, sw.orig = "salvage", cmd, path, pr, (w, s)
+        sw.run_id, sw.last_hb = s.get("run_id") or getattr(w, "run_id", None), time.time()
         try:
             with open(log, "w") as f:
                 sw.proc = subprocess.Popen(cmd, cwd=path, stdin=subprocess.DEVNULL, stdout=f,
@@ -1522,6 +1548,7 @@ class Dispatcher:
         nw.path, nw.model, nw.turns, nw.session, nw.resumed = path, w.model, 0, sess, True
         nw.max_turns = getattr(w, "max_turns", a.max_turns)
         self.workers[key] = nw
+        self.denied.pop(key, None)  # a new attempt: its failure must reach remediation and triage
         self.say("salvage %s: PR #%s landed (land-pr exit %d); resumed session %s to report, log=%s"
                  % (key, pr, rc, sess.sid, log))
         return True
