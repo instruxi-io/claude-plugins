@@ -10,7 +10,25 @@ import json, os, re, shutil, sys, time
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "hooks", "claude"))
 import claude_paths  # Claude Code's own on-disk names live there and nowhere else
 
-HTTP_TIMEOUT = float(os.environ.get("GRAPH_HOOK_TIMEOUT", "1.5"))
+def _hook_timeout(raw=None, default=1.5):
+    """GRAPH_HOOK_TIMEOUT in seconds. A malformed value is a named error on
+    stderr and the default, never a silent change (0 or nan would disable the
+    hooks' network calls or hang them)."""
+    if raw is None:
+        raw = os.environ.get("GRAPH_HOOK_TIMEOUT")
+    if raw is None:
+        return default
+    try:
+        v = float(raw)
+        if not (0.05 <= v <= 600):
+            raise ValueError
+        return v
+    except ValueError:
+        sys.stderr.write(f"GRAPH_HOOK_TIMEOUT: must be a number between 0.05 and 600, got {raw!r}; using {default}\n")
+        return default
+
+
+HTTP_TIMEOUT = _hook_timeout()
 
 # Every request names itself. api.instruxi.dev sits behind Cloudflare, which
 # answers urllib's default "Python-urllib/3.x" with 403 "error code: 1010"
@@ -127,6 +145,8 @@ def find_config(start):
         cfg["graph_id"] = os.environ["GRAPH_ID"]
     if os.environ.get("GRAPH_BASE_URL"):
         cfg["base_url"] = os.environ["GRAPH_BASE_URL"]
+    if os.environ.get("ENFORCER_BASE_URL"):
+        cfg["base_url"] = os.environ["ENFORCER_BASE_URL"]
     key_env = cfg.get("api_key_env") or "GRAPH_API_KEY"
     cfg["api_key"] = os.environ.get(key_env) or os.environ.get("GRAPH_API_KEY") or ""
     creds = None if cfg["api_key"] else read_credentials()

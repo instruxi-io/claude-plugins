@@ -12,6 +12,7 @@ import { DOT } from '../hooks/claude/paths.mjs';
 const OWN_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 export const DISPATCH_TYPES = 'task,bug,chore,merge,scout,milestone,ops'.split(',');
 export const DEFAULT_GRAPH_BASE = 'https://api.instruxi.dev/api/v1/graph';
+import { resolveConfig } from './config.mjs';
 
 const vkey = (v) => v.split(/[.-]/).map((x) => (/^\d+$/.test(x) ? x.padStart(8, '0') : x)).join('.');
 
@@ -66,7 +67,7 @@ export async function allNodes(base, graph, h) {
 export async function preflight({ graph, repoRoot = join(homedir(), 'apps'), types = DISPATCH_TYPES, env = process.env, pluginRoot } = {}) {
   const res = [];
   const add = (name, ok, line) => res.push({ name, ok, line });
-  const base = env.GRAPH_BASE_URL || DEFAULT_GRAPH_BASE;
+  const base = resolveConfig({ env }).graphUrl;
   const FIX = 'sign in: /enforcer:login';
 
   // 1 credential

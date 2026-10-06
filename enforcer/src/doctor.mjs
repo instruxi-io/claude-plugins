@@ -5,7 +5,8 @@ import { existsSync, readFileSync, statSync, mkdirSync, accessSync, constants } 
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import { stateBase } from './state.mjs';
-import { readCredentials, enforcerKey, DEFAULT_BASE_URL } from './credentials.mjs';
+import { readCredentials, enforcerKey } from './credentials.mjs';
+import { resolveConfig, validateEnv } from './config.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 
@@ -44,10 +45,12 @@ export async function runChecks({ fetchImpl = defaultFetch, network = true } = {
     const mode = statSync(d).mode & 0o777;
     add('state dir writable, 0700', { ok: process.platform === 'win32' || mode === 0o700, detail: `${d} mode ${mode.toString(8)}` });
   } catch (e) { add('state dir writable, 0700', { ok: false, detail: e.message }); }
+  const envErrors = validateEnv();
+  add('environment variables valid', { ok: !envErrors.length, detail: envErrors.length ? envErrors.map((e) => e.message).join('; ') : 'ok' });
   const cred = readCredentials();
   add('credentials present', { ok: !!(enforcerKey() || cred?.enforcer?.oauth?.access_token), detail: enforcerKey() ? 'API key in environment' : cred?.enforcer?.oauth?.access_token ? 'browser sign-in' : 'none; run /enforcer:login' });
   if (network) {
-    const base = String(process.env.ENFORCER_BASE_URL || cred?.enforcer?.base_url || DEFAULT_BASE_URL).replace(/\/+$/, '');
+    const base = resolveConfig({ saved: cred }).baseUrl;
     try {
       const r = await fetchImpl(`${base}/mcp`, { method: 'GET', signal: AbortSignal.timeout(5000) });
       add('MCP reachable', { ok: true, detail: `${base}/mcp answered HTTP ${r.status}` });

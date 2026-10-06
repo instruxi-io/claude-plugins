@@ -18,8 +18,9 @@ import { fileURLToPath } from 'node:url';
 import { createServer } from 'node:http';
 import { createHash, randomBytes } from 'node:crypto';
 import { spawn } from 'node:child_process';
-import { readCredentials, saveCredentials, enforcerKey, SHARED_FILE, DEFAULT_BASE_URL, authHeaders } from '../src/credentials.mjs';
+import { readCredentials, saveCredentials, enforcerKey, SHARED_FILE, authHeaders } from '../src/credentials.mjs';
 import { loadConfig } from '../src/store.mjs';
+import { resolveConfig, flagValue } from '../../../src/config.mjs';
 
 const API = '/api/v1/enforcer';
 const b64url = (buf) => buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -173,7 +174,8 @@ async function main(argv) {
   // environment, then the `centralUrl` setting -- which /config told the user
   // to change for a self-hosted workspace and which this command used to
   // ignore, sending them to the default origin anyway.
-  const base = (readCredentials()?.enforcer?.base_url || process.env.ENFORCER_BASE_URL || loadConfig().centralUrl || DEFAULT_BASE_URL).replace(/\/+$/, '');
+  const rc = resolveConfig({ flag: flagValue(argv) });
+  const base = rc.source === 'default' && loadConfig().centralUrl ? loadConfig().centralUrl.replace(/\/+$/, '') : rc.baseUrl;
 
   if (cmd === 'status') {
     const doc = readCredentials();
