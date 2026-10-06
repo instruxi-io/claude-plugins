@@ -26,6 +26,7 @@
 //   (cwd, or `git -C <dir>`), null when it is not a git worktree.
 
 import { Verdict, CAPABILITY } from './verdict.mjs';
+import { allow as ALLOW, deny as DENY } from './headless-worker-profile.mjs';
 
 export const WORKER_RULES = Object.freeze([
   { id: 'graph.push', name: 'push a graph/<key> branch' },
@@ -39,8 +40,8 @@ export const WORKER_RULES = Object.freeze([
 ]);
 const RULE = Object.fromEntries(WORKER_RULES.map(r => [r.id, r]));
 
-export const DEFAULT_BRANCHES = Object.freeze(['main', 'master', 'develop', 'trunk']);
-const GRAPH = /^graph\/[A-Za-z0-9][A-Za-z0-9._\/-]*$/;
+export const DEFAULT_BRANCHES = DENY.defaultBranches;
+const GRAPH = ALLOW.pushBranch;
 const isGraph = (b) => typeof b === 'string' && GRAPH.test(b);
 
 // Plugin and governor settings: Claude Code's settings files, installed plugin
@@ -49,7 +50,7 @@ const isGraph = (b) => typeof b === 'string' && GRAPH.test(b);
 // literal is not spread through the package (hooks/claude/paths.mjs owns the name).
 const DOT = '.' + 'claude';
 const SETTINGS_PATTERN = '\\' + DOT + '\\/settings(\\.local)?\\.json|\\' + DOT + '\\/plugins\\/';
-export const SETTINGS_PATHS = SETTINGS_PATTERN + '|managed-settings\\.json|\\.enforcer-governor\\/|\\.enforcer\\/|policy-cache\\.json|\\.config\\/enforcer\\/governor\\/';
+export const SETTINGS_PATHS = DENY.settingsPaths;
 export const SETTINGS = new RegExp('(^|[\\s"\'=\\/])(' + SETTINGS_PATHS + ')');
 // A shell command that changes a file, as opposed to reading it.
 // The only commands that may name a settings path: a single plain read.
@@ -60,9 +61,9 @@ const MUTATES = /(^|[^0-9&<])>{1,2}(?!&)|\btee\b|\bsed\s+(-[a-zA-Z]*i|--in-place
 // it is one command, so it is folded to its name before the shape is checked.
 const LAND_LOOKUP = /^"?\$\(\s*ls\s+-d\s+([^()|;&\s]*\/land-pr\.sh)\s*\|\s*tail\s+-1\s*\)"?/;
 // Where land-pr.sh may live: the plugin's own bin/, or its install cache.
-const CACHE_LAND = new RegExp('^(?:~|\\$HOME|\\$\\{HOME\\})\\/\\' + DOT + '\\/plugins\\/cache\\/[^\\/\\s]+\\/enforcer(?:-graph)?\\/[^\\/\\s]+\\/bin\\/land-pr\\.sh$');
+const CACHE_LAND = ALLOW.landerCache;
 // ...spelled with the user's absolute home, as `ls` prints it.
-const CACHE_ABS = new RegExp('^(?:\\/home\\/[^\\/\\s]+|\\/Users\\/[^\\/\\s]+|\\/root)\\/\\' + DOT + '\\/plugins\\/cache\\/[^\\/\\s]+\\/enforcer(?:-graph)?\\/[^\\/\\s]+\\/bin\\/(land-pr\\.sh|enforcer)$');
+const CACHE_ABS = ALLOW.landerCacheAbs;
 const trustedLand = (path, root) => {
   if (typeof path !== 'string' || /\.\./.test(path)) return false;
   if (CACHE_LAND.test(path.replace(/\*/g, 'x')) || CACHE_ABS.test(path)) return true;
@@ -119,7 +120,7 @@ const mentionsDeliveryWide = (cmd) =>
 const shape = (why) => verdict('deny', 'graph.push', 'delivery_shape',
   `a headless worker may only run the exact recognised delivery commands: ${why}`);
 
-const PR_FLAGS = new Set(['--title', '-t', '--body', '-b', '--base', '-B', '--head', '-H']);
+const PR_FLAGS = new Set(ALLOW.prCreateFlags);
 const prShapeOk = (args) => {
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
@@ -232,7 +233,7 @@ function settings(ev, ctx, cmd) {
 // The headless-worker deny profile. Node text is untrusted, so a worker that was talked into it still
 // may not touch what ships or authenticates: CI workflows, release and deploy scripts, secret files.
 // A node the dispatcher marked as a (gate-approved) release node (ev.worker.release) is exempt.
-const PROTECTED = new RegExp('(^|\\/)(\\.github\\/|\\.gitlab-ci\\.yml$|\\.circleci\\/|(scripts|bin)\\/[^\\s\\/]*(release|deploy|publish)[^\\s\\/]*|[^\\s\\/]*(release|deploy|publish)[^\\s\\/]*\\.(sh|mjs|js|py|ya?ml)$|\\.env(\\.[\\w-]+)?$|\\.npmrc$|\\.pypirc$|\\.netrc$|\\.aws\\/|\\.ssh\\/|[^\\s\\/]*\\.(pem|key)$|id_(rsa|ed25519)|secrets?\\/|credentials(\\.json)?$)', 'i');
+const PROTECTED = DENY.protectedPaths;
 function protectedPaths(ev, ctx, cmd) {
   if (!ctx.headless || ev.worker?.release) return null;
   const hit = isFileWrite(ev)

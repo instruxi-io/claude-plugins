@@ -16,6 +16,7 @@
 
 import { Verdict, ECONOMICS, CAPABILITY, OPERATOR } from './verdict.mjs';
 import { nameOf } from './tools.mjs';
+import { loop as LOOP_PROFILE } from './headless-worker-profile.mjs';
 import {
   PERIODS, burnRate, spawnRate, addSpend, getAgent, setModel, clientFor,
   rollPeriods, modelAdvice, taskShape, BURN_WINDOW, dayKey,
@@ -36,7 +37,7 @@ const asking = (a, reason, now) => {
 // Everything that changes because this call happened, before anything judges
 // it. Kept apart from the checks so that "what we learned" and "what we
 // decided" are not the same forty lines.
-const LOOP_EXEMPT = /__graph_(heartbeat|plan_status)$/;
+const LOOP_EXEMPT = LOOP_PROFILE.exempt;
 
 export function ingest(state, ev, cfg, now) {
   rollPeriods(state, now);
