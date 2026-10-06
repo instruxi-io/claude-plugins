@@ -1065,6 +1065,8 @@ class Dispatcher:
 
     def launch(self, n, cold=False):
         a = self.args
+        if n.get("key") in self.landing:
+            return  # a landing is in flight: never a second worker on the same node
         bad = unsafe_ident(n)
         if bad:
             self.say("REFUSE %s: %s; fix the node (letters, digits, . _ - only)" % (n.get("key"), bad))
@@ -1596,6 +1598,50 @@ class Dispatcher:
             self.limited_until = self.ci_hold = 0.0
             self.say("CI-UNAVAILABLE cleared: GitHub Actions is operational")
 
+    ACCEPT_RUNNERS = ("node", "python3", "bash", "grep", "ls")
+
+    def acceptance_commands(self, n):
+        """The node's acceptance lines in the `<command> prints ...` form, read-only
+        runners only; the PR line (gh pr view / merge) is skipped."""
+        cmds = []
+        for line in (n.get("data") or {}).get("acceptance") or []:
+            if not isinstance(line, str) or " prints " not in line:
+                continue
+            cmd = line.split(" prints ", 1)[0].strip().strip("`").strip()
+            if re.search(r"\bgh\b|\bgit\b", cmd):
+                continue
+            rest = re.sub(r"^cd\s+\S+\s*&&\s*", "", cmd)
+            if rest.split(" ", 1)[0] not in self.ACCEPT_RUNNERS:
+                continue
+            cmds.append(cmd)
+        return cmds
+
+    def landing_evidence(self, w, merge_commit):
+        """Run each acceptance command in the node's worktree on the merged commit,
+        harness env cleared, 600 s timeout; one {kind: command} item each."""
+        ow = w.orig[0]
+        path = getattr(ow, "path", None)
+        cwd = path if path and path != "-" and os.path.isdir(path) else os.getcwd()
+        if merge_commit:
+            self._sh(["git", "fetch", "origin"], cwd)
+            self._sh(["git", "checkout", "--detach", merge_commit], cwd)
+        env = {k: v for k, v in os.environ.items() if k in ("PATH", "HOME", "LANG", "TMPDIR")}
+        evid = []
+        for cmd in self.acceptance_commands(w.node):
+            try:
+                r = subprocess.run(["bash", "-c", cmd], cwd=cwd, env=env, stdin=subprocess.DEVNULL,
+                                   capture_output=True, text=True, timeout=600)
+                rc, out = r.returncode, (r.stdout + r.stderr)
+            except subprocess.TimeoutExpired:
+                rc, out = 124, "timed out after 600 s"
+            except OSError as e:
+                rc, out = 127, str(e)
+            out = out.strip()
+            if len(out) > 3000:
+                out = out[:1200] + "\n...\n" + out[-1800:]
+            evid.append({"kind": "command", "cmd": cmd, "exit": rc, "output": out})
+        return evid
+
     def finish_landing(self, w):
         rc = w.proc.returncode
         if rc == CI_UNAVAILABLE:
@@ -1612,10 +1658,21 @@ class Dispatcher:
              "exit": 0, "output": clip(w.lb["view_json"], 3000)},
             {"kind": "command", "cmd": " ".join(w.cmd), "exit": rc, "output": clip(out)},
         ]
+        mc = ""
+        if ok:
+            _, mj = self._sh(["gh", "pr", "view", w.lb["pr"]] + (["-R", w.lb["slug"]] if w.lb["slug"] else [])
+                             + ["--json", "mergeCommit"], None)
+            try:
+                mc = ((json.loads(mj).get("mergeCommit") or {}).get("oid")) or ""
+            except ValueError:
+                mc = ""
+            evid += self.landing_evidence(w, mc)
         body = {"status": "succeeded" if ok else "failed", "evidence": evid, "pr": w.lb["view"].get("url"),
                 "data": {"report": "1. %s: PR #%s was open with checks passing or pending (landing_blocked: the worker "
-                         "could not run the lander); the lander exited %d (%s). Run by graph-dispatch with no agent."
-                         % ("MET" if ok else "NOT MET", w.lb["pr"], rc, LAND_CODES.get(rc, "unknown")),
+                         "could not run the lander); the lander exited %d (%s). Landed by graph-dispatch after the worker "
+                         "could not run the lander%s. Run by graph-dispatch with no agent."
+                         % ("MET" if ok else "NOT MET", w.lb["pr"], rc, LAND_CODES.get(rc, "unknown"),
+                            "; merge commit " + mc if mc else ""),
                          "runner": "graph-dispatch", "outcome": "landing_blocked"}}
         if not ok:
             body["error"] = "landing_blocked: lander exit %d (%s): %s" % (rc, LAND_CODES.get(rc, "unknown"), out.strip()[-500:])

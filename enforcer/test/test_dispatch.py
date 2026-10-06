@@ -2007,6 +2007,37 @@ class LandingBlocked(unittest.TestCase):
         self.assertEqual(d.attempts.get("a", 0), 0)
         self.assertIn("land 7", open(self.log).read())
 
+    def test_landing_evidence_runs_the_acceptance_commands_and_attaches_their_output(self):
+        d, api = self.dispatcher()
+        api._nodes[0]["data"] = {"acceptance": [
+            "`python3 -c \"print('hello-evidence')\"` prints `hello-evidence`",
+            "`gh pr view <n> --json state` prints `MERGED`"]}
+        d.workers["a"].node = api._nodes[0]
+        self.settle(d)
+        body = [c for c in api.calls if c[0] == "complete"][0][2]
+        cmds = [e for e in body["evidence"] if e.get("cmd") == "python3 -c \"print('hello-evidence')\""]
+        self.assertEqual(len(cmds), 1, body["evidence"])
+        self.assertEqual((cmds[0]["exit"], cmds[0]["output"]), (0, "hello-evidence"))
+        self.assertIn("Landed by graph-dispatch after the worker could not run the lander", body["data"]["report"])
+
+    def test_landing_evidence_the_pr_line_is_skipped(self):
+        d, api = self.dispatcher()
+        n = {"data": {"acceptance": ["`gh pr view <n> --json state` prints `MERGED`",
+                                     "cd x && python3 -m unittest t prints `OK`", "rmdir x prints nothing"]}}
+        self.assertEqual(d.acceptance_commands(n), ["cd x && python3 -m unittest t"])
+        self.settle(d)
+
+    def test_landing_evidence_a_node_with_a_landing_in_flight_is_not_launched(self):
+        d, api = self.dispatcher()
+        d.workers.clear()
+        d.landing["a"] = "7"
+        self.assertEqual(d.candidates(api.nodes("g")), [])
+        d.launch(api._nodes[0])
+        self.assertNotIn("a", d.workers)
+        self.assertEqual(d.attempts.get("a", 0), 0)
+        d.landing.clear()
+        self.settle(d)
+
     def test_landing_blocked_is_not_triaged(self):
         os.environ["FAKE_LAND_EXIT"] = "2"
         d, api = self.dispatcher()
