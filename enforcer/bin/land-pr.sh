@@ -11,6 +11,8 @@
 #   3  conflicts with the base — needs a rebase by someone who reads both sides
 #   4  timed out still waiting
 #   5  gh error, PR closed unmerged, or merge not found on the base
+#   7  CI unavailable: the cancelled check's jobs ran zero steps (a GitHub
+#      Actions outage), so nothing says the PR is bad; retry later
 #      (a usage error exits 2)
 #
 # Polling here costs nothing; it is a shell loop, not an agent re-reading state.
@@ -96,7 +98,22 @@ while :; do
     # shellcheck disable=SC2016
     newer=$(gh run list ${R[@]+"${R[@]}"} --commit "$head" --json conclusion,createdAt \
       --jq '(map(select(.conclusion=="cancelled") | .createdAt) | max) as $c | map(select(.conclusion!="cancelled" and .createdAt>$c)) | length' 2>/dev/null)
-    if [ "${newer:-0}" = 0 ]; then failed="${failed:+$failed, }$cancelled"; fi
+    if [ "${newer:-0}" = 0 ]; then
+      # Cancelled with every job at zero steps is the platform, not the PR.
+      ids=$(gh run list ${R[@]+"${R[@]}"} --commit "$head" --json databaseId,conclusion \
+        --jq '.[] | select(.conclusion=="cancelled") | .databaseId' 2>/dev/null)
+      steps=0 nruns=0
+      for id in $ids; do
+        nruns=$((nruns + 1))
+        n=$(gh run view "$id" ${R[@]+"${R[@]}"} --json jobs --jq '[.jobs[].steps | length] | add // 0' 2>/dev/null)
+        steps=$(( steps + ${n:-1} ))
+      done
+      if [ "$nruns" -gt 0 ] && [ "$steps" = 0 ] && [ -z "$failed" ]; then
+        echo "land-pr: #$pr CI unavailable: $cancelled cancelled with zero steps run (GitHub Actions outage?)" >&2
+        exit 7
+      fi
+      failed="${failed:+$failed, }$cancelled"
+    fi
   fi
   if [ -n "$failed" ]; then
     echo "land-pr: #$pr CI failed: $failed" >&2

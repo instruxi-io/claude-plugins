@@ -2076,6 +2076,58 @@ class ExitCodes(unittest.TestCase):
         self.assertFalse(os.path.exists(stop))
 
 
+class CiUnavailable(unittest.TestCase):
+    def disp(self):
+        out = io.StringIO()
+        st = tempfile.mkdtemp()
+        return gd.Dispatcher(FakeAPI([]), args(state_dir=st), out), out
+
+    def feed(self, status):
+        return lambda: json.dumps({"components": [{"name": "Git Operations", "status": "operational"},
+                                                  {"name": "Actions", "status": status}]})
+
+    def test_ci_unavailable_exit_7_holds_launches(self):
+        d, out = self.disp()
+
+        class P:
+            returncode = 7
+        import tempfile as tf
+        with tf.NamedTemporaryFile("w+", suffix=".log") as log:
+            log.write("land-pr: #1 CI unavailable")
+            log.flush()
+            w = gd.Worker({"key": "k", "id": "i"}, log.name)
+            w.proc, w.cmd = P(), ["land-pr.sh", "1"]
+            d.finish_merge(w)
+        self.assertGreater(d.limited_until, time.time())
+        self.assertIn("CI-UNAVAILABLE k", out.getvalue())
+        self.assertFalse([c for c in d.api.calls if c[0] == "complete"], "the run must not be failed")
+
+    def test_ci_unavailable_degraded_status_feed_holds_unreachable_feed_does_not(self):
+        d, out = self.disp()
+        d.ci_fetch = self.feed("partial_outage")
+        d.ci_probe(force=True)
+        self.assertGreater(d.limited_until, time.time())
+        self.assertIn("CI-UNAVAILABLE github-actions", out.getvalue())
+        d.ci_fetch = self.feed("operational")
+        d.ci_probe(force=True)
+        self.assertEqual(d.limited_until, 0.0, "an operational Actions component resumes launches")
+        d2, _ = self.disp()
+
+        def boom():
+            raise OSError("unreachable")
+        d2.ci_fetch = boom
+        d2.ci_probe(force=True)
+        self.assertEqual(d2.limited_until, 0.0)
+
+    def test_ci_unavailable_probe_is_rate_limited(self):
+        d, _ = self.disp()
+        calls = []
+        d.ci_fetch = lambda: calls.append(1) or self.feed("operational")()
+        d.ci_probe()
+        d.ci_probe()
+        self.assertEqual(calls, [], "polled within the interval")
+
+
 if __name__ == "__main__":
     unittest.main()
 
