@@ -1,5 +1,4 @@
 // `node --test test/dispatch/runtime.test.mjs`: the dispatcher runtime against a fake API and a fake claude binary.
-import { realpathSync } from 'node:fs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, chmodSync, readFileSync, existsSync, readdirSync } from 'node:fs';
@@ -14,7 +13,7 @@ import { spawnWorker, killGroup, alive, pidAliveGroup, launchCmd, pluginDirs, ha
 import { worktreeFor, worktreeSetup } from '../../src/dispatch/worktree.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const tmp = () => mkdtempSync(join(realpathSync(tmpdir()), 'drt-'));
+const tmp = () => mkdtempSync(join(tmpdir(), 'drt-'));
 const wait = async (cond, ms = 8000) => { const end = Date.now() + ms; while (!(await cond())) { if (Date.now() > end) throw new Error('timed out waiting'); await new Promise((r) => setTimeout(r, 20)); } };
 const script = (dir, name, body) => { const p = join(dir, name); writeFileSync(p, `#!/bin/sh\n${body}\n`); chmodSync(p, 0o755); return p; };
 
