@@ -5,7 +5,8 @@ import { existsSync, readdirSync, mkdirSync, openSync, readFileSync, writeFileSy
 import { join, dirname } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { headers, allNodes, preflight, DEFAULT_GRAPH_BASE } from './preflight.mjs';
+import { headers, allNodes, preflight } from './preflight.mjs';
+import { resolveConfig } from './config.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 export const DEFAULTS = { workers: 3, model: 'sonnet', salvage: 'on', triage: 'on', warm: 'off' };
@@ -49,7 +50,7 @@ const last = (arr) => arr.length ? arr[arr.length - 1] : null;
 /** Plain-language status. Returns the text. */
 export async function statusText(graph, env = process.env) {
   const dir = stateDir(graph, env);
-  const base = env.GRAPH_BASE_URL || DEFAULT_GRAPH_BASE;
+  const base = resolveConfig({ env }).graphUrl;
   const nodes = await allNodes(base, graph, await headers(env));
   const log = existsSync(join(dir, 'dispatcher.log')) ? readFileSync(join(dir, 'dispatcher.log'), 'utf8').split('\n').filter(Boolean) : [];
   const pids = readJson(join(dir, 'pids.json'));

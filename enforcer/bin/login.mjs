@@ -23,7 +23,8 @@ import { createServer } from 'node:http';
 import { createHash, randomBytes } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { currentWorkspace, describe } from './enforcer-workspace.mjs';
-import { readCredentials, saveCredentials, legacyCredentialFile, enforcerKey, SHARED_FILE, DEFAULT_BASE_URL, authHeaders } from '../src/credentials.mjs';
+import { readCredentials, saveCredentials, legacyCredentialFile, enforcerKey, SHARED_FILE, authHeaders } from '../src/credentials.mjs';
+import { resolveConfig, flagValue } from '../src/config.mjs';
 
 const API = '/api/v1/enforcer';
 const b64url = (buf) => buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -239,7 +240,7 @@ async function main(rawArgv) {
   const [cmd, arg] = parseLoginArgs(argv);
   // ENFORCER_BASE_URL wins (switch deployments without editing a file), then the
   // origin the saved sign-in was made against, then the public one.
-  const base = (process.env.ENFORCER_BASE_URL || readCredentials()?.enforcer?.base_url || DEFAULT_BASE_URL).replace(/\/+$/, '');
+  const base = resolveConfig({ flag: flagValue(rawArgv) }).baseUrl;
 
   if (cmd === 'status') {
     const doc = readCredentials();

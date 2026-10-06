@@ -253,7 +253,7 @@ hook track_run.py "$(python3 -c 'import json,sys;print(json.dumps({"session_id":
 stale "$SID"
 out=$(GRAPH_BASE_URL=http://127.0.0.1:1 hook heartbeat.py "{\"session_id\":\"$SID\",\"cwd\":\"$WORK/proj\",\"tool_name\":\"Read\",\"tool_input\":{}}"); rc=$?
 check "heartbeat: API down is silent and exit 0" '[ -z "$out" ] && [ "$rc" -eq 0 ]'
-out=$(printf 'not json' | python3 lib/graph/session_start.py); rc=$?
+out=$(printf 'not json' | env -u ENFORCER_BASE_URL python3 lib/graph/session_start.py); rc=$?   # unconfigured: no server named, nothing to say
 check "any hook: garbage stdin is silent and exit 0" '[ -z "$out" ] && [ "$rc" -eq 0 ]'
 
 # --- a claimed pull request is resolved, not taken on trust (2026-09-20)

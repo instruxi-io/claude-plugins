@@ -75,7 +75,7 @@ because a worker was denied a graph tool (see README "Headless workers"),
 Auth: GRAPH_AUTH_HELPER (a command printing JSON headers, e.g.
 `node <plugin cache>/instruxi/enforcer/<v>/bin/enforcer-headers.mjs`;
 default: the newest such file in the plugin cache), else GRAPH_API_KEY.
-Base: GRAPH_BASE_URL (default https://api.instruxi.dev/api/v1/graph).
+Base: GRAPH_BASE_URL, else <ENFORCER_BASE_URL | saved sign-in | https://api.instruxi.dev>/api/v1/graph.
 """
 import argparse
 import datetime as dt
@@ -100,6 +100,17 @@ import lib as graph_lib  # migrate_dir
 from lib import claude_paths
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+
+
+def graph_base_url():
+    """Same precedence as src/config.mjs: GRAPH_BASE_URL, else the base
+    (ENFORCER_BASE_URL > saved sign-in > production) plus /api/v1/graph."""
+    if os.environ.get("GRAPH_BASE_URL"):
+        return os.environ["GRAPH_BASE_URL"].rstrip("/")
+    base = os.environ.get("ENFORCER_BASE_URL")
+    if not base:
+        base = ((graph_lib.read_credentials() or {}).get("enforcer") or {}).get("base_url")
+    return (base or graph_lib.DEFAULT_BASE_URL).rstrip("/") + "/api/v1/graph"
 PLUGIN_DIR = os.path.dirname(HERE)
 LAND_PR = os.path.join(HERE, "land-pr.sh")
 ATTRIBUTION = "\U0001F916 Generated with [Claude Code](https://claude.com/claude-code)"
@@ -2984,7 +2995,7 @@ def main(argv=None):
         return 1
     if helper:
         helper = os.path.expanduser(helper)
-    api = API(os.environ.get("GRAPH_BASE_URL", "https://api.instruxi.dev/api/v1/graph"), helper, key)
+    api = API(graph_base_url(), helper, key)
     if a.check_acceptance:
         r = subprocess.run([os.path.join(HERE, "enforcer"), "plan", "check", a.graph, "--repo-root", a.repo_root],
                            capture_output=True, text=True)

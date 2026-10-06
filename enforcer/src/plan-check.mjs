@@ -5,7 +5,8 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir, homedir } from 'node:os';
 import { join } from 'node:path';
-import { headers, allNodes, DEFAULT_GRAPH_BASE } from './preflight.mjs';
+import { headers, allNodes } from './preflight.mjs';
+import { resolveConfig } from './config.mjs';
 
 const RUNNABLE = new Set(['node', 'python3', 'bash', 'sh', 'grep', 'ls', 'npm', 'cat', 'test', 'wc', 'head', 'tail']);
 const CLOSED = new Set(['done', 'cancelled', 'succeeded']);
@@ -60,7 +61,7 @@ export function checkLine(line, cwd, env) {
 
 /** Returns {code, lines}. */
 export async function planCheck({ graph, repoRoot = join(homedir(), 'apps'), env = process.env } = {}) {
-  const base = env.GRAPH_BASE_URL || DEFAULT_GRAPH_BASE;
+  const base = resolveConfig({ env }).graphUrl;
   const h = await headers(env);
   const nodes = (await allNodes(base, graph, h)).filter((n) => !CLOSED.has(n.status));
   const lines = [];

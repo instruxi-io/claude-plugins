@@ -11,7 +11,8 @@
 import { defaultFetch } from '../lib/api/client.mjs';
 import { isMain } from '../src/is-main.mjs';
 import { commandArgs } from '../src/args.mjs';
-import { readCredentials, saveCredentials, authHeaders, DEFAULT_BASE_URL } from '../src/credentials.mjs';
+import { readCredentials, saveCredentials, authHeaders } from '../src/credentials.mjs';
+import { resolveConfig } from '../src/config.mjs';
 
 const API = '/api/v1/enforcer';
 const out = (s) => process.stdout.write(s + '\n');
@@ -21,7 +22,7 @@ export function jwtClaims(token) {
   try { return JSON.parse(Buffer.from(String(token).split('.')[1], 'base64url').toString('utf8')); } catch { return {}; }
 }
 
-const baseOf = (doc) => String(doc?.enforcer?.base_url || process.env.ENFORCER_BASE_URL || DEFAULT_BASE_URL).replace(/\/+$/, '');
+const baseOf = (doc) => resolveConfig({ saved: doc }).baseUrl;
 const roleOf = (r) => (typeof r === 'string' ? r : r?.slug || r?.name || null);
 
 /** Normalise one membership from /auth/me, whatever it calls its fields. */
