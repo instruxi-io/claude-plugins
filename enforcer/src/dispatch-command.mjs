@@ -51,6 +51,21 @@ export async function start(argv, env = process.env) {
   return 0;
 }
 
+/** Failed criteria of a review item, from verdict/verification {threshold, failed:[{criterion|line|text|index, probability}]}. */
+export function failedLines(n) {
+  const v = n.verdict || n.verification || {};
+  const failed = Array.isArray(v.failed) ? v.failed : [];
+  const out = [];
+  if (failed.length && v.threshold != null) out.push(`    threshold ${v.threshold}`);
+  for (const f of failed) {
+    if (typeof f !== 'object' || f === null) { out.push(`    failed: ${f}`); continue; }
+    const p = f.probability ?? f.p ?? f.confidence;
+    const what = f.criterion ?? f.line ?? f.text ?? (f.index != null ? `criterion ${f.index}` : '?');
+    out.push(`    failed: ${what}${p != null ? ` (probability ${p})` : ''}`);
+  }
+  return out;
+}
+
 const last = (arr) => arr.length ? arr[arr.length - 1] : null;
 
 /** Plain-language status. Returns the text. */
@@ -84,7 +99,10 @@ export async function statusText(graph, env = process.env) {
   L.push(`nodes: ${done.length} done, ${open.length} open, ${landing.length} landing blocked, ${needsYou.length} needs you`);
   for (const n of landing) L.push(`  landing blocked: ${n.key}`);
   L.push(`review items (${review.length}):`);
-  for (const n of review) L.push(`  ${n.key}: a person must resolve the verdict`);
+  for (const n of review) {
+    L.push(`  ${n.key}: a person must resolve the verdict`);
+    for (const l of failedLines(n)) L.push(l);
+  }
   if (!review.length) L.push('  none');
   L.push(`gates open (${gates.length}):`);
   for (const n of gates) L.push(`  ${n.key}: ${n.title || ''}`);
