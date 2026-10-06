@@ -51,6 +51,7 @@ const EVENTS = {
   UserPromptSubmit: { gov: 'user-prompt-submit.mjs' },
   SubagentStart: { gov: 'subagent.mjs' },
   PreCompact: { budget: 9000 },
+  SubagentStop: { budget: 4500 },
   Stop: { budget: 4500 },
 };
 const NAMES = Object.fromEntries(Object.keys(EVENTS).map((k) => [k.replace(/([a-z])([A-Z])/g, '$1-$2').toLowerCase(), k]));
@@ -112,9 +113,9 @@ export async function runEvent(name) {
   if (event === 'PreToolUse' && PRE_GRAPH.test(tool)) handlers = ['attach_evidence'];
   else if (event === 'PostToolUse') handlers = [...(POST_GRAPH.test(tool) ? ['track_run'] : []), 'capture_evidence', 'heartbeat'];
   else if (event === 'PostToolUseFailure') handlers = ['capture_evidence', 'heartbeat'];
-  else if (event === 'SessionStart' && (!ev.source || /^(startup|resume|compact)$/.test(ev.source))) handlers = ['session_start'];
+  else if (event === 'SessionStart' && (!ev.source || /^(startup|resume|compact|clear)$/.test(ev.source))) handlers = ['session_start'];
   else if (event === 'PreCompact') handlers = ['remember_on_compact'];
-  else if (event === 'Stop') handlers = ['open_run_guard'];
+  else if (event === 'Stop' || event === 'SubagentStop') handlers = ['open_run_guard'];
   if (denied) handlers = [];
   let code = 0;
   if (handlers.length) {
@@ -126,7 +127,7 @@ export async function runEvent(name) {
     } else if (noPy && stamped) {
       const v = (() => { try { return JSON.parse(readFileSync(root('plugin.json'), 'utf8')).version; } catch { return 'unknown'; } })();
       out = merge(out, { hookSpecificOutput: { hookEventName: 'PreToolUse', updatedInput: { ...(ev.tool_input || {}), client: `enforcer-graph-plugin/${v}; hooks=off:python3` } } });
-    } else if (!noPy && graphContextLive(ev)) {
+    } else if (!noPy && (event === 'SessionStart' || graphContextLive(ev))) { // session-start notices print with or without a graph
       const r = python(handlers, raw, Date.now() + (spec.budget || 5000));
       out = merge(out, r.out); code = r.code;
     }
