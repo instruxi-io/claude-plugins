@@ -14,7 +14,11 @@ import { readUsage } from './usage.mjs';
  * figure wins where we have it; `source` says which one answered.
  */
 export const cost = {
-  read: (event, cfg) => read(event.session, event.transcript, cfg),
+  // A subagent is metered from its own transcript, never the parent's: the
+  // session's status-line figure and transcript are the parent's spend.
+  read: (event, cfg) => event.subagent
+    ? { ...readUsage('agent-' + event.subagent.id, event.subagent.transcript), usd: null, source: TRANSCRIPT }
+    : read(event.session, event.transcript, cfg),
   total: (event) => {
     const { tokens, model } = readUsage(event.session, event.transcript);
     const usd = harnessUsd(event.session);

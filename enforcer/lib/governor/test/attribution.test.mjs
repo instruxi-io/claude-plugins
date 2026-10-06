@@ -200,6 +200,49 @@ await ok('SessionEnd sends no attribution', async () => {
   assert.equal(posts.length, 0);
 });
 
+
+// ── subagents are their own agents ──────────────────────────────────────────
+const { toolEvent, agentOf } = await import('../adapters/claude-code/events.mjs');
+const { governor: ccGov } = await import('../adapters/claude-code/index.mjs');
+const cc = ccGov();
+const SID = '0f3c9a1b-2222-4333-8444-555566667777';
+const tdir = mkdtempSync(join(tmpdir(), 'gov-sub-'));
+const parentT = join(tdir, SID + '.jsonl');
+const subDir = join(tdir, SID, 'subagents');
+mkdirSync(subDir, { recursive: true });
+const usageLine = (id, out) => JSON.stringify({ type: 'assistant', message: { id, model: 'claude-sonnet-5', usage: { input_tokens: 10, output_tokens: out } } }) + '\n';
+const call = (extra, cmd = 'git status') => cc.before(toolEvent({
+  hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: cmd },
+  session_id: SID, transcript_path: parentT, cwd: '/w/acme-api', ...extra,
+}));
+
+await ok('two subagents, identical calls, no loop latch', async () => {
+  assert.equal(agentOf({ session_id: SID }), 'claude:0f3c9a1b');
+  assert.notEqual(agentOf({ session_id: SID, agent_id: 'aaaa1111x' }), agentOf({ session_id: SID, agent_id: 'bbbb2222y' }));
+  // Three identical calls each stays under the loop limit of 4 per agent...
+  for (let i = 0; i < 3; i++) {
+    for (const id of ['aaaa1111x', 'bbbb2222y', undefined]) {
+      const { verdict } = await call(id ? { agent_id: id } : {});
+      assert.equal(verdict.action, 'allow', `${id || 'parent'} call ${i}: ${verdict.reason}`);
+    }
+  }
+  // ...though nine together would have latched one shared record.
+});
+
+await ok('subagent budget is its own', async () => {
+  // The parent has spent a fortune; a subagent must not inherit that.
+  writeFileSync(parentT, usageLine('p1', 50_000_000));
+  writeFileSync(join(subDir, 'agent-cccc3333z.jsonl'), usageLine('s1', 10));
+  writeFileSync(join(subDir, 'agent-dddd4444w.jsonl'), usageLine('s2', 50_000_000));
+  const sub = await call({ agent_id: 'cccc3333z' }, 'ls a');
+  assert.equal(sub.verdict.action, 'allow', sub.verdict.reason);
+  assert.ok(sub.spend.tokens < 1000, 'metered from its own transcript: ' + sub.spend.tokens);
+  const big = await call({ agent_id: 'dddd4444w' }, 'ls b');
+  assert.equal(big.verdict.action, 'deny', 'the subagent that spent it is stopped');
+  const again = await call({ agent_id: 'cccc3333z' }, 'ls c');
+  assert.equal(again.verdict.action, 'allow', 'its sibling is not');
+});
+
 for (const res of hung) { try { res.destroy(); } catch {} }
 srv.close();
 srv.closeAllConnections?.();
