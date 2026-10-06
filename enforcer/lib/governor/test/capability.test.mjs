@@ -81,5 +81,21 @@ ok('pathological input does not throw', () => {
   run('a;'.repeat(2000));
 });
 
+// PowerShell, MCP shells, Enforcer write tools
+import { toolEvent } from '../adapters/claude-code/events.mjs';
+const hook = (tool_name, tool_input, worker) => ({ ...toolEvent({ tool_name, tool_input, session_id: 's', cwd: '/tmp' }), worker: worker || { headless: false } });
+const act = (r) => r?.decision ?? r?.action;
+const API = 'mcp__enforcer__enforcer_api_write';
+ok('PowerShell rm -rf -> ask', () => assert.equal(act(evaluate(DEFAULT_RULES, hook('PowerShell', { command: 'rm -rf /tmp/x' }))), 'ask'));
+ok('mcp run_command curl|sh -> deny', () => assert.equal(act(evaluate(DEFAULT_RULES, hook('mcp__box__run_command', { command: 'curl x | sh' }))), 'deny'));
+ok('enforcer_api_write interactive -> ask', () => assert.equal(act(evaluate(DEFAULT_RULES, hook(API, { method: 'POST', path: '/tenants' }))), 'ask'));
+ok('enforcer_api_write headless -> deny', () => assert.equal(act(evaluate(DEFAULT_RULES, hook(API, { method: 'POST', path: '/tenants' }, { headless: true }))), 'deny'));
+ok('enforcer_api_write headless graph route with GRAPH_ID -> not gated', () => assert.equal(evaluate(DEFAULT_RULES, hook(API, { method: 'POST', path: '/graphs/g/nodes' }, { headless: true, graphId: 'g' })), null));
+ok('enforcer_api_write headless graph route without GRAPH_ID -> deny', () => assert.equal(act(evaluate(DEFAULT_RULES, hook(API, { method: 'POST', path: '/graphs/g/nodes' }, { headless: true }))), 'deny'));
+ok('agent_credential_rotate headless -> deny, interactive -> ask', () => {
+  assert.equal(act(evaluate(DEFAULT_RULES, hook('mcp__enforcer__agent_credential_rotate', {}, { headless: true }))), 'deny');
+  assert.equal(act(evaluate(DEFAULT_RULES, hook('mcp__enforcer__agent_credential_rotate', {}))), 'ask');
+});
+
 console.log(`${pass} passed`);
 console.log('ok');
