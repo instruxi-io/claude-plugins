@@ -1,0 +1,1 @@
+- `graph-dispatch prune` now removes a merged node's worktree even after the lander deleted its remote branch (PR found by head sha) and lists every directory with a classification instead of skipping silently.
