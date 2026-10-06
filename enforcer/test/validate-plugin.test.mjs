@@ -82,7 +82,8 @@ console.log('ok   mcp.json is streamable-http at api.instruxi.dev/mcp');
 assert.ok(existsSync(new URL('../.mcp.json', import.meta.url)) && existsSync(new URL('../skills/enforcer/SKILL.md', import.meta.url)));
 for (const c of readdirSync(new URL('../commands/', import.meta.url))) {
   const b = readFileSync(new URL(`../commands/${c}`, import.meta.url), 'utf8');
-  assert.ok(b.split('\n').length <= 9, `${c} is not thin`);
+  // 12, not 9: login passes its arguments through a heredoc on stdin (never on the command line), which costs three lines
+  assert.ok(b.split('\n').length <= 12, `${c} is not thin`);
 }
 console.log('ok   Claude fallback present; commands are thin wrappers');
 const root = (f) => new URL(`../../${f}`, import.meta.url);
