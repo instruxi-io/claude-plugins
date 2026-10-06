@@ -15,7 +15,8 @@ export const HELP = `usage: enforcer dispatch <graph> [--workers N] [--model M] 
        enforcer dispatch stop <graph>                                                  finish running workers, start no new ones, then exit
 defaults: ${DEFAULTS.workers} workers, ${DEFAULTS.model} model cap, salvage ${DEFAULTS.salvage}, triage ${DEFAULTS.triage}, warm workers ${DEFAULTS.warm}
 state: ~/.config/enforcer/dispatch/<graph> (dispatcher.log, pids.json, STOP)
-other graph-dispatch flags pass through; see docs/graph/DISPATCHER.md
+       enforcer dispatch --dry-run <graph>                                             print the planned launches; launch nothing
+other dispatcher flags pass through; see docs/graph/DISPATCHER.md
 `;
 
 export const stateDir = (graph, env = process.env) => join(env.ENFORCER_CONFIG_HOME || join(homedir(), '.config', 'enforcer'), 'dispatch', graph);
@@ -27,6 +28,11 @@ export async function start(argv, env = process.env) {
   const graph = argv.find((a, i) => !a.startsWith('-') && !['--workers', '--model', '--repo-root'].includes(argv[i - 1]));
   const flag = (n) => { const i = argv.indexOf(n); return i >= 0 ? argv[i + 1] : undefined; };
   const repoRoot = flag('--repo-root');
+  if (process.platform === 'win32') { process.stderr.write('enforcer dispatch: not supported on Windows (workers need process groups and POSIX signals); use WSL\n'); return 2; }
+  if (argv.includes('--dry-run')) { // plan only: nothing is claimed, created, launched or written
+    const { main: runtime } = await import('./dispatch/run.mjs');
+    return runtime(['--graph', graph, ...argv.filter((a) => a !== graph)], env);
+  }
   const res = await preflight({ graph, env, ...(repoRoot ? { repoRoot } : {}) });
   for (const r of res) process.stdout.write(`${r.ok ? 'ok  ' : 'fail'}  ${r.name}: ${r.line}\n`);
   if (res.some((r) => !r.ok)) { process.stderr.write('enforcer dispatch: preflight failed, nothing started\n'); return 2; }
@@ -35,10 +41,10 @@ export async function start(argv, env = process.env) {
   const old = readJson(join(dir, 'pids.json'));
   if (old?.dispatcher && alive(old.dispatcher)) { process.stderr.write(`enforcer dispatch: already running for ${graph} (pid ${old.dispatcher}); see: enforcer dispatch status ${graph}\n`); return 3; }
   const extra = argv.filter((a, i) => a !== graph && !['--workers', '--model', '--repo-root'].includes(a) && !['--workers', '--model', '--repo-root'].includes(argv[i - 1]));
-  const args = [join(HERE, '../bin/graph-dispatch'), '--graph', graph, '--workers', String(flag('--workers') || DEFAULTS.workers),
-    '--model', flag('--model') || DEFAULTS.model, '--no-warm', '--state-dir', dir, ...(repoRoot ? ['--repo-root', repoRoot] : []), ...extra];
+  const args = [join(HERE, '../bin/enforcer'), 'dispatch', 'run', '--graph', graph, '--workers', String(flag('--workers') || DEFAULTS.workers),
+    '--model', flag('--model') || DEFAULTS.model, '--state-dir', dir, ...(repoRoot ? ['--repo-root', repoRoot] : []), ...extra];
   const out = openSync(join(dir, 'dispatcher.out'), 'a');
-  const child = spawn('python3', args, { detached: true, stdio: ['ignore', out, out], env });
+  const child = spawn(process.execPath, args, { detached: true, stdio: ['ignore', out, out], env });
   child.unref();
   writeFileSync(join(dir, 'dispatcher.pid'), String(child.pid));
   process.stdout.write(`dispatching ${graph}: pid ${child.pid}. See what it is doing: enforcer dispatch status ${graph}\n`);
@@ -121,6 +127,7 @@ export async function main(argv, env = process.env) {
       if (!rest[0]) { process.stderr.write('usage: enforcer dispatch stop <graph>\n'); return 2; }
       return await stop(rest[0], env);
     }
+    if (sub === 'run') return await (await import('./dispatch/run.mjs')).main(rest, env); // the foreground dispatcher `start` detaches
     return await start(argv, env);
   } catch (e) { process.stderr.write(`enforcer dispatch: ${e.message}\n`); return 2; }
 }

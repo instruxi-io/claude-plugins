@@ -40,6 +40,7 @@ export async function runChecks({ fetchImpl = defaultFetch, network = true } = {
     const f = python3Check(['-c', 'import fcntl']);
     add('fcntl importable', { ok: f.ok, detail: f.ok ? 'import fcntl ok' : 'python3 cannot import fcntl (Windows?)' });
   } else add('fcntl importable', { ok: false, detail: 'skipped: python3 absent' });
+  add('dispatch platform', { ok: true, detail: process.platform === 'win32' ? 'enforcer dispatch is not supported on Windows (process groups and POSIX signals): use WSL' : `${process.platform}: enforcer dispatch supported` });
   try {
     const d = stateBase(); mkdirSync(d, { recursive: true }); accessSync(d, constants.W_OK);
     const mode = statSync(d).mode & 0o777;
