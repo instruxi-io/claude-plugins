@@ -177,6 +177,7 @@ The record is written three places: as the `decision` field, last, on the hash-c
 | `outside_worktree` | the working directory is not a git worktree on a graph/<key> branch |
 | `delivery_shape` | a headless worker ran a delivery command (push, remote, pull request create/merge, api, land-pr.sh) that is not exactly a recognised shape |
 | `settings_write` | an edit to plugin or governor settings |
+| `protected_path` | a headless worker changing `.github/`, release or deploy scripts, or secret files (a release node, marked by the dispatcher, may) |
 | `tenant_policy` | the organisation's Enforcer policy decided |
 | `agent_stopped` | the agent was stopped by a person or for looping, and stays stopped until resumed |
 | `ask_declined` | the agent was paused to ask you something and the answer was not yes; it stays denied until resumed or the day rolls |
@@ -204,6 +205,7 @@ A graph worker is a `claude -p` session the dispatcher starts in a git worktree 
 | `git.force_push`: `--force`, `-f`, `+refspec` | deny `force_push` | rewritten to `--force-with-lease` (an ask) `force_push` |
 | `git.push_default_branch`: a push to `main`, `master`, `develop` or `trunk` | deny `push_default_branch` | ask `push_default_branch` |
 | `governor.settings`: an edit of `.claude/settings*.json`, `managed-settings.json`, `.claude/plugins/` or `~/.enforcer-governor/` (Edit/Write, or a shell command that writes) | deny `settings_write` | ask `settings_write` |
+| `graph.protected_paths`: Edit/Write or a shell write to `.github/`, release/deploy/publish scripts, `.env`, keys, `.npmrc` | deny `protected_path` | not applied |
 
 These are the only rules that **allow** (an affirmative grant that skips the prompt). They run before the capability rules, a tenant policy can still refuse what they allow, and `rulesOn: false` turns them off with the rest.
 

@@ -34,6 +34,7 @@ export const WORKER_RULES = Object.freeze([
   { id: 'git.push_default_branch', name: 'push to a default branch' },
   { id: 'git.force_push', name: 'force-push without a lease' },
   { id: 'governor.settings', name: 'edit plugin or governor settings' },
+  { id: 'graph.protected_paths', name: 'a headless worker editing CI workflows, release or deploy scripts, or secret files' },
   { id: 'fs.delete_tree', name: "delete a tree inside the worker's own worktree" },
 ]);
 const RULE = Object.fromEntries(WORKER_RULES.map(r => [r.id, r]));
@@ -228,6 +229,19 @@ function settings(ev, ctx, cmd) {
 }
 
 
+// The headless-worker deny profile. Node text is untrusted, so a worker that was talked into it still
+// may not touch what ships or authenticates: CI workflows, release and deploy scripts, secret files.
+// A node the dispatcher marked as a (gate-approved) release node (ev.worker.release) is exempt.
+const PROTECTED = new RegExp('(^|\\/)(\\.github\\/|\\.gitlab-ci\\.yml$|\\.circleci\\/|(scripts|bin)\\/[^\\s\\/]*(release|deploy|publish)[^\\s\\/]*|[^\\s\\/]*(release|deploy|publish)[^\\s\\/]*\\.(sh|mjs|js|py|ya?ml)$|\\.env(\\.[\\w-]+)?$|\\.npmrc$|\\.pypirc$|\\.netrc$|\\.aws\\/|\\.ssh\\/|[^\\s\\/]*\\.(pem|key)$|id_(rsa|ed25519)|secrets?\\/|credentials(\\.json)?$)', 'i');
+function protectedPaths(ev, ctx, cmd) {
+  if (!ctx.headless || ev.worker?.release) return null;
+  const hit = isFileWrite(ev)
+    ? PROTECTED.test(String(ev.input?.path ?? ev.raw?.file_path ?? ev.raw?.notebook_path ?? ''))
+    : MUTATES.test(cmd) && words(cmd.replace(/[;&|<>()]/g, ' ')).some((w) => PROTECTED.test(w));
+  return hit ? verdict('deny', 'graph.protected_paths', 'protected_path',
+    'a headless worker may not change CI workflows, release or deploy scripts, or secret files; a release node may') : null;
+}
+
 // A headless worker deleting a tree INSIDE its own worktree (build output, a temp dir) is
 // housekeeping, not destruction: the worktree is disposable and the dispatcher prunes it anyway.
 // Measured 2026-10-06: two workers finished their work, ran `rm -rf dist` in their worktree, got
@@ -259,7 +273,7 @@ function worktreeDelete(cmd, ev, ctx) {
  */
 export function evaluate(ev) {
   const ctx = { headless: !!ev.worker?.headless, branch: ev.worker?.branch ?? null };
-  if (isFileWrite(ev)) return settings(ev, ctx, '');
+  if (isFileWrite(ev)) return settings(ev, ctx, '') || protectedPaths(ev, ctx, '');
   if (!isShell(ev)) return null;
   const raw = commandOf(ev).trim();
   let folded = false;
@@ -272,7 +286,7 @@ export function evaluate(ev) {
   // the lander chained to anything else: the delivery rule names it before the settings guard does
   if (ctx.headless && META.test(cmd) && /(^|\/)land-pr\.sh$/.test(words(cmd)[0] || '') && trustedLand(words(cmd)[0], ev.worker?.pluginRoot))
     return verdict('deny', 'graph.push', 'push_not_alone', 'a push, pull request or land must be the whole command, on its own');
-  const s = settings(ev, ctx, cmd);
+  const s = settings(ev, ctx, cmd) || protectedPaths(ev, ctx, cmd);
   if (s) return s;
   const wd = worktreeDelete(raw, ev, ctx);
   if (wd) return wd;

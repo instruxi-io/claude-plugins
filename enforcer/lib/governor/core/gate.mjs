@@ -88,7 +88,10 @@ export function gate(ev, cfg = {}, deps = {}) {
     // file in the command). Nobody can answer an ask headless, so it is a deny.
     if (w && (w.action === 'allow' || w.code === 'delivery_shape')) {
       const c = compose(capability(rules, ev), deps.central);
-      if (c && c.action !== 'allow') {
+      // The worker rule already judged this delete (inside the worker's own worktree), so the
+      // capability rule's blanket fs.delete_tree ask is the one opinion it overrides.
+      const own = w.code === 'worktree_delete_allowed' && c && c.ruleId === 'fs.delete_tree';
+      if (c && c.action !== 'allow' && !own) {
         return ev.worker?.headless && c.action === 'ask' ? new Verdict({ ...c, action: 'deny' }) : c;
       }
     }

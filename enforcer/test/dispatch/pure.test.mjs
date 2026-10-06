@@ -231,7 +231,7 @@ test('remediation prompt carries the error, the rejection and the base prompt', 
   assert.match(p, /^REMEDIATION LAUNCH \(attempt 2 this session\)/);
   assert.match(p, /Previous error: boom/);
   assert.match(p, /last_rejection: none on record/);
-  assert.match(p, /Graph g, node id-a \(key `a`\): a\./);
+  assert.match(p, /Graph g, node id-a \(key `a`\)\./);
   assert.match(p, /Your git worktree is \/w on branch graph\/a/);
 });
 

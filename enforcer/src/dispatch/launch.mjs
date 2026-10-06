@@ -66,11 +66,12 @@ const allowed = (k) => ENV_ALLOW.includes(k) || ENV_ALLOW_PREFIX.some((p) => k.s
 
 /** The worker environment: the allowlist, the run's worker-scoped token (as GRAPH_API_KEY) and, if the operator
  *  provides one, a repo-scoped GH_TOKEN (ENFORCER_WORKER_GH_TOKEN). Nothing else. */
-export function workerEnv(graphId, env = process.env, { token = null } = {}) {
+export function workerEnv(graphId, env = process.env, { token = null, release = false } = {}) {
   const root = pluginDirs()[0];
   const out = {};
   for (const [k, v] of Object.entries(env)) if (allowed(k) && v !== undefined) out[k] = v;
   Object.assign(out, { GRAPH_ID: graphId, JEV_HOOKS_HEADLESS: '1', CLAUDE_PLUGIN_ROOT: root, ENFORCER_PLUGIN_ROOT: root });
+  if (release) out.ENFORCER_RELEASE_NODE = '1';
   if (token) out.GRAPH_API_KEY = token;
   if (env.ENFORCER_WORKER_GH_TOKEN) out.GH_TOKEN = env.ENFORCER_WORKER_GH_TOKEN;
   return out;
