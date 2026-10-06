@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const files = [];
-for (const d of ['', 'graph', 'dispatch']) {
+for (const d of ['', 'graph', 'dispatch', 'contract']) {
   for (const f of readdirSync(join(here, d))) if (f.endsWith('.test.mjs')) files.push(join(here, d, f));
 }
 // the outer runner marks this process as its child; an inner `node --test` must not inherit that

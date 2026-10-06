@@ -71,6 +71,7 @@ export function resolveWorkspace(rows, query, { fuzzy = false } = {}) {
 async function getMe(base, fetchImpl) {
   const headers = await authHeaders({ fetchImpl });
   if (!headers.Authorization) throw new Error('not signed in with a browser sign-in (an API key is bound to its own workspace). Run /enforcer:login.');
+  // api-used: reads data
   const r = await fetchImpl(`${base}${API}/auth/me`, { headers, signal: AbortSignal.timeout(10_000) });
   if (!r.ok) throw new Error(`Enforcer refused /auth/me (HTTP ${r.status}). Run /enforcer:login.`);
   const j = await r.json();
@@ -83,6 +84,7 @@ async function getMe(base, fetchImpl) {
  * field at all (live, 2026-10-05), so reading it here listed one workspace and
  * `switch <other>` answered "you are not a member" for every real membership. */
 async function getTenants(base, headers, fetchImpl) {
+  // api-used: reads data
   const r = await fetchImpl(`${base}${API}/auth/tenants`, { headers, signal: AbortSignal.timeout(10_000) });
   if (!r.ok) return []; // listWorkspaces falls back to the /auth/me view
   const j = await r.json();

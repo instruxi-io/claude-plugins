@@ -1,0 +1,41 @@
+name: contract-nightly
+# The plugin's HTTP calls (enforcer/test/contract/used.json) against the APIs as they are NOW, not as pinned:
+# the deployed servers' swagger/doc.json, and the head of each service's main. A red run means a server moved
+# under the plugin (or the plugin under it) before any release noticed. The same test runs on every PR against the pinned specs.
+on:
+  schedule:
+    - cron: '17 4 * * *'
+  workflow_dispatch:
+
+jobs:
+  deployed:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 20
+      - name: fetch each deployed server's swagger document
+        working-directory: enforcer
+        run: node scripts/fetch-live-specs.mjs "$RUNNER_TEMP/live-specs"
+      - name: contract test against the deployed specs
+        working-directory: enforcer
+        env:
+          CONTRACT_SPEC_DIR: ${{ runner.temp }}/live-specs
+        run: node --test test/contract/contract.test.mjs
+
+  main:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 20
+      - name: re-pin every spec to its service's main (private repos need SPEC_SYNC_TOKEN)
+        working-directory: enforcer
+        env:
+          GH_TOKEN: ${{ secrets.SPEC_SYNC_TOKEN }}
+        run: node lib/api/sync-spec.mjs --bump
+      - name: contract test against main
+        working-directory: enforcer
+        run: node --test test/contract/contract.test.mjs

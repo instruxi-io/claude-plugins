@@ -1,0 +1,40 @@
+{
+  "_readme": "Understood drift between what the plugin does and what the spec says. Each entry is a call (id from used.json), the kind (path, method, sent, read, header), the field, and why it stands. The contract test fails when an entry stops being true, so fix the code or the spec and delete the entry.",
+  "drift": [
+    {
+      "id": "lib/governor/core/ship.mjs POST /otlp/v1/logs",
+      "kind": "path",
+      "reason": "OTLP/HTTP log ingest is the standard OpenTelemetry endpoint, not an operation the governance swagger describes. Nothing to check it against until the service publishes it."
+    },
+    {
+      "id": "src/dispatch/api.mjs POST /graphs/{}/nodes/{}/runs/{}/complete",
+      "kind": "sent",
+      "field": "pr",
+      "reason": "Audit drift: FinishRunRequest has no `pr`, the server drops it (completionBody in src/dispatch/land-complete.mjs sets body.pr). The PR is on the run through its evidence records. Remove body.pr and this entry together."
+    },
+    {
+      "id": "src/dispatch/api.mjs POST /graphs/{}/nodes/{}/runs/{}/heartbeat",
+      "kind": "read",
+      "field": "state",
+      "reason": "Audit drift: the dispatcher reads the heartbeat `state` at the envelope first; the spec puts it under `data`. API.heartbeat falls back to data.state, so it works today. Drop the envelope read and this entry together."
+    },
+    {
+      "id": "src/graph/hooks/heartbeat.mjs POST /graphs/{}/nodes/{}/runs/{}/heartbeat",
+      "kind": "read",
+      "field": "data.started_at",
+      "reason": "HeartbeatData does not carry started_at; the hook only uses it to fill a missing run.claimed_at, and does without it. Drop the read and this entry together."
+    },
+    {
+      "id": "lib/governor/core/central.mjs GET /auth/me",
+      "kind": "read",
+      "field": "data.id",
+      "reason": "Tolerant fallback for account_id: the identity read takes data.account_id first. The /auth/me schema has no `id`."
+    },
+    {
+      "id": "lib/governor/core/central.mjs GET /auth/me",
+      "kind": "read",
+      "field": "data.tenant_id",
+      "reason": "Tolerant fallback for tenant.id (the schema nests the tenant). The /auth/me schema has no top-level tenant_id."
+    }
+  ]
+}
