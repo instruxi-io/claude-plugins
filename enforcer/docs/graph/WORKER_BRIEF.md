@@ -10,7 +10,7 @@ Scope here: the `enforcer-graph/` plugin (skill, hooks, agent, bin, tests).
 - `agents/graph-worker.md` (7 KB): one-node worker, maxTurns 80, reads CLAUDE.md + this brief.
 - `hooks/hooks.json`: wiring. Scripts in `hooks/*.py`, shared code in `hooks/lib.py` (28 KB).
 - `bin/land-pr.sh`: lands one PR, no model. `bin/graph-dispatch` (31 KB, python): keeps N headless workers busy.
-- `test/run.sh`: every hook against `test/stub_graph.py` (local fake API). Also `check_skill.py`, `test_dispatch.py`, `test_attach_evidence.py`, `test_usage.py`.
+- `test/graph/run.test.mjs`: every hook against `test/graph/stub-graph.mjs` (local fake API). Also `check_skill.py`, `test_dispatch.py`, `test_attach_evidence.py`, `test_usage.py`.
 - `settings.example.json`: allowlist forms. `README.md`: user docs.
 - The sibling `enforcer/` plugin depends on this one (`"dependencies": ["enforcer-graph"]` in its plugin.json, #25), so the graph tools never load without these hooks. The dependency is unversioned.
 
@@ -28,7 +28,7 @@ Scope here: the `enforcer-graph/` plugin (skill, hooks, agent, bin, tests).
 ## 2. Verify loop
 
 ```bash
-bash enforcer-graph/test/run.sh > /tmp/r.log 2>&1; echo EXIT=$?; tail -5 /tmp/r.log
+node --test enforcer-graph/test/graph/run.test.mjs > /tmp/r.log 2>&1; echo EXIT=$?; tail -12 /tmp/r.log
 ```
 Last line must be `N passed, 0 failed` (109 on 0.17.0). No network, key, or Jev needed. Run only the python piece you touched, e.g. `python3 enforcer-graph/test/check_skill.py plan`.
 
@@ -55,12 +55,12 @@ Bump `.claude-plugin/plugin.json` version for any change to hooks, skill, agent 
 - Evidence rules ("claimed PR is resolved, not trusted"): README sections of those names, then `attach_evidence.py`.
 - Dispatcher selection/model/tier rules: docstring of `bin/graph-dispatch` (first 40 lines).
 - Plan-writing rules a test asserts: SKILL.md "Writing a plan" and `test/check_skill.py`.
-- Adding a hook test: append `check "name" 'cond'` lines in `test/run.sh` before the final `echo "$pass passed"`.
+- Adding a hook test: append a `test('label', ...)` in `test/graph/run.test.mjs`.
 
 ## 5. Never read whole
 
 - `hooks/lib.py` (28 KB): grep the function, read a range.
 - `bin/graph-dispatch` (31 KB): docstring plus the function you change.
-- `test/run.sh` (37 KB): grep the check name; edit near the end.
+- `test/graph/run.test.mjs`: grep the check label; edit near the end.
 - `skills/graph/SKILL.md` (22 KB) and `README.md` (20 KB): `grep -n '^#'`, then a range.
 - `test/test_dispatch.py` (11 KB), `test/test_attach_evidence.py` (12 KB): only the case you change.

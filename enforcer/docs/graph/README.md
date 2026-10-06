@@ -272,13 +272,13 @@ enforcer-graph/
   bin/land-pr.sh  bin/graph-dispatch   # land one PR; keep N headless workers busy
   bin/land-pr.sh  bin/graph-dispatch   # land one PR; keep N headless workers busy
   settings.example.json
-  test/run.sh  test/stub_graph.py     # every hook against a local stub of the API
+  test/graph/run.test.mjs  test/graph/stub-graph.mjs   # every hook against a local stub of the API
   test/test_dispatch.py               # graph-dispatch against a fake API and a fake claude
   test/test_dispatch.py               # graph-dispatch against a fake API and a fake claude
 ```
 
 ```bash
-bash enforcer-graph/test/run.sh
+node --test enforcer-graph/test/graph/run.test.mjs
 ```
 
 A five-minute demo (two sessions, one killed, the lease reclaimed) lives with the

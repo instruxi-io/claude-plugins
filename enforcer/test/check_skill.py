@@ -1,4 +1,4 @@
-"""Structural checks on skills/graph/SKILL.md, run by test/run.sh.
+"""Structural checks on skills/graph/SKILL.md, run by test/graph/run.test.mjs.
 
 The skill is loaded into every graph worker's context, so it must name real
 tools with real parameters, and keep the worker rule that the per-agent

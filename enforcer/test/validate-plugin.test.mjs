@@ -113,20 +113,26 @@ assert.deepEqual(kit.plugins.filter((p) => p.default).map((p) => p.id), ['enforc
 console.log('ok   kit defaults: only enforcer and jev-hooks are selectable, only enforcer default');
 
 // no suite reads the real home directory: every node suite runs under the isolating preload,
-// python suites and run.sh under test/isolated.sh, and none asks the OS for the home itself.
+// python suites under test/isolated.sh, and none asks the OS for the home itself.
 {
   const dirs = [['test', 'package.json'], ['lib/governor/test', 'lib/governor/package.json']];
   for (const [d, pj] of dirs) {
-    const script = rd(pj).scripts.test;
+    // the top package's `test` is test/run-suites.mjs: every top-level suite is listed there under the isolating preload
+    const runner = d === 'test' ? readFileSync(new URL('./run-suites.mjs', import.meta.url), 'utf8') : '';
+    const script = rd(pj).scripts.test + runner;
     for (const f of readdirSync(new URL(`../${d}`, import.meta.url)).filter((n) => n.endsWith('.test.mjs'))) {
-      if (readFileSync(new URL('./run.sh', import.meta.url), 'utf8').includes(`node ${d}/${f}`)) continue; // run.sh isolates itself
+      if (d === 'test') {
+        // run-suites discovers every top-level *.test.mjs and runs it under the tmp-cleanup preload
+        assert.ok(runner.includes("endsWith('.test.mjs')") && runner.includes('./test/tmp-cleanup.mjs'), `${d}/${f} is run by test/run-suites.mjs under the isolating preload`);
+        continue;
+      }
       assert.match(script, new RegExp(`--import \\S*tmp-cleanup\\.mjs ${d.split('/').pop()}/${f.replace('.', '\\.')}`), `${d}/${f} runs under the isolating preload`);
     }
   }
-  const top = rd('package.json').scripts.test;
-  assert.match(top, /isolated\.sh python3 -m unittest discover test/);
-  assert.match(top, /isolated\.sh python3 -m unittest discover -s lib\/graph/);
-  assert.match(top, /isolated\.sh bash test\/run\.sh/);
+  const top = readFileSync(new URL('./run-suites.mjs', import.meta.url), 'utf8');
+  assert.equal(rd('package.json').scripts.test, 'node test/run-suites.mjs');
+  assert.match(top, /isolatedPy\('-m', 'unittest', 'discover', 'test'\)/);
+  assert.match(top, /isolatedPy\('-m', 'unittest', 'discover', '-s', 'lib\/graph'/);
   for (const d of ['test', 'lib/governor/test', 'lib/graph']) {
     for (const f of readdirSync(new URL(`../${d}`, import.meta.url)).filter((n) => /(\.test\.mjs|^test_.*\.py)$/.test(n))) {
       const src = readFileSync(new URL(`../${d}/${f}`, import.meta.url), 'utf8');
