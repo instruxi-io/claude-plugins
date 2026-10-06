@@ -9,6 +9,7 @@ import { tmpdir, homedir } from 'node:os';
 import { join } from 'node:path';
 import { headers, allNodes } from './preflight.mjs';
 import { resolveConfig } from './config.mjs';
+import { substitute, goTestFlags } from './evidence-run.mjs'; // the one place that knows the acceptance-line rules
 
 const RUNNABLE = new Set(['node', 'bash', 'sh', 'grep', 'ls', 'npm', 'cat', 'test', 'wc', 'head', 'tail']);
 const CLOSED = new Set(['done', 'cancelled', 'succeeded']);
@@ -59,9 +60,11 @@ export function removeTree(dir) {
   return attempt();
 }
 
-export function checkLine(line, cwd, env, { timeoutMs = 300000 } = {}) {
+export function checkLine(line, cwd, env, { timeoutMs = 300000, graph = '' } = {}) {
   const p = parseLine(line);
   if (!p) return { state: 'SKIPPED', note: 'no "prints|exits <literal>" form' };
+  const sub = substitute(p.cmd, { graph });
+  if (!sub.skip) p.cmd = goTestFlags(sub.cmd, p.literals); // `<graph>` filled in, Go tests get -tags/-run/-v, as `enforcer evidence run` does
   const why = skipReason(p.cmd);
   if (why) return { state: 'SKIPPED', note: why };
   if (!cwd || !existsSync(cwd)) return { state: 'SKIPPED', note: `no checkout at ${cwd}` };
@@ -107,7 +110,7 @@ export async function planCheck({ graph, repoRoot = join(homedir(), 'apps'), env
     for (const [i, a] of accs.entries()) {
       await new Promise((r) => setImmediate(r)); // let the previous line reach the reader before the next command blocks
       const cwd = n.data?.repo ? join(repoRoot, n.data.repo) : repoRoot;
-      const r = checkLine(String(a), cwd, env, { timeoutMs });
+      const r = checkLine(String(a), cwd, env, { timeoutMs, graph });
       if (r.state === 'MISMATCH') bad++;
       emit(`${r.state} ${n.key}: ${String(a).replace(/\s+/g, ' ').slice(0, 100)}${r.note ? ' -- ' + r.note : ''}`);
       for (const w of warns.filter((w) => w.index === i)) emit(`WARN ${n.key}: [${w.code}] ${w.hint ?? ''}`.trimEnd());
