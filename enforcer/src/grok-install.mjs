@@ -7,6 +7,7 @@ import { join, dirname } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { createInterface } from 'node:readline';
+import { installShim, shimPath } from './shim.mjs';
 
 const root = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '');
 const rd = (p) => readFileSync(join(root, p), 'utf8');
@@ -107,6 +108,7 @@ export async function install({ dryRun = false, yes = false, home = homedir(), c
   }
   out(`runtime -> ${p.stable}${existsSync(p.stable) ? ' (exists, refreshed)' : ''}`);
   for (const f of files) out(`${dryRun ? 'would write' : changed(f) ? 'will write' : 'unchanged'} ${f.path}  (${f.note})${!dryRun && changed(f) && existsSync(f.path) ? ' [backup]' : ''}`);
+  out(`${dryRun ? 'would write' : 'will write'} ${shimPath(home)}  (enforcer shim)`);
   out(`${dryRun ? 'would write' : 'will write'} ${p.manifest}`);
   if (dryRun) return { ok: true, dryRun: true };
   if (!yes && !(await confirm('Proceed? [y/N] '))) { out('aborted; nothing written'); return { ok: false, reason: 'declined' }; }
@@ -115,6 +117,7 @@ export async function install({ dryRun = false, yes = false, home = homedir(), c
   for (const e of RUNTIME) cpSync(join(root, e), join(p.stable, e), { recursive: true, force: true,
     filter: (s) => !/(^|\/)(node_modules|\.git|test)(\/|$)/.test(s.slice(root.length)) });
   writeFileSync(p.versionFile, version() + '\n');
+  const shim = installShim({ home, base: p.base, out });
   const prev = existsSync(p.manifest) ? JSON.parse(readFileSync(p.manifest, 'utf8')) : null;
   const written = [], backups = [];
   for (const f of files) {
@@ -127,7 +130,7 @@ export async function install({ dryRun = false, yes = false, home = homedir(), c
   }
   const cfgAdded = files[1].addedSection || (prev?.configSectionAdded ?? false);
   mkdirSync(dirname(p.manifest), { recursive: true });
-  const man = { version: version(), runtime: p.stable, versionFile: p.versionFile, files: written.filter((x) => x !== p.cfg),
+  const man = { version: version(), runtime: p.stable, versionFile: p.versionFile, files: [...written.filter((x) => x !== p.cfg), shim],
     config: p.cfg, configSectionAdded: cfgAdded };
   const text = JSON.stringify(man, null, 2) + '\n';
   if (!existsSync(p.manifest) || readFileSync(p.manifest, 'utf8') !== text) writeFileSync(p.manifest, text);

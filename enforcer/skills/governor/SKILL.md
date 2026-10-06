@@ -5,14 +5,14 @@ description: The Enforcer governor — decides whether an agent action is allowe
 
 # Governor
 
-Run from the plugin root; print the output verbatim.
+Print the output verbatim. Run `enforcer ...`; if it is not on PATH (Claude Code), use `node "${CLAUDE_PLUGIN_ROOT}/bin/enforcer" ...`.
 
 | ask | run |
 |---|---|
-| What has the governor seen this session (spend, limits, record state)? | `node bin/enforcer governor status` |
-| Every setting, what it does, which changed | `node bin/enforcer governor config [--why]` |
-| Set the per-agent spend limit in dollars | `node bin/enforcer governor limit <dollars>` |
-| Check the receipt chain; names the first bad record | `node bin/enforcer governor verify` |
-| Decide one event (common event JSON on stdin) | `node bin/enforcer governor decide` |
+| What has the governor seen this session (spend, limits, record state)? | `enforcer governor status` |
+| Every setting, what it does, which changed | `enforcer governor config [--why]` |
+| Set the per-agent spend limit in dollars | `enforcer governor limit <dollars>` |
+| Check the receipt chain; names the first bad record | `enforcer governor verify` |
+| Decide one event (common event JSON on stdin) | `enforcer governor decide` |
 
 `decide` prints the decision record `{"decision","code","rule","tool","summary"}`.
