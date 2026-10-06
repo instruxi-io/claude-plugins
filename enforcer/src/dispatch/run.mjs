@@ -9,7 +9,7 @@ import { parseArgs } from 'node:util';
 import { API, APIError } from './api.mjs';
 import { Lease, LEASE_KEY, LEASE_TTL } from './lease.mjs';
 import { worktreeFor, worktreeSetup, BaseMissing, resolveBase, defaultBranch } from './worktree.mjs';
-import { launchCmd, workerEnv, spawnWorker, killGroup, alive, pidAliveGroup, harnessRefusal, HARNESSES, LAND_PR } from './launch.mjs';
+import { launchCmd, workerEnv, mintWorkerToken, spawnWorker, killGroup, alive, pidAliveGroup, harnessRefusal, HARNESSES, LAND_PR } from './launch.mjs';
 import { modelFor, nodeMaxTurns } from './model.mjs';
 import { mergeTarget, repoOf, resourcesOf, lapsed, select, affinityOrder } from './select.mjs';
 import { summarize, failedOutcome, workerPrompt, remediationPrompt, harnessLimitText, limitResetAt, judgeLines, denialClass } from './summarize.mjs';
@@ -199,7 +199,9 @@ export class Dispatcher {
     const attempt = (this.attempts.get(n.key) || 0) + 1;
     this.attempts.set(n.key, attempt);
     const logPath = join(this.logs, `${n.key}.${attempt}.jsonl`);
-    const proc = spawnWorker(cmd, { cwd: path, logPath, env: workerEnv(this.g) });
+    let token = null;
+    try { token = typeof this.api.call === 'function' ? await mintWorkerToken(this.api, process.env, `worker-${n.key}`.slice(0, 60)) : null; } catch (e) { this.say(`worker token not minted for ${n.key}: ${e.message}`); }
+    const proc = spawnWorker(cmd, { cwd: path, logPath, env: workerEnv(this.g, process.env, { token }) });
     const w = { kind: 'agent', node: n, key: n.key, logPath, proc, started: now(), resources: resourcesOf(n), path, model, turns: 0,
                 maxTurns: Math.max(a.maxTurns, turnsCap || 0), session };
     this.workers.set(n.key, w);
