@@ -76,13 +76,9 @@ if (area === 'plan') {
 }
 
 if (area === 'land') {
-  const script = here('./land-pr.sh');
-  if (sub === undefined || sub === '--help' || sub === '-h') {
-    process.stdout.write("usage: enforcer land <pr> [--timeout <s>]   runs this plugin's bin/land-pr.sh: waits for green, then merges\n");
-    process.exit(sub === undefined ? 2 : 0);
-  }
-  const r = spawnSync(script, [sub, ...rest], { stdio: 'inherit' });
-  process.exit(r.status ?? 1);
+  if (sub === undefined) { process.stderr.write('usage: enforcer land <pr> [-R owner/repo] [--timeout <s>]   waits for green, then merges\n'); process.exit(2); }
+  const { main: landMain } = await import('../src/land.mjs');
+  process.exit(await landMain([sub, ...rest]));
 }
 
 if (area === 'governor' && GOV.includes(sub)) {
