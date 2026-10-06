@@ -14,7 +14,7 @@
 //   node test/check-allowlist.mjs                    vendored manifest
 //   node test/check-allowlist.mjs --manifest <file>  another manifest (CI: the live one)
 //   node test/check-allowlist.mjs --root <dir>       check another checkout (the tests use this)
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -24,7 +24,7 @@ const manifestPath = arg('--manifest') ?? join(root, 'test', 'fixtures', 'mcp-to
 
 // The names the enforcer server's tools reach Claude Code under: the enforcer
 // plugin's, one added by hand as `enforcer`, and the older `enforcer-graph`.
-const PREFIXES = ['mcp__plugin_enforcer_enforcer__', 'mcp__enforcer__', 'mcp__enforcer-graph__'];
+const PREFIXES = ['mcp__plugin_enforcer_enforcer__', 'mcp__enforcer__', 'mcp__enforcer-graph__', 'enforcer__'];
 
 const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
 const registered = new Set((manifest.tools ?? []).map((t) => t.name));
@@ -42,12 +42,30 @@ const agent = read('enforcer/agents/graph-worker.md').match(/^tools:\s*(.+)$/m)?
 for (const t of agent.split(',').map((s) => s.trim()).filter((s) => s.startsWith('mcp__'))) {
   sources.push(['enforcer/agents/graph-worker.md tools', t]);
 }
-// 3. Command frontmatter `allowed-tools:` in every local plugin.
-for (const cmd of ['enforcer/commands/setup.md']) {
-  if (!existsSync(join(root, cmd))) continue;
-  const at = read(cmd).match(/^allowed-tools:\s*(.+)$/m)?.[1] ?? '';
-  for (const t of at.split(/[,\s]+/).filter((s) => s.startsWith('mcp__'))) sources.push([`${cmd} allowed-tools`, t]);
+// 3. `allowed-tools:` / `tools:` frontmatter of every command, skill and agent in every local plugin.
+const listFiles = (d) => existsSync(join(root, d)) ? readdirSync(join(root, d), { withFileTypes: true }) : [];
+const fm = [];
+for (const e of listFiles('enforcer/commands')) if (e.name.endsWith('.md')) fm.push(`enforcer/commands/${e.name}`);
+for (const e of listFiles('enforcer/skills')) if (e.isDirectory()) fm.push(`enforcer/skills/${e.name}/SKILL.md`);
+for (const e of listFiles('enforcer/agents')) if (e.name.endsWith('.md')) fm.push(`enforcer/agents/${e.name}`);
+for (const e of listFiles('enforcer/harness/grok/agents')) if (e.name.endsWith('.md')) fm.push(`enforcer/harness/grok/agents/${e.name}`);
+for (const f of fm) {
+  if (!existsSync(join(root, f))) continue;
+  const head = read(f).match(/^---\n([\s\S]*?)\n---/)?.[1] ?? '';
+  const at = head.match(/^(?:allowed-tools|tools):\s*(.+)$/m)?.[1] ?? '';
+  for (const t of at.split(/[,\s]+/).filter((s) => /^(mcp__|enforcer__)/.test(s))) sources.push([`${f} tools`, t]);
 }
+// 3b. Grok hook matchers (names without the mcp__ plugin prefix): enforcer__graph_(a|b|c).
+let grokMatchers = 0;
+const grokHooks = existsSync(join(root, 'enforcer/harness/grok/hooks/enforcer.json')) ? JSON.parse(read('enforcer/harness/grok/hooks/enforcer.json')).hooks : {};
+for (const [event, groups] of Object.entries(grokHooks)) {
+  for (const g of groups) {
+    const m = (g.matcher ?? '').match(/^enforcer__graph_\(([^)]+)\)$/);
+    if (g.matcher && !m) { console.error(`FAIL grok ${event}: matcher ${g.matcher} is not enforcer__graph_(...)`); process.exit(1); }
+    if (m) for (const t of m[1].split('|')) { sources.push([`enforcer/harness/grok/hooks/enforcer.json ${event}`, `enforcer__graph_${t}`]); grokMatchers++; }
+  }
+}
+if (grokMatchers === 0) { console.error('FAIL no Grok enforcer__graph_ matchers found in enforcer/harness/grok/hooks/enforcer.json'); process.exit(1); }
 // 4. Hook matchers: each alternative of a graph_(a|b|c) group is a tool name.
 const hooks = JSON.parse(read('enforcer/hooks/hooks.json')).hooks;
 for (const [event, groups] of Object.entries(hooks)) {
@@ -65,4 +83,5 @@ for (const [where, name] of sources) {
   if (!registered.has(tool)) { console.error(`FAIL ${where}: ${name} - "${tool}" is not a tool in ${manifestPath}`); bad++; }
 }
 if (bad) { console.error(`\n${bad} tool name(s) the MCP server does not register. Rename them to match, or regenerate the manifest if the server changed.`); process.exit(1); }
+for (const [w, n] of sources) if (w.includes('grok/hooks')) console.log(`grok matcher checked: ${n} (${w})`);
 console.log(`OK  ${sources.length} allow rules / tool names checked against ${registered.size} tools in ${manifestPath}`);
