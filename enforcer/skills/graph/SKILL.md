@@ -1,6 +1,6 @@
 ---
 name: graph
-description: Work a plan held in the enforcer graph — claim the next runnable node yourself, do it, keep the lease alive, report it against its acceptance criteria with captured command output as evidence. Use when a project has .claude/graph.json, when asked to "work the plan", "take the next node", "claim from the frontier", when a coordinator hands you a graph node to work as a subagent, when fanning a plan out to subagents, or when the enforcer graph MCP tools (graph_next_work, graph_report, graph_heartbeat, graph_plan_status, graph_remember) are available.
+description: Work a plan held in the enforcer graph — claim the next runnable node yourself, do it, keep the lease alive, report it against its acceptance criteria with captured command output as evidence. Use when a project has .enforcer/graph.json, when asked to "work the plan", "take the next node", "claim from the frontier", when a coordinator hands you a graph node to work as a subagent, when fanning a plan out to subagents, or when the enforcer graph MCP tools (graph_next_work, graph_report, graph_heartbeat, graph_plan_status, graph_remember) are available.
 ---
 
 # Working a graph

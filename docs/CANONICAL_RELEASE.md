@@ -43,7 +43,7 @@ per-harness extensions.**
 | MCP connection | `mcp.json`: `{"type": "streamable-http", "url": "https://api.instruxi.dev/mcp"}`. The endpoint already answers 401 with `WWW-Authenticate: Bearer resource_metadata=…/.well-known/oauth-protected-resource/mcp`; Codex and Grok complete OAuth from that. | Claude: `.mcp.json` keeps the `headersHelper` shim for API-key users until Claude's remote-MCP OAuth is verified against this server; then the shim goes. |
 | Skills | `skills/<name>/SKILL.md` for enforcer (login, workspace, setup), files (find/read/share/upload/download), graph (claim/work/heartbeat/report), governor (status/config/limit/verify). Slash commands become skills; a command file stays only where Claude needs the `/enforcer:x` surface. | none |
 | Policy engine | `bin/enforcer governor decide` — reads the common event JSON (`hook_event_name`, `tool_name`, `tool_input`, `session_id`, `cwd`, `transcript_path`, `model`), returns the 2.9.0 decision record (`{"decision","code","rule","tool","summary"}`), writes the tamper-evident log. Harness-neutral; no Claude field names inside. | `hooks/claude/*.mjs`, `extensions.com.openai.hooks` (Codex), `harness/grok/hooks/enforcer.json` (Grok, shims in `hooks/grok/`): short shims that map stdin → event JSON and the record → that harness's exit code / `hookSpecificOutput`. |
-| Graph worker hooks | `bin/enforcer hook <event>` — evidence capture, heartbeat, open-run guard, remember-on-compact, version check — gated in `bin/enforcer` by `graphContextLive`: they do nothing unless a graph context is live (`GRAPH_ID` set or a claimed run in the session state). The governor hooks are not gated this way; they always run. | same three shims as above; one hooks file per harness. |
+| Graph worker hooks | `bin/enforcer event <event>` — evidence capture, heartbeat, open-run guard, remember-on-compact, version check — gated in `bin/enforcer` by `graphContextLive`: they do nothing unless a graph context is live (`GRAPH_ID` set or a claimed run in the session state). The governor hooks are not gated this way; they always run. | same three shims as above; one hooks file per harness. |
 | Dispatcher | `bin/graph-dispatch --harness claude|codex|grok` — lease, salvage, triage, `data.base`, contested resources are harness-neutral already; only the launch command and the stream parser differ (`claude -p --output-format stream-json`, `codex exec --json`, `grok -p … --output-format json`). | per-harness launcher + parser modules parsers are tested on fixtures in `test/fixtures/dispatch` (Claude and Grok from real runs; the Codex parser is a stub, see CHANGELOG). |
 | Graph-worker agent | Claude-only extra (`agents/graph-worker.md`); Codex skips agent handlers, Grok has `.grok/agents/` — a Grok agent file is generated from the same source. | |
 | State | `~/.config/enforcer/` — governor records, session state, dispatcher state (credentials stay in `~/.enforcer/credentials.json`, shared by every plugin on the machine) — keyed by harness where it differs. No `~/.claude` path in the package outside `hooks/claude/` and the Claude plugin-cache lookup in `bin/graph-dispatch`. | migration on first run moves what exists. |
@@ -52,26 +52,26 @@ per-harness extensions.**
 
 ```
 enforcer/
-  plugin.json              Agent Plugins 1.0 (name enforcer, version 1.0.0, $schema)
+  plugin.json              Agent Plugins 1.0 (name enforcer, version 1.0.6, $schema)
   mcp.json                 streamable-http, api.instruxi.dev/mcp
   .claude-plugin/plugin.json   Claude compatibility fallback (same version)
   .mcp.json                Claude: http + headersHelper (until OAuth verified)
   skills/{enforcer,files,graph,governor}/SKILL.md
   agents/graph-worker.md   Claude extra
   commands/*.md            Claude extra, thin: each just invokes its skill
-  hooks/hooks.json         Claude adapter wiring -> bin/enforcer hook|governor
+  hooks/hooks.json         Claude adapter wiring -> bin/enforcer event
   hooks/claude/*.mjs       the shims
   harness/codex/mcp.json   Codex MCP snippet (the hooks overlay is `extensions.com.openai` in plugin.json, wired to hooks/hooks.json)
   harness/grok/            hooks/enforcer.json template, config.toml.snippet ([mcp_servers.enforcer]), agents/, fixtures/
   hooks/grok/              Grok shims
-  bin/enforcer             node CLI: login, workspace, files, headers, governor, hook, dispatch, plan, harness install|uninstall <codex|grok> (Claude installs from the marketplace)
+  bin/enforcer             node CLI: login, workspace, files, headers, governor, event, dispatch, plan, harness install|uninstall <codex|grok> (Claude installs from the marketplace)
   bin/graph-dispatch       python
   bin/land-pr.sh
   lib/governor/            the decision core (moved from enforcer-governor with history)
   lib/graph/               the hook libraries (moved from enforcer-graph)
   test/                    node + python + bash; harness fixtures
 docs/CANONICAL_RELEASE.md  this file
-.claude-plugin/marketplace.json   enforcer 1.0.0; jev-hooks; deprecated aliases
+.claude-plugin/marketplace.json   enforcer 1.0.6; jev-hooks; deprecated aliases
 .agents/plugins/marketplace.json  Codex marketplace, same artifact
 ```
 
@@ -85,8 +85,8 @@ docs/CANONICAL_RELEASE.md  this file
 2. **No Claude field names below the shim.** The core takes the common event JSON.
    Pinned by `enforcer/lib/governor/test/core-boundary.test.mjs` (core/ imports only core/
    and Node built-ins).
-3. **Every graph worker hook is gated.** `bin/enforcer hook <event>` exits with no output
-   and no python when no graph context is live, so a user who never touches a graph pays
+3. **Every graph worker hook is gated.** `bin/enforcer event <event>` exits with no output
+   and starts no subprocess when no graph context is live, so a user who never touches a graph pays
    nothing. Pinned by `enforcer/test/hooks.test.mjs`, `enforcer/test/grok-shims.test.mjs`
    (silent without a graph context) and `enforcer/test/test_noop_hooks.py` (silent, and
    under the latency budget). The governor hooks always run.
@@ -118,7 +118,7 @@ docs/CANONICAL_RELEASE.md  this file
 | `mcp-oauth-no-shim` | claude-plugins | prove the remote MCP OAuth path from a non-Claude client; `harness/{codex,grok}` MCP snippets; smoke script | design-doc |
 | `governor-core-cli` | enforcer-governor | extract `governor decide` CLI + common event JSON; hooks become shims; tests | design-doc |
 | `governor-fold-in` | claude-plugins | subtree enforcer-governor into `enforcer/lib/governor` + `bin/enforcer governor`; Claude hooks wired; marketplace alias | package-layout, governor-core-cli |
-| `graph-fold-in` | claude-plugins | subtree enforcer-graph into `enforcer/`; hooks self-gate; `bin/enforcer hook`; agent; dispatcher; alias | package-layout |
+| `graph-fold-in` | claude-plugins | subtree enforcer-graph into `enforcer/`; hooks self-gate; `bin/enforcer event`; agent; dispatcher; alias | package-layout |
 | `files-fold-in` | claude-plugins | enforcer-files skill + bins into `enforcer`; alias | package-layout |
 | `state-relocation` | claude-plugins | every `~/.claude` path → `~/.config/enforcer/…` with first-run migration | governor-fold-in, graph-fold-in |
 | `hook-adapter-codex` | claude-plugins | `extensions.com.openai` overlay, hooks wiring, `.agents/plugins/marketplace.json`; shim tests on Codex stdin fixtures | governor-fold-in, graph-fold-in |
@@ -159,7 +159,7 @@ No MCP servers configured. Run `grok mcp add --help` to get started.
 ## Detecting the governor from other hook packs
 
 The governor lives inside enforcer (since 1.0.0). Its SessionStart hook (Claude, Codex and Grok
-shims, and `bin/enforcer hook session-start`) announces it with `ENFORCER_GOVERNOR=1`
+shims, and `bin/enforcer event session-start`) announces it with `ENFORCER_GOVERNOR=1`
 (exported via `CLAUDE_ENV_FILE` and carried in the hook output's `env`). Other hook packs
 (jev-hooks etc.) must read `ENFORCER_GOVERNOR`, never the plugin-cache directory: when the
 deprecated `enforcer-governor` cache vanished, jev-hooks 0.27 saw no governor, gated work

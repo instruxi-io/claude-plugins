@@ -12,10 +12,10 @@ plugin to drift out of date.
 | Plugin | Default | What it gives you | Source |
 |---|---|---|---|
 | `enforcer` | **on** | The `enforcer` MCP server and one sign-in, `/enforcer:login`, that every plugin here shares. A short skill on how Enforcer is organised. | this repo, `enforcer/` |
-| `enforcer-files` | deprecated | Now part of `enforcer` (skill `files`, `/enforcer:upload`, `/enforcer:download`). Alias for one release. | `enforcer/` |
+| `enforcer-files` | deprecated | Now part of `enforcer` (skill `files`, `/enforcer:upload`, `/enforcer:download`). Alias for one release. | `aliases/enforcer-files/` |
 | `enforcer-graph` | deprecated | Now part of `enforcer` (the graph worker). Empty alias; uninstall it. | `aliases/enforcer-graph/` |
 | `jev-hooks` | opt-in, **Instruxi staff** | Jev-backed hooks: Bash and edit risk gates, subagent model routing, subagent verification, a stop self-check, loop detection, compaction triage. | `instruxi-io/jev-hooks`, default branch |
-| `enforcer-governor` | deprecated | Now part of `enforcer`. Do not install it separately. | `instruxi-io/enforcer-governor`, tag `v2.9.0` |
+| `enforcer-governor` | deprecated | Now part of `enforcer`. Empty alias; uninstall it. | `aliases/enforcer-governor/` |
 
 ## Before you start
 
@@ -143,8 +143,8 @@ claude plugin update <plugin>@instruxi
 ```
 
 `enforcer` lives in this repo and follows its `main`. The deprecated
-`enforcer-governor` alias is pinned to tag `v2.9.0`; the `enforcer-graph` and
-`enforcer-files` aliases are empty stubs in this repo. `jev-hooks` follows its own
+`enforcer-governor`, `enforcer-graph` and `enforcer-files` aliases are empty
+stubs in this repo (`aliases/`). `jev-hooks` follows its own
 default branch.
 
 ## What leaves your machine
@@ -155,4 +155,4 @@ to `api.instruxi.dev`.
 
 ## Windows
 
-Windows support: MCP, files and the governor are supported. The graph hooks are supported once ported to Node. `enforcer dispatch` is POSIX only (use WSL): there is no bash, `chmod` is a no-op so credential file protection is advisory, and there are no process groups. `enforcer doctor` prints this position on win32.
+Windows support: MCP, files and the governor are supported. The graph hooks are Node and supported. `enforcer dispatch` is POSIX only (use WSL): there is no bash, `chmod` is a no-op so credential file protection is advisory, and there are no process groups. `enforcer doctor` prints this position on win32.
