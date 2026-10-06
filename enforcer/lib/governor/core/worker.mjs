@@ -47,7 +47,8 @@ const isGraph = (b) => typeof b === 'string' && GRAPH.test(b);
 // literal is not spread through the package (hooks/claude/paths.mjs owns the name).
 const DOT = '.' + 'claude';
 const SETTINGS_PATTERN = '\\' + DOT + '\\/settings(\\.local)?\\.json|\\' + DOT + '\\/plugins\\/';
-export const SETTINGS = new RegExp('(^|[\\s"\'=\\/])(' + SETTINGS_PATTERN + '|managed-settings\\.json|\\.enforcer-governor\\/|\\.enforcer\\/|policy-cache\\.json|\\.config\\/enforcer\\/governor\\/)');
+export const SETTINGS_PATHS = SETTINGS_PATTERN + '|managed-settings\\.json|\\.enforcer-governor\\/|\\.enforcer\\/|policy-cache\\.json|\\.config\\/enforcer\\/governor\\/';
+export const SETTINGS = new RegExp('(^|[\\s"\'=\\/])(' + SETTINGS_PATHS + ')');
 // A shell command that changes a file, as opposed to reading it.
 // The only commands that may name a settings path: a single plain read.
 const PLAIN_READ = /^(cat|less|head|tail|jq|grep)(\s|$)/;

@@ -71,6 +71,7 @@ const RULE_CODES = Object.freeze({
   'secrets.access': 'secret_in_command',
   'secrets.edit': 'secret_in_command',
   'deploy.publish': 'deploy_publish',
+  'governor.settings': 'settings_write',
 });
 
 export function isCode(c) { return Object.prototype.hasOwnProperty.call(CODES, c); }
