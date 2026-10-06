@@ -16,9 +16,9 @@ run(); run(); // warm the file cache
 const med = (f) => Array.from({ length: 15 }, f).sort((a, b) => a - b)[7];
 const median = med(run);
 // A slow host (a shared CI runner, a node without the compile cache) pays its own startup on top:
-// the budget is 40 ms, or 20 ms over a bare `node -e 0` on this host when that is larger.
+// the budget is 40 ms, or 30 ms over a bare `node -e 0` on this host when that is larger (node 20 has no compile cache).
 const bare = med(() => { const t = process.hrtime.bigint(); spawnSync(process.execPath, ['-e', '0'], { env }); return Number(process.hrtime.bigint() - t) / 1e6; });
-const budget = Math.max(40, bare + 20);
+const budget = Math.max(40, bare + 30);
 console.log(`PostToolUse (no graph context) median ${median.toFixed(1)} ms over 15 runs; bare node ${bare.toFixed(1)} ms; budget ${budget.toFixed(1)} ms`);
 assert.ok(median < budget, `median ${median.toFixed(1)} ms must be < ${budget.toFixed(1)} ms`);
 console.log('ok   hooks-latency');
