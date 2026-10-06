@@ -11,7 +11,7 @@ CI (`version-bump` job) fails a PR that changes `enforcer/` without a new versio
 
 ## Supply-chain pins
 
-- Before tagging, set `ref` (a 40-char commit sha) on every github-source entry in `.claude-plugin/marketplace.json`; jev-hooks also carries `source.ref` (its tag) and `source.sha`. Check: `python3 -c "import json;print(all(len(str(p.get('ref','')))==40 for p in json.load(open('.claude-plugin/marketplace.json'))['plugins'] if p.get('source',{}).get('source')=='github'))"` prints `True`.
+- Before tagging, set `ref` (a 40-char commit sha) on every github-source entry in `.claude-plugin/marketplace.json`; jev-hooks also carries `source.ref` (its tag) and `source.sha`. Check: `node -p "JSON.parse(require('fs').readFileSync('.claude-plugin/marketplace.json','utf8')).plugins.filter(p=>p.source?.source==='github').every(p=>String(p.ref||'').length===40)"` prints `True`.
 - Workflow `uses:` lines stay pinned to a 40-char sha with a version comment; `.github/dependabot.yml` proposes updates.
 - Run `npm run sbom` and attach `dist/sbom.cdx.json` (CycloneDX) to the GitHub release.
 - Repository ruleset (Settings > Rules): signed tags (`v*`) required and a reviewed PR before merging to `main`. Confirm it is active before every release.

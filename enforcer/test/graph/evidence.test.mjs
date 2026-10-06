@@ -9,7 +9,6 @@ import { appendEvidence, loadEvidence, evidencePath, sweepSessions, selectEviden
 import { dataDir } from '../../src/graph/state.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const LIBDIR = join(here, '../../lib/graph');
 const fresh = () => {
   const root = mkdtempSync(join(tmpdir(), 'gevid-'));
   process.env.ENFORCER_STATE_DIR = join(root, 'state');
@@ -25,22 +24,13 @@ const FIXTURE = [
   { kind: 'command', cmd: 'x', exit: null, output: '' },
 ];
 
-test('jsonl is byte-identical to the python store for the fixture sequence', () => {
-  const root = fresh();
+test('jsonl: one JSON object per line, in order, and read back whole', () => {
+  fresh();
   for (const r of FIXTURE) appendEvidence('sess', r);
-  const node = readFileSync(evidencePath('sess'));
-  const py = `
-import sys, json
-sys.path.insert(0, ${JSON.stringify(LIBDIR)})
-import lib
-for r in json.loads(sys.stdin.read()):
-    lib.append_evidence('sess2', r)
-print(lib.evidence_path('sess2'))`;
-  process.env.ENFORCER_STATE_DIR = join(root, 'pystate');
-  const out = execFileSync('python3', ['-I', '-c', py], { input: JSON.stringify(FIXTURE), env: { ...process.env } }).toString().trim();
-  assert.ok(existsSync(out), out);
-  assert.equal(Buffer.compare(node, readFileSync(out)), 0);
-  assert.equal(loadEvidence('sess2').length, FIXTURE.length);
+  const lines = readFileSync(evidencePath('sess'), 'utf8').split('\n').filter(Boolean);
+  assert.equal(lines.length, FIXTURE.length);
+  assert.deepEqual(lines.map((l) => JSON.parse(l)), FIXTURE);
+  assert.deepEqual(loadEvidence('sess'), FIXTURE);
 });
 
 test('concurrent appends do not interleave', async () => {

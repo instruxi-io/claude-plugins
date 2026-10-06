@@ -1,12 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
 import { redact } from '../../src/graph/redact.mjs';
 import { clipOutput } from '../../src/graph/clip.mjs';
-
-const LIB = fileURLToPath(new URL('../../lib/graph/lib.py', import.meta.url));
-const py = (code, input) => execFileSync('python3', ['-I', '-c', code, LIB], { input, encoding: 'utf8' });
 
 const check = (text, secret, kind) => {
   const [out, n] = redact(text);
@@ -50,24 +45,22 @@ const CORPUS = [
   'BASIC dXNlcjpwYXNz', 'xoxa-aaaaaaaaaa-bbbbbbbbbb', 'gho_' + 'q'.repeat(25) + ' trailing',
 ];
 
-test('redaction corpus identical in Python and Node', () => {
+test('redaction corpus: deterministic, idempotent, never leaks the long secrets', () => {
   assert.equal(CORPUS.length, 40);
-  const code = `import importlib.util,json,sys
-s=importlib.util.spec_from_file_location("graph_lib",sys.argv[1]);m=importlib.util.module_from_spec(s);s.loader.exec_module(m)
-print(json.dumps([list(m.redact(t)) for t in json.load(sys.stdin)]))`;
-  const want = JSON.parse(py(code, JSON.stringify(CORPUS)));
-  const got = CORPUS.map((t) => redact(t));
-  for (let i = 0; i < CORPUS.length; i++) assert.deepEqual(got[i], want[i], `corpus[${i}] ${JSON.stringify(CORPUS[i])}`);
+  for (const t of CORPUS) {
+    const [out, n] = redact(t);
+    assert.deepEqual(redact(t), [out, n], 'deterministic');
+    assert.equal(redact(out)[0], out, `idempotent: ${JSON.stringify(t)}`);
+  }
+  for (const secret of ['abcdef123456SECRET', 'dXNlcjpwYXNzd29yZA', 'AKIAIOSFODNN7EXAMPLE', 'MIIEabc', 's3cr3tvalue', 'hunter2']) {
+    for (const t of CORPUS.filter((c) => c.includes(secret))) assert.ok(!redact(t)[0].includes(secret), `${secret} leaked from ${JSON.stringify(t)}`);
+  }
 });
 
-test('clip keeps head and tail, same as python', () => {
+test('clip keeps head and tail, both ends', () => {
   const s = 'H'.repeat(3000) + 'M'.repeat(3000) + 'verdict: ok';
   const out = clipOutput(s);
   assert.equal(out.length, 4000);
   assert.ok(out.endsWith('verdict: ok'));
   assert.equal(clipOutput('short'), 'short');
-  const code = `import importlib.util,json,sys
-s=importlib.util.spec_from_file_location("graph_lib",sys.argv[1]);m=importlib.util.module_from_spec(s);s.loader.exec_module(m)
-print(json.dumps(m.clip_output(json.load(sys.stdin))))`;
-  assert.equal(JSON.parse(py(code, JSON.stringify(s))), out);
 });

@@ -12,7 +12,7 @@ export const GRAPH_TOOL = /^mcp__(plugin_enforcer_enforcer|enforcer|enforcer-gra
 const PRE_GRAPH = /^mcp__(plugin_enforcer_enforcer|enforcer|enforcer-graph)__graph_(next_work|report|remember|heartbeat)$/;
 const POST_GRAPH = /^mcp__(plugin_enforcer_enforcer|enforcer|enforcer-graph)__graph_(next_work|report|heartbeat)$/;
 
-// Same key as lib/graph/lib.py actor_key: sha256("agent_id:<id>")[:32] for a subagent, else session_id.
+// The actor key: sha256("agent_id:<id>")[:32] for a subagent, else session_id.
 export function actorKey(ev) {
   if (ev.agent_id) return process.getBuiltinModule('node:crypto').createHash('sha256').update(`agent_id:${ev.agent_id}`).digest('hex').slice(0, 32);
   return ev.session_id || 'unknown';

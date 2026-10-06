@@ -31,7 +31,6 @@ const SOURCES = [
   call('src/graph/hooks/session.mjs', 'graph', /\bpost\(cfg,\s*'(\w+)',\s*`([^`]+)`/g, 1, 2),
   call('src/graph/hooks/heartbeat.mjs', 'graph', /\bpost\(cfg,\s*'(\w+)',\s*`([^`]+)`/g, 1, 2),
   call('src/preflight.mjs', 'graph', /\bget\(base,\s*`([^`]+)`/g, 'GET', 1),
-  call('bin/graph-dispatch', 'graph', /self\.call\("(\w+)",\s*"([^"]+)"/g, 1, 2),
   call('bin/files.mjs', 'files', /\bcall\(fetchImpl, base, [`']([^`']+)[`']/g, 'scan', 1, '/storage'),
   call('bin/login.mjs', 'enforcer', /\$\{base\}\$\{API\}(\/[^`]*)`/g, 'scan', 1),
   call('bin/enforcer-workspace.mjs', 'enforcer', /\$\{base\}\$\{API\}(\/[^`]*)`/g, 'scan', 1),

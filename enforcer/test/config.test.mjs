@@ -50,11 +50,6 @@ test('bad GRAPH_HOOK_TIMEOUT is a named error, not a silent disable', () => {
     assert.throws(() => resolveConfig({ env: { GRAPH_HOOK_TIMEOUT: bad }, saved: null }), /GRAPH_HOOK_TIMEOUT/);
   }
   assert.equal(validateEnv({ GRAPH_HOOK_TIMEOUT: '2.5' }).length, 0);
-  // the Python hooks name it too, on stderr, and keep the default
-  const py = spawnSync('python3', ['-c', 'import sys; sys.path.insert(0, "lib/graph"); import lib; print(lib.HTTP_TIMEOUT)'],
-    { cwd: ROOT, encoding: 'utf8', env: { ...process.env, GRAPH_HOOK_TIMEOUT: 'abc' } });
-  assert.match(py.stderr, /GRAPH_HOOK_TIMEOUT: must be a number/);
-  assert.equal(py.stdout.trim(), '1.5');
 });
 
 test('every variable has a named check, a default, and a row in docs/CONFIG.md', () => {
@@ -90,7 +85,6 @@ test('with ENFORCER_BASE_URL set no component contacts api.instruxi.dev', async 
     ...process.env, HOME: home, ENFORCER_HOME: join(home, '.enforcer'), GOVERNOR_HOME: join(home, '.g'),
     ENFORCER_BASE_URL: base, ENFORCER_API_KEY: 'good', ENFORCER_STATE_DIR: join(tmp, 'state'),
     NOPROD_LOG: log, NODE_OPTIONS: `--import ${join(ROOT, 'test/fixtures/noprod/guard.mjs')}`,
-    PYTHONPATH: join(ROOT, 'test/fixtures/noprod'),
   };
   delete env.GRAPH_BASE_URL; delete env.CLAUDE_PLUGIN_DATA;
   // Async: the stub lives in this process, so a blocking spawn would deadlock it.
@@ -116,19 +110,7 @@ test('with ENFORCER_BASE_URL set no component contacts api.instruxi.dev', async 
   assert.ok(hit(m), 'doctor hit the stub');
 
   m = mark();
-  const hb = await run('python3', ['-c', `
-import sys, json
-sys.path.insert(0, "lib/graph")
-import lib, heartbeat
-lib.find_config = lambda cwd: {"base_url": ${JSON.stringify(base)}, "graph_id": "g1", "api_key": "good"}
-run = {"graph_id": "g1", "node_id": "n1", "run_id": "r1", "key": "k"}
-print(heartbeat.beat({}, run, "s", 10**9))
-`]);
-  assert.match(hb.stdout, /ok/, hb.stdout + hb.stderr);
-  assert.ok(hit(m), 'hook heartbeat hit the stub');
-
-  m = mark();
-  const dp = await run('python3', ['bin/graph-dispatch', '--graph', 'g1', '--dry-run', '--exit-when-idle', '--no-lease', '--workers', '1', '--repo-root', tmp, '--state-dir', join(tmp, 'ds')], { GRAPH_API_KEY: 'good', GRAPH_AUTH_HELPER: '' });
+  const dp = await run('node', ['bin/enforcer', 'dispatch', 'run', '--graph', 'g1', '--dry-run', '--exit-when-idle', '--no-lease', '--workers', '1', '--repo-root', tmp, '--state-dir', join(tmp, 'ds')], { GRAPH_API_KEY: 'good', GRAPH_AUTH_HELPER: '' });
   assert.ok(hit(m), 'dispatcher dry-run hit the stub: ' + dp.stdout + dp.stderr);
   assert.ok(seen.slice(m).every((l) => l.includes('/api/v1/graph/')), seen.slice(m).join('\n'));
 

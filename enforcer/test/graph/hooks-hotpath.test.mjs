@@ -12,88 +12,15 @@ import { heartbeat } from '../../src/graph/hooks/heartbeat.mjs';
 import { saveRun, loadRun } from '../../src/graph/run.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const LIB = join(here, '../../lib/graph');
 const CLI = join(here, '../../bin/enforcer');
 const NEXT = 'mcp__plugin_enforcer_enforcer__graph_next_work';
 const REPORT = 'mcp__plugin_enforcer_enforcer__graph_report';
 const claimResp = { state: 'claimed', graph_id: 'g1', node: { node_id: 'n1', key: 'k', title: 'T' }, run: { run_id: 'r1', lease_expires_at: '2026-01-01T00:05:00Z' }, acceptance_evidence: [{ criterion: 1, kind: 'check' }, 'junk'] };
-
-const EVENTS = [
-  { hook_event_name: 'PostToolUse', session_id: 's1', tool_name: 'Bash', tool_input: { command: 'ls' }, tool_response: { stdout: 'early' } }, // no run yet
-  { hook_event_name: 'PostToolUse', session_id: 's1', tool_name: NEXT, tool_response: [{ type: 'text', text: JSON.stringify(claimResp) }] },
-  { hook_event_name: 'PostToolUse', session_id: 's1', tool_name: 'Bash', tool_input: { command: 'npm test' }, tool_response: { stdout: 'ok ✓ 日本語', stderr: 'warn', interrupted: false } },
-  { hook_event_name: 'PostToolUse', session_id: 's1', tool_name: 'Bash', tool_input: { command: 'FOO_TOKEN=abcdef12345 gh pr view 5' }, tool_response: { stdout: 'https://github.com/o/r/pull/5\nhttps://github.com/o/r/pull/5' } },
-  { hook_event_name: 'PostToolUse', session_id: 's1', tool_name: 'Bash', tool_input: { command: 'x' }, tool_response: 'Error: Exit code 2\nboom' },
-  { hook_event_name: 'PostToolUseFailure', session_id: 's1', tool_name: 'Bash', tool_input: { command: 'false' }, error: 'Exit code 1\nnope' },
-  { hook_event_name: 'PostToolUseFailure', session_id: 's1', tool_name: 'Bash', tool_input: { command: 'sleep 9' }, error: 'killed', is_interrupt: true },
-  { hook_event_name: 'PostToolUse', session_id: 's1', tool_name: 'Write', tool_input: { file_path: '/t/a', content: 'é'.repeat(700) }, tool_response: {} },
-  { hook_event_name: 'PostToolUse', session_id: 's1', tool_name: 'MultiEdit', tool_input: { file_path: '/t/b', edits: [{ new_string: 'a' }, { new_string: 'b' }, 3] }, tool_response: {} },
-  { hook_event_name: 'PostToolUse', session_id: 's1', tool_name: 'Read', tool_input: { file_path: '/t/c' }, tool_response: {} },
-  { hook_event_name: 'PostToolUse', session_id: 's1', tool_name: 'mcp__other__thing', tool_input: {}, tool_response: {} },
-  { hook_event_name: 'PostToolUse', session_id: 's1', agent_id: 'ag', tool_name: NEXT, tool_response: JSON.stringify(claimResp) },
-  { hook_event_name: 'PostToolUse', session_id: 's1', agent_id: 'ag', tool_name: 'Bash', tool_input: { command: 'echo sub' }, tool_response: { stdout: 'sub' } },
-  { hook_event_name: 'PostToolUse', session_id: 's1', tool_name: 'mcp__plugin_enforcer_enforcer__graph_heartbeat', tool_response: { state: 'reclaimed' } },
-  { hook_event_name: 'PostToolUse', session_id: 's1', tool_name: 'Bash', tool_input: { command: 'after' }, tool_response: { stdout: 'a' } },
-  { hook_event_name: 'PostToolUse', session_id: 's1', agent_id: 'ag', tool_name: REPORT, tool_response: '{}' },
-  { hook_event_name: 'PostToolUse', session_id: 's1', tool_name: NEXT, tool_response: JSON.stringify(claimResp) },
-  { hook_event_name: 'PostToolUse', session_id: 's1', tool_name: 'Bash', tool_input: { command: 'npm test' }, tool_response: { stdout: 'final' } },
-];
-const GARBAGE = ['', 'not json', '[1,2]', 'null', '{"tool_name": 5}'];
-
-const tree = (root) => {
-  const out = {};
-  const walk = (d, rel) => {
-    for (const n of readdirSync(d, { withFileTypes: true })) {
-      const p = join(d, n.name);
-      if (n.isDirectory()) walk(p, `${rel}${n.name}/`);
-      else if (!n.name.endsWith('.lock') && !rel.startsWith('attest/') && !n.name.startsWith('attest')) {
-        const txt = readFileSync(p, 'utf8');
-        out[rel + n.name] = n.name.endsWith('.json') ? JSON.parse(txt, (k, v) => (k === 'claimed_at' ? 'T' : v)) : txt;
-      }
-    }
-  };
-  if (existsSync(root)) walk(root, '');
-  return out;
-};
 const cleanEnv = (state, home) => {
   const e = { ...process.env, ENFORCER_STATE_DIR: state, HOME: home, ENFORCER_HOME: join(home, '.enforcer'), GRAPH_HEARTBEAT_MIN_GAP: '20' };
   for (const k of ['GRAPH_ID', 'GRAPH_BASE_URL', 'ENFORCER_BASE_URL', 'GRAPH_API_KEY', 'ENFORCER_API_KEY', 'CLAUDE_PLUGIN_DATA']) delete e[k];
   return e;
 };
-
-test('identical output to python for the fixture events', async () => {
-  const root = mkdtempSync(join(tmpdir(), 'hotpath-'));
-  const home = join(root, 'home'); mkdirSync(home);
-  const pyState = join(root, 'py'), nodeState = join(root, 'node');
-  const pyEnv = cleanEnv(pyState, home);
-  const pyOut = [];
-  for (const raw of [...EVENTS.map((e) => JSON.stringify(e)), ...GARBAGE]) {
-    let line = '';
-    for (const h of ['track_run', 'capture_evidence', 'heartbeat']) {
-      const r = spawnSync('python3', ['-I', join(LIB, `${h}.py`)], { input: raw, env: pyEnv, cwd: root, encoding: 'utf8' });
-      assert.equal(r.status, 0);
-      line += r.stdout;
-    }
-    pyOut.push(line);
-  }
-  const saved = { ...process.env };
-  Object.assign(process.env, cleanEnv(nodeState, home));
-  const nodeOut = [];
-  try {
-    for (const raw of [...EVENTS.map((e) => JSON.stringify(e)), ...GARBAGE]) {
-      let ev = {}; try { ev = JSON.parse(raw || '{}') || {}; } catch {}
-      if (!ev || typeof ev !== 'object' || Array.isArray(ev)) ev = {};
-      let line = '';
-      for (const h of [trackRun, captureEvidence, heartbeat]) { const r = await h(ev); if (r) line += JSON.stringify(r) + '\n'; }
-      nodeOut.push(line);
-    }
-  } finally { for (const k of Object.keys(process.env)) if (!(k in saved)) delete process.env[k]; Object.assign(process.env, saved); }
-  assert.deepEqual(nodeOut, pyOut);
-  const a = tree(pyState), b = tree(nodeState);
-  assert.ok(Object.keys(a).some((k) => k.endsWith('.jsonl')), 'evidence was written');
-  assert.deepEqual(Object.keys(b).sort(), Object.keys(a).sort());
-  for (const k of Object.keys(a)) assert.deepEqual(b[k], a[k], k);
-});
 
 test('graph-live PostToolUse spawns no python3', () => {
   const root = mkdtempSync(join(tmpdir(), 'nopy-'));

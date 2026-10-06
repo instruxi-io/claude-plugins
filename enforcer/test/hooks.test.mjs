@@ -1,6 +1,6 @@
 // The node gate (bin/enforcer graphContextLive) keys by actor and never gates graph_* handlers.
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, existsSync, readdirSync } from 'node:fs';
+import { mkdtempSync, existsSync, readdirSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
@@ -8,7 +8,6 @@ import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 const root = fileURLToPath(new URL('..', import.meta.url));
 const cli = join(root, 'bin/enforcer');
-const lib = join(root, 'lib/graph');
 const base = mkdtempSync(join(tmpdir(), 'hooks-gate-'));
 const data = join(base, 'data');
 const cwd = mkdtempSync(join(tmpdir(), 'nocfg-')); // no .enforcer above it (tmpdir)
@@ -19,8 +18,8 @@ const hook = (event, handler, ev) => spawnSync(process.execPath, [cli, 'hook', e
 // subagent: run under sha256(agent_id), no project config
 const aid = 'agent-xyz';
 const key = createHash('sha256').update(`agent_id:${aid}`).digest('hex').slice(0, 32);
-const py = (code) => spawnSync('python3', ['-c', `import sys;sys.path.insert(0,${JSON.stringify(lib)});import lib;${code}`], { env, encoding: 'utf8' });
-assert.equal(py(`lib.save_run(${JSON.stringify(key)},{"run_id":"r1","node_id":"n","graph_id":"g"})`).status, 0);
+mkdirSync(join(data, 'runs'), { recursive: true });
+writeFileSync(join(data, 'runs', `${key}.json`), JSON.stringify({ run_id: 'r1', node_id: 'n', graph_id: 'g' }));
 const r = hook('post-tool-use', 'capture-evidence', { session_id: 's1', agent_id: aid, cwd, tool_name: 'Bash', tool_input: { command: 'echo hi' }, tool_response: { stdout: 'hi' } });
 assert.equal(r.status, 0, r.stderr);
 assert.ok(existsSync(join(data, 'evidence', `${key}.jsonl`)), 'capture_evidence ran for the subagent');

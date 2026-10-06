@@ -1,4 +1,4 @@
-// SessionStart, PreCompact, Stop/SubagentStop (ports of session_start.py, remember_on_compact.py, open_run_guard.py).
+// SessionStart, PreCompact, Stop/SubagentStop.
 // Each returns a hook answer or null and never throws.
 import { readFileSync } from 'node:fs';
 import { join, normalize, sep } from 'node:path';

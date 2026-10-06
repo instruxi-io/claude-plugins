@@ -21,8 +21,8 @@ echo "\$ claude plugin list"; claude plugin list 2>&1 | grep -A4 "❯"
 # (as do /reload-plugins and the marketplace's auto-update, per the docs).
 echo "\$ claude plugin install enforcer@instruxi"; claude plugin install enforcer@instruxi 2>&1 | tail -1
 echo "\$ claude plugin list"; claude plugin list 2>&1 | grep -A4 "❯"
-python3 -c "
-import json,os;p=os.path.join(os.environ['CLAUDE_CONFIG_DIR'],'settings.json');d=json.load(open(p))
-d.setdefault('enabledPlugins',{})['enforcer-graph@instruxi']=False;json.dump(d,open(p,'w'),indent=2)"
+node -e "
+const fs=require('fs'),p=require('path').join(process.env.CLAUDE_CONFIG_DIR,'settings.json');const d=JSON.parse(fs.readFileSync(p,'utf8'));
+(d.enabledPlugins??={})['enforcer-graph@instruxi']=false;fs.writeFileSync(p,JSON.stringify(d,null,2))"
 echo "# enforcer-graph@instruxi set to false by hand in settings.json"
 echo "\$ claude plugin list"; claude plugin list 2>&1 | grep -A4 "❯"

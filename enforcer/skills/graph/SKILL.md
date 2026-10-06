@@ -352,7 +352,7 @@ cold:
   files the worker reads before editing, nothing else. A pointer to a document
   over 30 KB is banned, even as one of the five: extract the part the node needs
   into the description, or point at a per-repo `docs/WORKER_BRIEF.md` instead.
-  The plugin's `test/check_skill.py plan` rejects a sample plan that breaks these.
+  The plugin's `test/skill.test.mjs` (the plan check) rejects a sample plan that breaks these.
 - **`scout` nodes write the repo brief.** For a repo that has no
   `docs/WORKER_BRIEF.md`, add one node of `type: scout` (with `data.repo`)
   before the repo's code nodes, and make them depend on it. Its job is to write

@@ -1,6 +1,6 @@
 export const OUTPUT_CLIP = 4000;
 
-/** Clip to n characters keeping both ends (the verdict line is last). Same as lib.py clip_output. */
+/** Clip to n characters keeping both ends (the verdict line is last). */
 export function clipOutput(s, n = OUTPUT_CLIP, headShare = 0.3) {
   if (s.length <= n) return s;
   const head = Math.floor(n * headShare);

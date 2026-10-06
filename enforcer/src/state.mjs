@@ -1,7 +1,7 @@
 // Where session state (graph runs, captured evidence) lives:
 //   $ENFORCER_STATE_DIR, else the directory the harness hands the plugin,
 //   else ~/.config/enforcer/sessions/<harness>   (harness: $ENFORCER_HARNESS, default claude)
-// The Python hooks compute the same path (lib/graph/lib.py state_base).
+// The graph hooks (src/graph/*) use the same path.
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { migrateDir } from '../lib/governor/core/migrate.mjs';

@@ -1,4 +1,4 @@
-// PostToolUse: extend the lease when a third of it is spent (port of heartbeat.py). Returns a hook answer or null.
+// PostToolUse: extend the lease when a third of it is spent. Returns a hook answer or null.
 import { notice, warningNotices } from '../../errors.mjs';
 import { actorKey } from '../state.mjs';
 import { loadRun, saveRun, clearRun } from '../run.mjs';

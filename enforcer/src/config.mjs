@@ -1,6 +1,6 @@
 // The one config resolver. Every component that needs to know which Enforcer
-// server it talks to, or where state lives, asks here (the Python hooks and
-// graph-dispatch implement the same precedence; docs/CONFIG.md is the contract).
+// server it talks to, or where state lives, asks here (the hooks and the dispatcher
+// call it; docs/CONFIG.md is the contract).
 //
 // Base URL precedence, highest first:
 //   1. an explicit flag (--base-url)

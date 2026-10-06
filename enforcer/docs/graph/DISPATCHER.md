@@ -1,20 +1,20 @@
-# graph-dispatch flag reference
+# Dispatcher flag reference
 
 Moved from README.md. For the one-command front door see "Dispatch a plan" there.
 
-## bin/graph-dispatch: keep N workers busy, with no model in the loop
+## enforcer dispatch: keep N workers busy, with no model in the loop
 
 ```bash
 GRAPH_AUTH_HELPER='node ~/.claude/plugins/cache/instruxi/enforcer/0.4.0/bin/enforcer-headers.mjs' \
-  enforcer/bin/graph-dispatch --graph <id> [--workers 3] [--repo-root ~/apps] [--dry-run]
+  enforcer dispatch run --graph <id> [--workers 3] [--repo-root ~/apps] [--dry-run]
 ```
 
-A python loop (stdlib only) that reads the frontier every `--interval` seconds
+A Node loop (`src/dispatch/run.mjs`, no dependencies) that reads the frontier every `--interval` seconds
 and, for each ready node, up to `--workers` at once:
 
 - **One dispatcher per graph.** The running dispatcher holds a lease,
   `data.dispatcher {owner, host, pid, until}` on the graph's `dispatcher-lease`
-  node, renewed each pass. A second `graph-dispatch` on the same graph exits (3)
+  node, renewed each pass. A second dispatcher on the same graph exits (3)
   with a message unless `--takeover`. Graph and GitHub calls retry transient
   network errors (DNS blips, resets, 429/502/503/504) with backoff, 4 tries, and
   a pass that still fails is skipped, never fatal. A failed node is triaged only
@@ -135,9 +135,9 @@ A repo may not work off origin's default branch (`enforcer-v3-portal` works off 
 
 The worktree, the commits-ahead count and the PR base all use the resolved base, and the launch line logs `base=<ref>`. A declared base (steps 1 to 3) that does not exist on origin is refused with `refuse <key>: base origin/<b> (from <source>) does not exist on origin`; the node is not launched.
 
-### Pruning worktrees safely (`graph-dispatch prune`)
+### Pruning worktrees safely
 
-`graph-dispatch prune [--repo-root DIR] [--yes]` looks at every `<repo>-<key>` worktree (branch `graph/<key>`) under the repo root. It removes one only when (a) its tree is clean and (b) its branch head is an ancestor of origin's default branch (or the repo's registered base), or its PR is MERGED (`gh`). Everything else is kept and listed under `Review N branches` with the reason: `uncommitted changes`, `unmerged commits` or `open PR`. Without `--yes` it is a dry run and prints `would remove ...`.
+The pruning logic (`src/dispatch/prune.mjs`; the old `graph-dispatch prune` command went with the Python dispatcher and has no CLI front end yet) looks at every `<repo>-<key>` worktree (branch `graph/<key>`) under the repo root. It removes one only when (a) its tree is clean and (b) its branch head is an ancestor of origin's default branch (or the repo's registered base), or its PR is MERGED (`gh`). Everything else is kept and listed under `Review N branches` with the reason: `uncommitted changes`, `unmerged commits` or `open PR`. Without `--yes` it is a dry run and prints `would remove ...`.
 
 ### Per-repo worktree setup (`.worktreeinclude`, `.worktreeshare`)
 

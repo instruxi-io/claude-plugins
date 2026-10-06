@@ -1,4 +1,4 @@
-// PostToolUse on the graph MCP tools: records the run a session holds (port of track_run.py).
+// PostToolUse on the graph MCP tools: records the run a session holds.
 import { rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { actorKey, dataDir, privateWrite } from '../state.mjs';

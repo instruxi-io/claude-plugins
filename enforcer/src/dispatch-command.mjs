@@ -1,4 +1,4 @@
-// `enforcer dispatch <graph>|status|stop|--help`: the plain front door to bin/graph-dispatch.
+// `enforcer dispatch <graph>|status|stop|--help`: the plain front door to the Node dispatcher (src/dispatch/run.mjs).
 // Outcome words: done, needs you, landing blocked, blocked on CI, over budget. Never "failed" for merged work.
 import { spawn } from 'node:child_process';
 import { existsSync, readdirSync, mkdirSync, openSync, readFileSync, writeFileSync, rmSync } from 'node:fs';

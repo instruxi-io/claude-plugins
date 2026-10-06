@@ -26,13 +26,6 @@
     "expires": "2026-11-15",
     "reason": "Runtime suite fails on macOS on the same temp dir realpath difference; first matrix run, 2026-10-06."
   },
-  {
-    "suite": "python lib/graph",
-    "os": ["darwin"],
-    "owner": "austin@instruxi.io",
-    "expires": "2026-11-15",
-    "reason": "test_capture's concurrent-append case cannot find its evidence file under the macOS temp dir; the python library is scheduled for removal (remove-python)."
-  },
   { "suite": "api-gen", "os": ["win32"], "owner": "austin@instruxi.io", "expires": "2026-11-15", "reason": "Windows: first matrix run 2026-10-06 (node windows-suite-portability holds the fix)." },
   { "suite": "api-lock", "os": ["win32"], "owner": "austin@instruxi.io", "expires": "2026-11-15", "reason": "Windows: first matrix run 2026-10-06 (node windows-suite-portability)." },
   { "suite": "bundle", "os": ["win32"], "owner": "austin@instruxi.io", "expires": "2026-11-15", "reason": "Windows: src/bundle.mjs shells out to tar with a C: path, which tar reads as a remote host ('Cannot connect to C: resolve failed'). Real product bug (node windows-suite-portability)." },

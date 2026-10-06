@@ -1,6 +1,6 @@
 // The dispatcher runtime: one pass (tick), reaping, the lease, pids.json, usage-limit and CI holds,
-// SIGTERM/SIGINT drain, and `main` (the `enforcer dispatch` entry). Ported from bin/graph-dispatch.
-// Not ported here yet (still in bin/graph-dispatch): warm sessions, salvage, landing-blocked, triage launches.
+// SIGTERM/SIGINT drain, and `main` (the `enforcer dispatch` entry).
+// Warm sessions, salvage, landing-blocked and triage launches live in the sibling modules.
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, rmSync, appendFileSync } from 'node:fs';
 import { hostname, homedir } from 'node:os';
 import { join } from 'node:path';

@@ -1,4 +1,4 @@
-// Version drift report for SessionStart (port of version_check.py): one line per mismatch, nothing when aligned.
+// Version drift report for SessionStart: one line per mismatch, nothing when aligned.
 //  * installed copies of an Instruxi plugin older than the marketplace manifest's version;
 //  * tools the MCP server serves (GET /api/v1/mcp/health) that the LOCKED manifest (lib/api/spec/mcp-manifest.json) lacks;
 //  * the workspace the stored sign-in is bound to (JWT claims, no call).

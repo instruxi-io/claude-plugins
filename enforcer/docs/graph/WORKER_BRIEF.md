@@ -10,9 +10,8 @@ Scope: the graph worker inside the `enforcer` plugin (skill, hooks, agent, dispa
 - `agents/graph-worker.md`: one-node worker, reads CLAUDE.md and this brief.
 - `hooks/hooks.json`: wiring. Every event runs `node ${CLAUDE_PLUGIN_ROOT}/bin/enforcer event <name>` (`src/event.mjs`).
 - `src/graph/hooks/`: the hook handlers (`attach`, `capture`, `heartbeat`, `session`, `track-run`, `version-check`, shared `common`). `src/graph/`: run file, state, http, redact, clip, evidence.
-- `lib/graph/`: the python helpers the Node hooks mirror, with their `test_*.py`.
-- `bin/land-pr.sh`: lands one PR, no model. `bin/graph-dispatch` and `src/dispatch/*.mjs`: keep N headless workers busy.
-- `test/graph/*.test.mjs` (hooks against `test/graph/stub-graph.mjs`, a local fake API), `test/dispatch/`, `test/test_dispatch.py`, `test/check_skill.py`.
+- `bin/land-pr.sh`: lands one PR, no model. `src/dispatch/*.mjs` (`enforcer dispatch`): keep N headless workers busy.
+- `test/graph/*.test.mjs` (hooks against `test/graph/stub-graph.mjs`, a local fake API), `test/dispatch/`, `test/skill.test.mjs`.
 - `docs/graph/settings.example.json`: allowlist forms. `docs/graph/README.md`: user docs; `DISPATCHER.md`: dispatcher flags.
 - Run state: `$ENFORCER_STATE_DIR`, else the harness plugin data dir, else `~/.config/enforcer/sessions/<harness>` (`src/state.mjs`); `runs/<session>.json` and `evidence/<session>.jsonl` under it.
 - Project config: `.enforcer/graph.json`, found by walking up from the cwd.
@@ -49,9 +48,9 @@ A change under `enforcer/` needs a `changes/<slug>.md` fragment (one line) or a 
 - A matcher or event: `hooks/hooks.json`, `src/event.mjs`. Run-file shape: `src/graph/run.mjs`.
 - Evidence rules: `docs/graph/README.md` ("A claimed pull request is resolved, not trusted"), then `src/graph/hooks/attach.mjs`.
 - Dispatcher selection/model/tier rules: `src/dispatch/select.mjs`, `src/dispatch/model.mjs`.
-- Plan-writing rules a test asserts: SKILL.md "Writing a plan" and `test/check_skill.py`.
+- Plan-writing rules a test asserts: SKILL.md "Writing a plan" and `test/skill.test.mjs`.
 - Adding a hook test: a `test('label', ...)` in the matching `test/graph/*.test.mjs`.
 
 ## 5. Never read whole
 
-`grep -n '^#'` then a range for `skills/graph/SKILL.md` and `docs/graph/README.md`; grep the function in `src/graph/` and `bin/graph-dispatch`.
+`grep -n '^#'` then a range for `skills/graph/SKILL.md` and `docs/graph/README.md`; grep the function in `src/graph/` and `src/dispatch/`.

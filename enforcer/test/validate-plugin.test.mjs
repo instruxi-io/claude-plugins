@@ -114,7 +114,7 @@ assert.deepEqual(kit.plugins.filter((p) => p.default).map((p) => p.id), ['enforc
 console.log('ok   kit defaults: only enforcer and jev-hooks are selectable, only enforcer default');
 
 // no suite reads the real home directory: every node suite runs under the isolating preload,
-// python suites under test/isolated.sh, and none asks the OS for the home itself.
+// and none asks the OS for the home itself.
 {
   const dirs = [['test', 'package.json'], ['lib/governor/test', 'lib/governor/package.json']];
   for (const [d, pj] of dirs) {
@@ -132,10 +132,8 @@ console.log('ok   kit defaults: only enforcer and jev-hooks are selectable, only
   }
   const top = readFileSync(new URL('./run-suites.mjs', import.meta.url), 'utf8');
   assert.equal(rd('package.json').scripts.test, 'node test/run-suites.mjs');
-  assert.match(top, /isolatedPy\('-m', 'unittest', 'discover', 'test'\)/);
-  assert.match(top, /isolatedPy\('-m', 'unittest', 'discover', '-s', 'lib\/graph'/);
-  for (const d of ['test', 'lib/governor/test', 'lib/graph']) {
-    for (const f of readdirSync(new URL(`../${d}`, import.meta.url)).filter((n) => /(\.test\.mjs|^test_.*\.py)$/.test(n))) {
+  for (const d of ['test', 'lib/governor/test']) {
+    for (const f of readdirSync(new URL(`../${d}`, import.meta.url)).filter((n) => /\.test\.mjs$/.test(n))) {
       const src = readFileSync(new URL(`../${d}/${f}`, import.meta.url), 'utf8');
       assert.ok(!/os\.homedir\(\)|\bhomedir\(\)|expanduser\(|Path\.home\(\)/.test(src), `${d}/${f} reads the real home directory`);
     }

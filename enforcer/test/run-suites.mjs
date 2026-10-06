@@ -8,7 +8,6 @@ import { fileURLToPath } from 'node:url';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const node = (file, ...rest) => ({ cmd: process.execPath, args: ['--import', './test/tmp-cleanup.mjs', file, ...rest] });
 const nodeTest = (...files) => ({ cmd: process.execPath, args: ['--test', ...files] });
-const isolatedPy = (...args) => ({ cmd: 'bash', args: ['test/isolated.sh', 'python3', ...args] });
 
 // every top-level test/*.test.mjs runs under the isolating preload, discovered so a new suite never needs a list edit
 const top = readdirSync(join(ROOT, 'test')).filter((n) => n.endsWith('.test.mjs')).sort().map((n) => [n.replace('.test.mjs', ''), node(`test/${n}`)]);
@@ -26,13 +25,11 @@ const SUITES = [
   ['dispatch/logs', nodeTest('test/dispatch/logs.test.mjs')],
   ['dispatch/status', nodeTest('test/dispatch/status.test.mjs')],
   ['dispatch/salvage', nodeTest('test/dispatch/salvage.test.mjs')],
-  ['python test/', isolatedPy('-m', 'unittest', 'discover', 'test')],
-  ['python lib/graph', isolatedPy('-m', 'unittest', 'discover', '-s', 'lib/graph', '-p', 'test_*.py')],
 ];
 
-// Per-platform profile: on Windows only hooks and CLIs run; the dispatcher, governor and python suites are skipped with a reason.
-const WIN_SKIP = /^(dispatch\/|governor|python |graph \()/;
-const skipReason = (name) => (process.platform === 'win32' && WIN_SKIP.test(name) ? 'dispatcher/governor/python suites are not supported on Windows (hooks and CLIs only)' : null);
+// Per-platform profile: on Windows only hooks and CLIs run; the dispatcher and governor suites are skipped with a reason.
+const WIN_SKIP = /^(dispatch\/|governor|graph \()/;
+const skipReason = (name) => (process.platform === 'win32' && WIN_SKIP.test(name) ? 'dispatcher/governor suites are not supported on Windows (hooks and CLIs only)' : null);
 // test/quarantine.json: [{suite, owner, expires: YYYY-MM-DD, reason, os?}]. A quarantined suite still runs; its failure is
 // reported as skipped, not red, until the expiry date, after which it fails the run again. An optional `os` list
 // (process.platform values: darwin, win32, linux) scopes the entry, so a suite red only on macOS stays a gate on Linux.

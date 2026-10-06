@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { headers, allNodes } from './preflight.mjs';
 import { resolveConfig } from './config.mjs';
 
-const RUNNABLE = new Set(['node', 'python3', 'bash', 'sh', 'grep', 'ls', 'npm', 'cat', 'test', 'wc', 'head', 'tail']);
+const RUNNABLE = new Set(['node', 'bash', 'sh', 'grep', 'ls', 'npm', 'cat', 'test', 'wc', 'head', 'tail']);
 const CLOSED = new Set(['done', 'cancelled', 'succeeded']);
 
 /** "<command> prints|exits ... <quoted literal>" -> {cmd, exit, literals} or null. */
