@@ -2,7 +2,7 @@
 // Credential metadata only (base, key id, scopes, expiry); every text is redacted, and any
 // literal secret value found in the credential document is scrubbed as well.
 import { mkdirSync, mkdtempSync, writeFileSync, readFileSync, readdirSync, statSync, existsSync, rmSync, chmodSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, basename, dirname } from 'node:path';
 import { tmpdir, platform, arch, release } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
@@ -87,7 +87,8 @@ export async function writeBundle(opts = {}) {
     writeFileSync(join(dir, 'MANIFEST.json'), JSON.stringify({ created: new Date().toISOString(), sections: SECTIONS, files: Object.keys(files) }, null, 2) + '\n');
     const out = join(stateBase(), 'bundles'); mkdirSync(out, { recursive: true, mode: 0o700 });
     const path = join(out, `enforcer-bundle-${new Date().toISOString().replace(/[:.]/g, '-')}.tar.gz`);
-    const r = spawnSync('tar', ['-czf', path, '-C', stage, 'enforcer-bundle'], { encoding: 'utf8' });
+    // run in the output dir with a relative archive name: GNU tar reads a `C:\...` archive path as a remote host
+    const r = spawnSync('tar', ['-czf', basename(path), '-C', stage, 'enforcer-bundle'], { encoding: 'utf8', cwd: dirname(path) });
     if (r.status !== 0) throw new Error(`tar failed: ${r.stderr || r.error?.message}`);
     try { chmodSync(path, 0o600); } catch {}
     return { path, size: statSync(path).size, sections: SECTIONS };

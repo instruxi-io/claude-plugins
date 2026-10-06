@@ -7,6 +7,7 @@ import http from 'node:http';
 import { mkdtempSync, writeFileSync, mkdirSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { fileURLToPath } from 'node:url';
 import { spawn, spawnSync } from 'node:child_process';
 import { resolveConfig, validateEnv, deriveUrls, VARS, ConfigError, DEFAULT_BASE_URL } from '../src/config.mjs';
@@ -36,7 +37,7 @@ test('one base derives the MCP, graph, files and governance URLs', () => {
 test('state dir and harness resolve from env, then defaults', () => {
   const c = resolveConfig({ env: { HOME: '/h', ENFORCER_HARNESS: 'codex' }, saved: null });
   assert.equal(c.harness, 'codex');
-  assert.equal(c.stateDir, '/h/.config/enforcer/sessions/codex');
+  assert.equal(c.stateDir.replaceAll('\\', '/'), '/h/.config/enforcer/sessions/codex');
   assert.equal(resolveConfig({ env: { ENFORCER_STATE_DIR: '/s' }, saved: null }).stateDir, '/s');
 });
 
@@ -84,7 +85,7 @@ test('with ENFORCER_BASE_URL set no component contacts api.instruxi.dev', async 
   const env = {
     ...process.env, HOME: home, ENFORCER_HOME: join(home, '.enforcer'), GOVERNOR_HOME: join(home, '.g'),
     ENFORCER_BASE_URL: base, ENFORCER_API_KEY: 'good', ENFORCER_STATE_DIR: join(tmp, 'state'),
-    NOPROD_LOG: log, NODE_OPTIONS: `--import ${join(ROOT, 'test/fixtures/noprod/guard.mjs')}`,
+    NOPROD_LOG: log, NODE_OPTIONS: `--import ${pathToFileURL(join(ROOT, 'test/fixtures/noprod/guard.mjs')).href}`,
   };
   delete env.GRAPH_BASE_URL; delete env.CLAUDE_PLUGIN_DATA;
   // Async: the stub lives in this process, so a blocking spawn would deadlock it.

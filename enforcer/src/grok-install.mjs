@@ -82,7 +82,9 @@ function hooksJson(stable) {
   const j = JSON.parse(rd('harness/grok/hooks/enforcer.json'));
   for (const [ev, groups] of Object.entries(j.hooks)) for (const g of groups) for (const h of g.hooks) h.timeout = TIMEOUTS[ev] ?? DEFAULT_TIMEOUT;
   j.hooks.SessionStart.push({ hooks: [{ type: 'command', command: 'node "__ENFORCER_ROOT__/hooks/grok/version-check.mjs"', timeout: 5 }] });
-  return JSON.stringify(j, null, 2).replaceAll('__ENFORCER_ROOT__', stable) + '\n';
+  // a Windows path carries backslashes: splice it in JSON-escaped, never raw
+  const esc = JSON.stringify(stable).slice(1, -1);
+  return JSON.stringify(j, null, 2).replaceAll('__ENFORCER_ROOT__', () => esc) + '\n';
 }
 
 export function plan(home = homedir()) {

@@ -1,0 +1,5 @@
+# Checkouts are LF on every OS: specs are hashed and frontmatter is matched on \n.
+* text=auto eol=lf
+*.png binary
+*.pdf binary
+*.gz binary
