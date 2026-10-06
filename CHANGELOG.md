@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+Changes since 1.0.5, promoted to a numbered heading by the release node.
+
 ## 1.0.5
 
 Governor gate:
@@ -17,6 +21,18 @@ Other:
 ## 1.0.4
 
 - The governor announces itself: SessionStart (Claude, Codex, Grok shims and `bin/enforcer hook session-start`) sets `ENFORCER_GOVERNOR=1`.
+
+## 1.0.3
+
+- Governor: the secrets rule asks about credential-file access, not mentions (#64).
+
+## 1.0.2
+
+- graph-dispatch passes each plugin name once to a worker (#63); per-repo start-from base, missing base refused (#62).
+
+## 1.0.1
+
+- graph-dispatch: the worker agent is `enforcer:graph-worker` since the fold-in (#61); presets request `enforcer:workspace.write`, a 403 on switch names the scope and the re-login line (#60).
 
 ## 1.0.0 — enforcer
 

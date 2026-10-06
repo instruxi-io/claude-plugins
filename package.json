@@ -1,0 +1,8 @@
+{
+  "name": "claude-plugins",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "bump": "node scripts/release.mjs bump"
+  }
+}
