@@ -63,7 +63,12 @@ export function worktreeSafeToRemove(path, branch, src, baseRef = null, prState 
   return [false, 'unmerged commits'];
 }
 
-/** Node keys of workers recorded in any <stateRoot>/*\/pids.json. */
+const pidAlive = (pid) => {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; }
+};
+
+/** Node keys of workers recorded in any <stateRoot>/*\/pids.json whose pid is still alive. */
 export function liveWorkerKeys(stateRoot) {
   const keys = new Set();
   let names;
@@ -71,7 +76,7 @@ export function liveWorkerKeys(stateRoot) {
   for (const n of names) {
     try {
       const d = JSON.parse(readFileSync(join(stateRoot, n, 'pids.json'), 'utf8'));
-      for (const k of Object.keys((d && d.workers) || {})) keys.add(k);
+      for (const [k, pid] of Object.entries((d && d.workers) || {})) if (pidAlive(pid)) keys.add(k);
     } catch { /* skip */ }
   }
   return keys;
@@ -116,7 +121,7 @@ export function pruneWorktrees(repoRoot, { yes = false, registry = null, prState
       const bare = br.slice('refs/heads/'.length);
       const [ok, why] = worktreeSafeToRemove(path, bare, src, base ? originRef(base) : null, prState);
       if (ok && yes) {
-        const r = git(['worktree', 'remove', path], src);
+        const r = git(['worktree', 'remove', '--force', path], src);
         if (r.returncode !== 0) {
           kept.push([path, 'remove failed: ' + r.stderr.trim().slice(0, 200)]);
           continue;
@@ -130,10 +135,12 @@ export function pruneWorktrees(repoRoot, { yes = false, registry = null, prState
         say(`would remove ${path} (${why})`);
       } else kept.push([path, why]);
     }
+    if (yes) git(['worktree', 'prune'], src);
   }
   if (kept.length) {
     say(`Review ${kept.length} branches:`);
     for (const [path, why] of kept) say(`  ${path}: ${why}`);
   }
+  if (yes) git(['worktree', 'prune'], join(repoRoot, readdirSync(repoRoot).sort().find((r) => existsSync(join(repoRoot, r, '.git'))) || '.'));
   return { removed, kept };
 }
