@@ -8,6 +8,7 @@ import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { createInterface } from 'node:readline';
 import { installShim, shimPath } from './shim.mjs';
+import { assertSchema, stamp as stampSchema } from './schema.mjs';
 
 const root = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '');
 const rd = (p) => readFileSync(join(root, p), 'utf8');
@@ -118,7 +119,7 @@ export async function install({ dryRun = false, yes = false, home = homedir(), c
     filter: (s) => !/(^|\/)(node_modules|\.git|test)(\/|$)/.test(s.slice(root.length)) });
   writeFileSync(p.versionFile, version() + '\n');
   const shim = installShim({ home, base: p.base, out });
-  const prev = existsSync(p.manifest) ? JSON.parse(readFileSync(p.manifest, 'utf8')) : null;
+  const prev = existsSync(p.manifest) ? assertSchema(JSON.parse(readFileSync(p.manifest, 'utf8')), p.manifest) : null;
   const written = [], backups = [];
   for (const f of files) {
     written.push(f.path);
@@ -132,7 +133,7 @@ export async function install({ dryRun = false, yes = false, home = homedir(), c
   mkdirSync(dirname(p.manifest), { recursive: true });
   const man = { version: version(), runtime: p.stable, versionFile: p.versionFile, files: [...written.filter((x) => x !== p.cfg), shim],
     config: p.cfg, configSectionAdded: cfgAdded };
-  const text = JSON.stringify(man, null, 2) + '\n';
+  const text = JSON.stringify(stampSchema(man), null, 2) + '\n';
   if (!existsSync(p.manifest) || readFileSync(p.manifest, 'utf8') !== text) writeFileSync(p.manifest, text);
   return { ok: true, backups };
 }
@@ -140,7 +141,7 @@ export async function install({ dryRun = false, yes = false, home = homedir(), c
 export async function uninstall({ dryRun = false, yes = false, home = homedir(), confirm = ask, out = (s) => process.stdout.write(s + '\n') } = {}) {
   const p = paths(home);
   if (!existsSync(p.manifest)) { out('no install manifest; nothing to remove'); return { ok: true, removed: [] }; }
-  const man = JSON.parse(readFileSync(p.manifest, 'utf8'));
+  const man = assertSchema(JSON.parse(readFileSync(p.manifest, 'utf8')), p.manifest);
   const targets = [...man.files, man.runtime, man.versionFile];
   for (const t of targets) out(`${dryRun ? 'would remove' : 'will remove'} ${t}`);
   if (man.configSectionAdded && existsSync(man.config)) out(`${dryRun ? 'would remove' : 'will remove'} [mcp_servers.enforcer] from ${man.config}`);
