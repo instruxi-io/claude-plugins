@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, dirname } from 'node:path';
+import { join, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
@@ -25,7 +25,7 @@ function build() {
   assert.equal(r.status, 0, r.stderr);
   const path = r.stdout.split('\n')[0];
   const x = join(d, 'x'); mkdirSync(x);
-  assert.equal(spawnSync('tar', ['-xzf', path, '-C', x]).status, 0);
+  assert.equal(spawnSync('tar', ['-xzf', basename(path), '-C', x], { cwd: dirname(path) }).status, 0);
   const files = {};
   const dir = join(x, 'enforcer-bundle');
   for (const n of spawnSync('ls', [dir], { encoding: 'utf8' }).stdout.split('\n').filter(Boolean)) files[n] = spawnSync('cat', [join(dir, n)], { encoding: 'utf8' }).stdout;

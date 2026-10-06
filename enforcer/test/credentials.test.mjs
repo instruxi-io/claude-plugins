@@ -71,7 +71,7 @@ await okAsync('parallel refresh: one network call, both callers see the rotated 
   assert.equal(a.Authorization, 'Bearer new');
   assert.equal(b.Authorization, 'Bearer new');
   assert.equal(readCredentials().enforcer.oauth.refresh_token, 'r2');
-  assert.equal(statSync(SHARED_DIR()).mode & 0o777, 0o700);
+  if (process.platform !== 'win32') assert.equal(statSync(SHARED_DIR()).mode & 0o777, 0o700); // POSIX modes do not exist on Windows
 });
 
 await okAsync('http token_endpoint is refused', async () => {

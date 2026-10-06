@@ -10,7 +10,7 @@ const home = mkdtempSync(join(tmpdir(), 'shim-'));
 const lines = [];
 install({ home, out: (s) => lines.push(s) });
 const shim = join(home, '.local', 'bin', 'enforcer');
-assert.ok(existsSync(shim) && statSync(shim).mode & 0o100);
+assert.ok(existsSync(shim) && (process.platform === 'win32' || statSync(shim).mode & 0o100)); // no exec bit on Windows
 assert.ok(lines.some((l) => /export PATH=/.test(l)));
 const r = spawnSync(shim, ['governor'], { encoding: 'utf8', env: { ...process.env, HOME: home, ENFORCER_HOME: home, GOVERNOR_HOME: join(home, 'g') } });
 assert.match(r.stderr, /usage: enforcer/);

@@ -24,8 +24,8 @@ const SUITES = [
 ];
 
 // Per-platform profile: on Windows only hooks and CLIs run; the dispatcher and governor suites are skipped with a reason.
-const WIN_SKIP = /^(test\/dispatch\/|lib\/governor\/|test\/graph\/)/;
-const skipReason = (name) => (process.platform === 'win32' && WIN_SKIP.test(name) ? 'dispatcher/governor suites are not supported on Windows (hooks and CLIs only)' : null);
+const WIN_SKIP = /^(test\/dispatch\/|lib\/governor\/|test\/graph\/|test\/land\.test)/;
+const skipReason = (name) => (process.platform === 'win32' && WIN_SKIP.test(name) ? 'dispatcher, governor and landing are not supported on Windows (hooks and CLIs only)' : null);
 // test/quarantine.json: [{suite, owner, expires: YYYY-MM-DD, reason, os?}]. A quarantined suite still runs; its failure is
 // reported as skipped, not red, until the expiry date, after which it fails the run again. An optional `os` list
 // (process.platform values: darwin, win32, linux) scopes the entry, so a suite red only on macOS stays a gate on Linux.

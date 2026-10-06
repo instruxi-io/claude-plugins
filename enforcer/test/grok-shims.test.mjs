@@ -72,7 +72,7 @@ r = spawnSync(process.execPath, [join(root, 'bin/enforcer'), 'harness', 'install
 assert.equal(r.status, 0, r.stderr);
 const lines = r.stdout.trim().split('\n').filter((l) => l.startsWith('would write'));
 assert.equal(lines.length, 5, r.stdout); // three files + the shim + the manifest
-assert.ok(lines.some((l) => l.includes('/.grok/hooks/enforcer.json')));
+assert.ok(lines.some((l) => l.replaceAll('\\', '/').includes('/.grok/hooks/enforcer.json')));
 assert.ok(lines.some((l) => l.includes('/.grok/config.toml')));
 assert.ok(lines.some((l) => l.includes('/.grok/agents/graph-worker.md'))); ok('enforcer harness install grok --dry-run lists the three files and writes none');
 assert.ok(!existsSync(join(home, '.grok', 'hooks', 'enforcer.json')), 'dry run must not write');

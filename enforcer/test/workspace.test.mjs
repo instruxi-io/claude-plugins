@@ -67,7 +67,7 @@ await ok('switch posts to /auth/tenant/switch and rewrites credentials atomicall
   assert.equal(o.access_token, B); assert.equal(o.refresh_token, 'r2');
   assert.equal(o.client_id, 'c1'); assert.equal(o.scope, 'enforcer:read'); assert.deepEqual(o.resources, ['http://x']);
   assert.ok(Date.parse(o.expires_at) - Date.now() < 700e3);
-  assert.equal(statSync(SHARED_FILE()).mode & 0o777, 0o600);
+  if (process.platform !== 'win32') assert.equal(statSync(SHARED_FILE()).mode & 0o777, 0o600); // POSIX modes do not exist on Windows
   assert.deepEqual(readdirSync(SHARED_DIR()).filter((f) => f.endsWith('.tmp')), []);
   assert.equal(JSON.parse(readFileSync(SHARED_FILE(), 'utf8')).enforcer.base_url, 'http://x');
 });
