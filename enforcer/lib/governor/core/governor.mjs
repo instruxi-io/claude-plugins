@@ -89,7 +89,7 @@ export function createGovernor({ harness = 'unknown', adapterVersion = '', cost 
     const cfg = config();
     // The run this session holds, when the adapter knows one: it rides on the
     // decision record so a parent can tie a refusal to its run.
-    const st = { ...stamp, runId: event.runId };
+    const st = { ...stamp, runId: event.runId, graphId: event.worker?.graphId || undefined };
     // The tenant's policy is asked BEFORE taking the lock, and only when a
     // local rule matched: the network must never sit inside the lock, and an
     // unmatched call has nothing to ask about.

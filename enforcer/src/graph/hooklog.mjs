@@ -18,13 +18,13 @@ export function rotate(path, max = MAX_BYTES) {
   } catch { return false; }
 }
 
-export function logHook({ hook, event, actor, outcome, ms, code }, { force = false, max = MAX_BYTES } = {}) {
+export function logHook({ hook, event, actor, outcome, ms, code, run_id = process.env.GRAPH_RUN_ID || process.env.ENFORCER_GRAPH_RUN_ID || undefined }, { force = false, max = MAX_BYTES } = {}) {
   if (!force && !debugOn()) return false;
   try {
     privateDir(stateBase());
     const p = logPath();
     rotate(p, max);
-    privateWrite(p, JSON.stringify({ ts: new Date().toISOString(), hook, event, actor, outcome, ms, code }) + '\n', 'a');
+    privateWrite(p, JSON.stringify({ ts: new Date().toISOString(), hook, event, actor, outcome, ms, code, run_id }) + '\n', 'a');
     return true;
   } catch { return false; }
 }

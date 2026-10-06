@@ -37,6 +37,9 @@ export function parseRetryAfter(v, now = Date.now) {
   return Number.isNaN(t) ? null : Math.max(0, t - now());
 }
 
+/** The run this process works under, when one is live: the dispatcher or the session sets it in the environment. */
+export const currentRunId = (env = process.env) => env.GRAPH_RUN_ID || env.ENFORCER_GRAPH_RUN_ID || null;
+
 const defaultSleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /**
@@ -47,7 +50,7 @@ const defaultSleep = (ms) => new Promise((r) => setTimeout(r, ms));
 export async function apiFetch(url, init = {}, o = {}) {
   const {
     fetchImpl = globalThis.fetch, timeoutMs = TIMEOUTS.cli, retries = 2, baseDelayMs = 200, maxDelayMs = 10_000,
-    sleep = defaultSleep, random = Math.random, auth = false, hooks,
+    sleep = defaultSleep, random = Math.random, auth = false, hooks, runId = currentRunId(),
   } = o;
   if (typeof fetchImpl !== 'function') throw new ApiError({ detail: 'no fetch in this runtime' });
   const requestId = randomUUID();
@@ -56,6 +59,7 @@ export async function apiFetch(url, init = {}, o = {}) {
     ...(init.headers || {}),
     'X-Graph-Client': clientHeader(hooks),
     'X-Request-Id': requestId,
+    ...(runId ? { 'X-Enforcer-Run': String(runId) } : {}),
   };
   for (let attempt = 0; ; attempt++) {
     const backoff = Math.min(maxDelayMs, baseDelayMs * 2 ** attempt) * (0.5 + random() / 2);

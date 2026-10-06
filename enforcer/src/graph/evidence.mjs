@@ -109,7 +109,11 @@ export const GATE_RE = /verify\.sh|go test|npm (run )?(check|test)|land-pr|pytes
 export const PR_RE = /https?:\/\/github\.com\/[^/\s"')]+\/[^/\s"')]+\/pull\/\d+/;
 
 export const isGate = (r) => r.kind === 'command' && GATE_RE.test(r.cmd || '');
-export function stripInternal(rec) { const { _run, ...rest } = rec; return rest; }
+/** The internal run marker leaves as `run_id`, so every evidence item names the run it was captured under. */
+export function stripInternal(rec) { const { _run, ...rest } = rec; return _run ? { ...rest, run_id: _run } : rest; }
+
+/** The PR-body footer line that joins a pull request to its run. */
+export const prFooter = (runId) => `Enforcer-Run: ${runId}`;
 
 const failedCmd = (r) => r.kind === 'command' && r.exit !== 0 && r.exit !== null && r.exit !== undefined;
 

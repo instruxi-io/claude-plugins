@@ -5,6 +5,7 @@ import { readFileSync, existsSync, appendFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { stateBase } from './state.mjs';
 import { logHook, noteFailure } from './graph/hooklog.mjs';
+import { loadRun } from './graph/run.mjs';
 import { LEGACY_PROJECT_CONFIG } from '../hooks/claude/paths.mjs';
 
 export const GRAPH_TOOL = /^mcp__(plugin_enforcer_enforcer|enforcer|enforcer-graph)__graph_/;
@@ -79,6 +80,8 @@ async function governor(file, raw) {
 // Every graph handler runs in this process.
 const NATIVE = { track_run: ['track-run', 'trackRun'], capture_evidence: ['capture', 'captureEvidence'], heartbeat: ['heartbeat', 'heartbeat'], attach_evidence: ['attach', 'attachEvidence'],
   session_start: ['session', 'sessionStart'], remember_on_compact: ['session', 'rememberOnCompact'], open_run_guard: ['session', 'openRunGuard'] };
+/** The run id for a hook log line: the live run of this actor's session, else the environment's. */
+const runOf = (ev) => { try { return loadRun(actorKey(ev))?.run_id || undefined; } catch { return undefined; } };
 export async function native(handlers, ev, deadline) {
   let out = null;
   for (const h of handlers) {
@@ -92,7 +95,7 @@ export async function native(handlers, ev, deadline) {
       const r = await Promise.race([mod[NATIVE[h][1]](ev), new Promise((res) => { timer = setTimeout(() => res(null), left); })]);
       if (r) out = merge(out, r);
     } catch { outcome = 'error'; const note = noteFailure(ev.session_id, h); if (note) out = merge(out, { systemMessage: note }); }
-    finally { clearTimeout(timer); logHook({ hook: h, event: ev.hook_event_name || '', actor: actorKey(ev), outcome, ms: Date.now() - t0, code: outcome === 'ok' ? 0 : 1 }); }
+    finally { clearTimeout(timer); logHook({ hook: h, event: ev.hook_event_name || '', actor: actorKey(ev), outcome, ms: Date.now() - t0, code: outcome === 'ok' ? 0 : 1, run_id: runOf(ev) }); }
   }
   return { out, code: 0 };
 }

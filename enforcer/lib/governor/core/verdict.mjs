@@ -72,7 +72,7 @@ export class Verdict {
    */
   entry({ ts = new Date().toISOString(), agent, tool = '', model = '', tokens = 0,
           operator = '', client = '', chained = true, meter = undefined,
-          harness = '', adapterVersion = '', spentUsd = undefined, runId = undefined } = {}) {
+          harness = '', adapterVersion = '', spentUsd = undefined, runId = undefined, graphId = undefined } = {}) {
     return {
       ts, agent, verdict: this.action, reason: this.reason, source: this.source,
       rule: this.rule || undefined,
@@ -101,6 +101,8 @@ export class Verdict {
       // machine code, rule, tool, summary, run_id. Last, so every receipt
       // written before 2.9 hashes exactly as it did.
       decision: decisionRecord(this, { tool, run_id: runId }),
+      // The graph the run belongs to, last for the same reason; absent outside a graph worker.
+      graph_id: graphId || undefined,
     };
   }
 

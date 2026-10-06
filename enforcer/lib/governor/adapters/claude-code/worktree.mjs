@@ -46,7 +46,7 @@ export function workerContext(ev, env = process.env) {
  * dispatcher may set, else the run file enforcer-graph's hooks keep per actor.
  */
 export function runIdOf(ev, env = process.env) {
-  if (env.ENFORCER_GRAPH_RUN_ID) return env.ENFORCER_GRAPH_RUN_ID;
+  if (env.GRAPH_RUN_ID || env.ENFORCER_GRAPH_RUN_ID) return env.GRAPH_RUN_ID || env.ENFORCER_GRAPH_RUN_ID;
   const key = ev?.agent_id ? null : ev?.session_id;   // subagents key by a hash; not resolved here
   if (!key) return undefined;
   const dirs = [join(stateBase(), 'runs')];
