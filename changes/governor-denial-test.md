@@ -1,0 +1,1 @@
+- test: the governor-denial dispatcher test no longer shadows the module it tests.
