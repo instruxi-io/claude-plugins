@@ -1,3 +1,4 @@
+import { realpathSync } from 'node:fs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, writeFileSync, existsSync, statSync } from 'node:fs';
@@ -6,7 +7,7 @@ import { join } from 'node:path';
 import { logHook, logPath, noteFailure, rotate } from '../../src/graph/hooklog.mjs';
 
 function fresh() {
-  process.env.ENFORCER_STATE_DIR = join(mkdtempSync(join(tmpdir(), 'hooklog-')), 'state');
+  process.env.ENFORCER_STATE_DIR = join(mkdtempSync(join(realpathSync(tmpdir()), 'hooklog-')), 'state');
   delete process.env.ENFORCER_DEBUG;
 }
 

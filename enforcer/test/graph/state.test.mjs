@@ -1,3 +1,4 @@
+import { realpathSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -14,7 +15,7 @@ const KEYS = ['HOME', 'CLAUDE_PLUGIN_DATA', 'CLAUDE_CONFIG_DIR', 'ENFORCER_STATE
 const saved = Object.fromEntries(KEYS.map((k) => [k, process.env[k]]));
 const restore = () => { for (const k of KEYS) saved[k] === undefined ? delete process.env[k] : (process.env[k] = saved[k]); };
 const fresh = () => {
-  const root = mkdtempSync(join(tmpdir(), 'gstate-'));
+  const root = mkdtempSync(join(realpathSync(tmpdir()), 'gstate-'));
   restore();
   process.env.HOME = join(root, 'home'); mkdirSync(process.env.HOME);
   for (const k of KEYS.slice(1)) delete process.env[k];

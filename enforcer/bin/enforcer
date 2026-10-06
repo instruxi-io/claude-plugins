@@ -64,7 +64,8 @@ if (area === 'hook' && HOOKS[sub]) {
   const only = rest[0] ? rest[0].replace(/-/g, '_') : null;
   const handlers = HOOKS[sub].filter((h) => !only || h === only);
   const r = await native(handlers, ev, Date.now() + 9000);
-  if (r.out) process.stdout.write(JSON.stringify(r.out) + '\n');
+  // exit only once stdout has drained: a pipe is asynchronous on macOS and process.exit() cut a long reply at 8192 bytes
+  if (r.out) await new Promise((done) => process.stdout.write(JSON.stringify(r.out) + '\n', done));
   process.exit(r.code);
 }
 

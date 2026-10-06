@@ -52,7 +52,13 @@ for (const [name, { cmd, args, cwd }] of SUITES) {
   const q = r.status === 0 ? null : quarantined(name);
   const ok = r.status === 0 || !!q;
   process.stdout.write(`${r.status === 0 ? 'ok  ' : q ? 'quar' : 'FAIL'}  ${name} (${((Date.now() - t) / 1000).toFixed(1)}s)\n`);
-  if (!ok) process.stdout.write(out.split('\n').slice(-60).join('\n') + '\n');
+  if (!ok) {
+    const all = out.split('\n');
+    // the failing cases and their errors sit above the tail of a long TAP stream: print them first
+    const hits = all.filter((l) => /^\s*(not ok|error:|expected:|actual:|operator:|failureType:)/.test(l)).slice(0, 80);
+    if (hits.length) process.stdout.write('--- failing cases ---\n' + hits.join('\n') + '\n--- tail ---\n');
+    process.stdout.write(all.slice(-60).join('\n') + '\n');
+  }
   results.push({ name, ok, quarantined: q && `quarantined until ${q.expires}, owner ${q.owner}`, seconds: (Date.now() - t) / 1000, out, status: r.status });
 }
 

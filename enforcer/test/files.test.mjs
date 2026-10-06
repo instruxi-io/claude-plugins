@@ -1,13 +1,14 @@
 // The upload and download commands against a stub of enforcer-files and of the
 // storage behind a presigned URL. Both provider flows, a scope refusal, and a
 // machine that is not signed in.
+import { realpathSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { mkdtempSync, readFileSync, writeFileSync, mkdirSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-const home = mkdtempSync(join(tmpdir(), 'files-plugin-'));
+const home = mkdtempSync(join(realpathSync(tmpdir()), 'files-plugin-'));
 process.env.HOME = home; process.env.ENFORCER_HOME = join(home, '.enforcer'); process.env.GOVERNOR_HOME = join(home, '.g');
 delete process.env.ENFORCER_API_KEY;
 

@@ -1,3 +1,4 @@
+import { realpathSync } from 'node:fs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
@@ -10,7 +11,7 @@ import { dataDir } from '../../src/graph/state.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fresh = () => {
-  const root = mkdtempSync(join(tmpdir(), 'gevid-'));
+  const root = mkdtempSync(join(realpathSync(tmpdir()), 'gevid-'));
   process.env.ENFORCER_STATE_DIR = join(root, 'state');
   return root;
 };
