@@ -74,6 +74,10 @@ for (const [event, groups] of Object.entries(hooks)) {
     if (m) for (const t of m[1].split('|')) sources.push([`enforcer/hooks/hooks.json ${event}`, `${PREFIXES[0]}graph_${t}`]);
   }
 }
+// The per-event runner holds the graph-tool matchers now (hooks.json routes every tool to it).
+for (const m of read('enforcer/src/event.mjs').matchAll(/^const (\w+_GRAPH) = .*__graph_\(([^)]+)\)\$\//gm)) {
+  for (const t of m[2].split('|')) sources.push([`enforcer/src/event.mjs ${m[1]} (the hooks.json matchers)`, `${PREFIXES[0]}graph_${t}`]);
+}
 
 let bad = 0;
 for (const [where, name] of sources) {
