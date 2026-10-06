@@ -417,3 +417,4 @@ cold:
 Report the run, or say explicitly that you are leaving it open. In a top-level
 session the plugin's Stop hook sends you back once if a run is open and
 unreported. A subagent gets no such reminder.
+- **A review item names what failed.** Its verdict carries `threshold` and `failed[]`; when you show a review item (or `enforcer dispatch status` does), list each failed criterion with its probability, not only the verdict word.
