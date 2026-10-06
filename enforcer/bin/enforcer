@@ -80,19 +80,8 @@ if (area === 'hook' && HOOKS[sub]) {
 if (area === 'dispatch') {
   const { main: preflight } = await import('../src/preflight.mjs');
   if (sub === 'preflight') process.exit(await preflight(rest));
-  if (sub === undefined || sub === '--help' || sub === '-h') {
-    process.stdout.write('usage: enforcer dispatch preflight <graph> [--repo-root dir]\n       enforcer dispatch <graph> [graph-dispatch options]   preflight, then run bin/graph-dispatch\n');
-    process.exit(sub === undefined ? 2 : 0);
-  }
-  const args = [sub, ...rest];
-  const gi = args.indexOf('--graph');
-  const graph = gi >= 0 ? args[gi + 1] : args.find((a) => !a.startsWith('-'));
-  const ri = args.indexOf('--repo-root');
-  const code = await preflight([graph, ...(ri >= 0 ? ['--repo-root', args[ri + 1]] : [])]);
-  if (code !== 0) { process.stderr.write('enforcer dispatch: preflight failed, nothing started\n'); process.exit(code); }
-  const dispatchArgs = gi >= 0 ? args : ['--graph', graph, ...args.filter((a) => a !== graph)];
-  const r = spawnSync('python3', [here('./graph-dispatch'), ...dispatchArgs], { stdio: 'inherit' });
-  process.exit(r.status ?? 1);
+  const { main: dispatchMain } = await import('../src/dispatch-command.mjs');
+  process.exit(await dispatchMain([sub, ...rest].filter((x) => x !== undefined)));
 }
 
 if (area === 'plan') {
