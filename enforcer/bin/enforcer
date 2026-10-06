@@ -36,6 +36,12 @@ if (area === 'login' || area === 'logout' || area === 'status' || area === 'work
 }
 
 if (area === 'doctor') {
+  if (process.argv.includes('--bundle')) {
+    const { writeBundle } = await import('../src/bundle.mjs');
+    const b = await writeBundle({ network: false });
+    process.stdout.write(`${b.path}\n${b.size} bytes\n`);
+    process.exit(0);
+  }
   const { doctor } = await import('../src/doctor.mjs');
   process.exit(await doctor());
 }
