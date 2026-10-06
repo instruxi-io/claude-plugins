@@ -36,6 +36,8 @@ const asking = (a, reason, now) => {
 // Everything that changes because this call happened, before anything judges
 // it. Kept apart from the checks so that "what we learned" and "what we
 // decided" are not the same forty lines.
+const LOOP_EXEMPT = /__graph_(heartbeat|plan_status)$/;
+
 export function ingest(state, ev, cfg, now) {
   rollPeriods(state, now);
   const a = getAgent(state, ev.agent || 'default', cfg);
@@ -65,6 +67,11 @@ export function ingest(state, ev, cfg, now) {
   if (typeof ev.cost === 'number') a.cost = ev.cost;
   addSpend(state, a, a.tokens - was, now);
 
+  // Keepalives are repetitive by design: a graph worker heartbeats the same run every lease/3 and
+  // polls plan status while it waits on CI or a landing. Counting them as "the same action" stopped
+  // a worker for looping on 2026-10-06 and took the dispatcher down with it. They neither count
+  // toward nor reset the streak.
+  if (LOOP_EXEMPT.test(nameOf(ev) || '')) { if (a.loopStreak === undefined) a.loopStreak = 0; return a; }
   const sig = ev.action || `${nameOf(ev) || 'tool'}:${JSON.stringify(ev.args ?? '')}`;
   a.recent.push(sig);
   if (a.recent.length > cfg.loopWindow) a.recent.shift();

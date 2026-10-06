@@ -2192,3 +2192,15 @@ class CiUnavailable(unittest.TestCase):
 if __name__ == "__main__":
     unittest.main()
 
+
+
+class GovernorDenialsAreNotBlocked(unittest.TestCase):
+    def test_governor_decided_denial_is_excluded(self):
+        s = {"denied_tools": ["mcp__plugin_enforcer_enforcer__graph_heartbeat", "mcp__plugin_enforcer_enforcer__graph_report"],
+             "denied_inputs": [
+                 {"tool_name": "mcp__plugin_enforcer_enforcer__graph_heartbeat", "message": "enforcer-governor:decision {\"decision\":\"deny\",\"code\":\"loop_detected\"}"},
+                 {"tool_name": "mcp__plugin_enforcer_enforcer__graph_report", "message": "Claude requested permissions to use this tool, but you haven't granted it yet."}]}
+        gd = gd.governor_denied_tools(s)
+        self.assertEqual(gd, {"mcp__plugin_enforcer_enforcer__graph_heartbeat"})
+        graph_denied = [t for t in s["denied_tools"] if gd.GRAPH_TOOL_RE.search(t) and t not in gd]
+        self.assertEqual(graph_denied, ["mcp__plugin_enforcer_enforcer__graph_report"])
