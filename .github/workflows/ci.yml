@@ -36,6 +36,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+      - name: install enforcer dev dependencies (openapi-typescript, openapi-fetch, typescript)
+        working-directory: enforcer
+        run: npm ci
       - name: enforcer plugin tests (package, governor, graph worker)
         working-directory: enforcer
         env:
