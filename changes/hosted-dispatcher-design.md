@@ -1,0 +1,1 @@
+Design for a tenant-scoped hosted dispatcher (credential, sandbox, repo access, logs and metrics, container-safe lease, server API) in enforcer/docs/HOSTED_DISPATCHER.md; proposal only, for gate review.
