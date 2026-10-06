@@ -95,6 +95,23 @@ function python(handlers, raw, deadline) {
   return { out, code };
 }
 
+// PostToolUse and PostToolUseFailure handlers run in this process: no python on the hot path.
+const NATIVE = { track_run: ['track-run', 'trackRun'], capture_evidence: ['capture', 'captureEvidence'], heartbeat: ['heartbeat', 'heartbeat'] };
+export async function native(handlers, ev, deadline) {
+  let out = null;
+  for (const h of handlers) {
+    const left = deadline - Date.now();
+    if (left <= 0) break;
+    let timer;
+    try {
+      const mod = await import(`./graph/hooks/${NATIVE[h][0]}.mjs`);
+      const r = await Promise.race([mod[NATIVE[h][1]](ev), new Promise((res) => { timer = setTimeout(() => res(null), left); })]);
+      if (r) out = merge(out, r);
+    } catch {} finally { clearTimeout(timer); }
+  }
+  return { out, code: 0 };
+}
+
 export async function runEvent(name) {
   const event = NAMES[name];
   if (!event) { process.stderr.write(`usage: enforcer event <${EXIT_NAMES()}>\n`); return 2; }
@@ -128,7 +145,8 @@ export async function runEvent(name) {
       const v = (() => { try { return JSON.parse(readFileSync(root('plugin.json'), 'utf8')).version; } catch { return 'unknown'; } })();
       out = merge(out, { hookSpecificOutput: { hookEventName: 'PreToolUse', updatedInput: { ...(ev.tool_input || {}), client: `enforcer-graph-plugin/${v}; hooks=off:python3` } } });
     } else if (!noPy && (event === 'SessionStart' || graphContextLive(ev))) { // session-start notices print with or without a graph
-      const r = python(handlers, raw, Date.now() + (spec.budget || 5000));
+      const deadline = Date.now() + (spec.budget || 5000);
+      const r = handlers.every((h) => NATIVE[h]) ? await native(handlers, ev, deadline) : python(handlers, raw, deadline);
       out = merge(out, r.out); code = r.code;
     }
   }

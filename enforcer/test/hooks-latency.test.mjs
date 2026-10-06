@@ -1,6 +1,6 @@
 // A PostToolUse with no graph context is the hot path: one node process, no python.
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -28,4 +28,15 @@ const budget = Math.max(40, bare * 2 + 50); // relative to bare node startup mea
 if (loadavg()[0] > cpus().length) { console.log('skipped: host under load'); process.exit(0); } // load rose during the run
 console.log(`PostToolUse (no graph context) median ${median.toFixed(1)} ms over 15 runs; bare node ${bare.toFixed(1)} ms; budget ${budget.toFixed(1)} ms`);
 assert.ok(median < budget, `median ${median.toFixed(1)} ms must be < ${budget.toFixed(1)} ms`);
+
+// A graph-live PostToolUse (a run file exists for the session): capture runs in process, still no python.
+const live = join(base, 'data', 'runs'); mkdirSync(live, { recursive: true });
+writeFileSync(join(live, 'lat-2.json'), JSON.stringify({ graph_id: 'g', node_id: 'n', run_id: 'r', claimed_at: new Date().toISOString(), lease_expires_at: new Date(Date.now() + 3e5).toISOString() }));
+const liveInput = JSON.stringify({ hook_event_name: 'PostToolUse', session_id: 'lat-2', cwd, tool_name: 'Bash', tool_input: { command: 'ls' }, tool_response: { stdout: 'a' } });
+const runLive = () => { const t = process.hrtime.bigint(); const r = spawnSync(process.execPath, [cli, 'event', 'post-tool-use'], { input: liveInput, env, encoding: 'utf8' }); assert.equal(r.status, 0, r.stderr); return Number(process.hrtime.bigint() - t) / 1e6; };
+runLive(); runLive();
+const liveMedian = med(runLive);
+const liveBudget = Math.max(80, bare * 2 + 80);
+console.log(`PostToolUse (graph-live) median ${liveMedian.toFixed(1)} ms over 15 runs; bare node ${bare.toFixed(1)} ms; budget ${liveBudget.toFixed(1)} ms`);
+assert.ok(liveMedian < liveBudget, `graph-live median ${liveMedian.toFixed(1)} ms must be < ${liveBudget.toFixed(1)} ms`);
 console.log('ok   hooks-latency');
