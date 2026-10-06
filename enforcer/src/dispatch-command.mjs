@@ -12,6 +12,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 export const DEFAULTS = { workers: 3, model: 'sonnet', salvage: 'on', triage: 'on', warm: 'off' };
 export const HELP = `usage: enforcer dispatch <graph> [--workers N] [--model M] [--repo-root dir]   preflight, then start the dispatcher in the background
        enforcer dispatch status [<graph>]                                              what it is doing and what it needs from you
+       enforcer dispatch prune [--yes] [--repo-root dir]                               list (or with --yes remove) worktrees whose PR merged and no live worker holds
        enforcer dispatch stop <graph>                                                  finish running workers, start no new ones, then exit
 defaults: ${DEFAULTS.workers} workers, ${DEFAULTS.model} model cap, salvage ${DEFAULTS.salvage}, triage ${DEFAULTS.triage}, warm workers ${DEFAULTS.warm}
 state: ~/.config/enforcer/dispatch/<graph> (dispatcher.log, pids.json, STOP)
@@ -144,6 +145,15 @@ export async function main(argv, env = process.env) {
     if (sub === 'stop') {
       if (!rest[0]) { process.stderr.write('usage: enforcer dispatch stop <graph>\n'); return 2; }
       return await stop(rest[0], env);
+    }
+    if (sub === 'prune') {
+      const i = rest.indexOf('--repo-root');
+      if (rest.includes('--help') || rest.includes('-h')) { process.stdout.write('usage: enforcer dispatch prune [--yes] [--repo-root dir]\n  without --yes: dry run, print what would be removed; --yes removes merged, clean, unheld worktrees and their local branches\n'); return 0; }
+      const repoRoot = i >= 0 ? rest[i + 1] : join(homedir(), 'apps');
+      const { pruneWorktrees, liveWorkerKeys } = await import('./dispatch/prune.mjs');
+      const liveKeys = liveWorkerKeys(dirname(stateDir('x', env)));
+      pruneWorktrees(repoRoot, { yes: rest.includes('--yes'), liveKeys });
+      return 0;
     }
     if (sub === 'run') return await (await import('./dispatch/run.mjs')).main(rest, env); // the foreground dispatcher `start` detaches
     return await start(argv, env);
