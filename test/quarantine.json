@@ -1,0 +1,8 @@
+[
+  {
+    "suite": "timing/p95-example",
+    "owner": "austin@instruxi.io",
+    "expires": "2026-12-31",
+    "reason": "Timing suites that assert a p95 budget are listed here while their budget is calibrated on macOS and Windows runners. An entry past its expiry fails the run."
+  }
+]
