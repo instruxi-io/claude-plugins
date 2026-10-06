@@ -451,6 +451,50 @@ class PruneWorktrees(unittest.TestCase):
         _, _, note = gd.worktree_for(node("m", repo="r"), root, tmp)
         self.assertTrue(note.startswith("added off"))
 
+    def _fake_gh(self, tmp, payload):
+        bindir = os.path.join(tmp, "bin")
+        os.makedirs(bindir, exist_ok=True)
+        gh = os.path.join(bindir, "gh")
+        with open(gh, "w") as f:
+            f.write("#!/bin/sh\necho '%s'\n" % json.dumps(payload))
+        os.chmod(gh, 0o755)
+        return bindir
+
+    def test_prune_deleted_remote_branch_worktree_is_removed(self):
+        """A merged PR whose remote branch is gone (squash, so not an ancestor) is found by head sha."""
+        import subprocess
+        tmp = tempfile.mkdtemp()
+        root = git_repo_with_origin(tmp, ["main"])
+        src = os.path.join(root, "r")
+        wt, _, _ = gd.worktree_for(node("sq", repo="r"), root, tmp)
+        with open(os.path.join(root, "r-sq", "u.txt"), "w") as f:
+            f.write("u")
+        run = lambda c, cwd: subprocess.run(c, cwd=cwd, check=True, capture_output=True)
+        run(["git", "add", "-A"], os.path.join(root, "r-sq"))
+        run(["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "u"], os.path.join(root, "r-sq"))
+        head = subprocess.run(["git", "rev-parse", "graph/sq"], cwd=src, capture_output=True, text=True).stdout.strip()
+        bindir = self._fake_gh(tmp, [{"state": "MERGED", "headRefOid": head}])
+        old = os.environ["PATH"]
+        os.environ["PATH"] = bindir + os.pathsep + old
+        try:
+            removed, _ = gd.prune_worktrees(root, yes=True, registry={}, out=io.StringIO(), min_age=0)
+        finally:
+            os.environ["PATH"] = old
+        self.assertEqual([os.path.basename(p) for p, _ in removed], ["r-sq"])
+        self.assertFalse(os.path.exists(os.path.join(root, "r-sq")))
+
+    def test_prune_deleted_lists_every_directory_with_classification(self):
+        tmp = tempfile.mkdtemp()
+        root = git_repo_with_origin(tmp, ["main"])
+        gd.worktree_for(node("k", repo="r"), root, tmp)
+        os.makedirs(os.path.join(root, "plain"))
+        out = io.StringIO()
+        gd.prune_worktrees(root, registry={}, pr_state=lambda b, s: "OPEN", out=out, min_age=0)
+        txt = out.getvalue()
+        self.assertIn("r-k: removable: merged into", txt)
+        self.assertIn("plain: not a git checkout", txt)
+        self.assertIn("/r: main checkout", txt)
+
     def test_prune_old_merged_pr_with_a_different_head_is_not_a_match(self):
         import subprocess
         tmp = tempfile.mkdtemp()

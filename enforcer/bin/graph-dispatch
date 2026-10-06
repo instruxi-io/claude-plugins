@@ -2839,18 +2839,26 @@ def prune_worktrees(repo_root, yes=False, registry=None, pr_state=None, out=None
     out = out or sys.stdout
     registry = load_repo_bases() if registry is None else registry
     removed, kept = [], []
+    classes = {}
     for repo in sorted(os.listdir(repo_root)):
         src = os.path.join(repo_root, repo)
+        classes.setdefault(os.path.realpath(src), "not a git checkout (ignored)")
         if not os.path.isdir(os.path.join(src, ".git")):
             continue
+        if classes.get(os.path.realpath(src), "").startswith("not a git"):
+            classes[os.path.realpath(src)] = "main checkout (ignored)"
         porc = git(["worktree", "list", "--porcelain"], src).stdout
         for blk in porc.split("\n\n"):
             f = dict(l.split(" ", 1) for l in blk.splitlines() if " " in l)
             path, br = f.get("worktree"), f.get("branch", "")
-            if not path or not br.startswith("refs/heads/graph/"):
+            if not path or os.path.realpath(path) == os.path.realpath(src):
+                continue
+            if not br.startswith("refs/heads/graph/"):
+                classes[os.path.realpath(path)] = "kept: not a graph/ branch (%s)" % (br or "detached")
                 continue
             key = br[len("refs/heads/graph/"):]
             if os.path.realpath(path) != os.path.realpath(os.path.join(repo_root, "%s-%s" % (repo, key))):
+                classes[os.path.realpath(path)] = "kept: path is not <repo>-<key> for %s" % br
                 continue
             if key in (live_keys or ()):
                 kept.append((path, "live worker (pids.json)"))
@@ -2865,6 +2873,7 @@ def prune_worktrees(repo_root, yes=False, registry=None, pr_state=None, out=None
             base = registry.get(repo)
             ok, why = worktree_safe_to_remove(path, br[len("refs/heads/"):], src,
                                               _origin_ref(base) if base else None, pr_state)
+            classes[os.path.realpath(path)] = ("removable: " if ok else "kept: ") + why
             if ok and yes:
                 r = git(["worktree", "remove", path], src)
                 if r.returncode != 0:
@@ -2880,6 +2889,9 @@ def prune_worktrees(repo_root, yes=False, registry=None, pr_state=None, out=None
                 print("would remove %s (%s)" % (path, why), file=out)
             else:
                 kept.append((path, why))
+    print("Directories under %s:" % repo_root, file=out)
+    for d in sorted(classes):
+        print("  %s: %s" % (d, classes[d]), file=out)
     if kept:
         print("Review %d branches:" % len(kept), file=out)
         for path, why in kept:
