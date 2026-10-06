@@ -815,6 +815,7 @@ class Dispatcher:
         self.peak = 0
         self.blocked = False
         self.salvaged = set()  # node keys already salvaged (or skipped) this session
+        self.landing = {}  # node key -> PR number: landing_blocked (PR open, worker could not land it); never triaged
         self.denied = {}  # node key -> worktree path: denied by the environment, not relaunched this session
         self.limited_until = 0.0  # harness usage limit: no launches before this instant
         self.limit_noted = 0.0
@@ -869,8 +870,8 @@ class Dispatcher:
                 continue  # the dispatcher's own lease record, not work
             if (n.get("data") or {}).get("triage_of"):
                 continue  # a triage node: launched by the dispatcher that made it, never from the frontier
-            if n["key"] in self.denied:
-                continue  # environmental: the salvage path, never triage
+            if n["key"] in self.denied or n["key"] in self.landing:
+                continue  # environmental: the salvage / landing path, never triage
             if self.attempts.get(n["key"], 0) >= self.args.max_attempts:
                 # the task attempts are spent: one triage per node per session
                 if (not self.args.no_triage and n["key"] not in self.triaged and not merge_target(n)
@@ -903,7 +904,7 @@ class Dispatcher:
         for n in nodes:
             key = n.get("key")
             if (n.get("status") != "failed" or n["id"] in taken or n.get("type") in self.types
-                    or key in self.workers or key in self.denied or merge_target(n)
+                    or key in self.workers or key in self.denied or key in self.landing or merge_target(n)
                     or (n.get("data") or {}).get("triage_of")):
                 continue
             d = n.get("data") or {}
@@ -1340,7 +1341,7 @@ class Dispatcher:
                     del self.workers[key]
                     self.finish_salvage(w)
                 continue
-            if w.kind == "merge":
+            if w.kind in ("merge", "landing"):
                 if w.alive() and time.time() - w.last_hb > self.args.heartbeat:
                     try:
                         st = self.api.heartbeat(self.g, w.node["id"], w.run_id).get("state")
@@ -1350,7 +1351,7 @@ class Dispatcher:
                     except APIError as e:
                         self.say("heartbeat %s failed: %s" % (key, e))
                 if not w.alive():
-                    self.finish_merge(w)
+                    (self.finish_landing if w.kind == "landing" else self.finish_merge)(w)
                     del self.workers[key]
                 continue
             salvage = None
@@ -1442,7 +1443,13 @@ class Dispatcher:
                 else:
                     is_denied = kind in ("salvage", "denied")
                     why = "%s (%s)" % (rec["code"], rec.get("summary") or rec.get("tool") or "-")
-                if kind in ("triage", "remediation") and not graph_denied and not getattr(w, "triage_of", None):
+                lb = None
+                if (outcome and not graph_denied and not getattr(w, "triage_of", None)
+                        and kind not in ("triage", "remediation") and key not in self.landing):
+                    lb = self.landing_blocked_info(w, s)
+                if lb:
+                    self.say("LANDING-BLOCKED %s: PR #%s open, landing" % (key, lb["pr"]))
+                elif kind in ("triage", "remediation") and not graph_denied and not getattr(w, "triage_of", None):
                     # the code decides: never salvaged. destructive_* spends the
                     # attempts so the node goes to triage; graph_run_not_open is a
                     # remediation launch with the code in the prompt
@@ -1464,7 +1471,7 @@ class Dispatcher:
                     self.say("SALVAGE-SKIPPED %s: denied again after a salvage" % key)
                 if getattr(w, "triage_of", None) is not None:
                     self.finish_triage(w, s)
-                elif outcome and key not in self.denied and not graph_denied and not (down and not s["run_id"]):
+                elif outcome and not lb and key not in self.denied and not graph_denied and not (down and not s["run_id"]):
                     # a task failure (not an environmental denial, not an MCP
                     # flake): the next launch is a remediation launch that
                     # resumes this session; past the attempt cap, a triage
@@ -1479,8 +1486,112 @@ class Dispatcher:
                                 "remediation launch" if self.attempts.get(key, 0) < self.args.max_attempts
                                 else ("left for a person (--no-triage)" if self.args.no_triage else "triage")))
                 del self.workers[key]
-                if salvage and not self.args.no_salvage:
+                if lb:
+                    if not self.start_landing(w, s, lb):
+                        self.landing.pop(key, None)
+                elif salvage and not self.args.no_salvage:
                     self.salvage(*salvage)
+
+    # --- landing_blocked: the PR is open and green, the worker just could not land it
+    def landing_blocked_info(self, w, s):
+        """A worker that reported failed (or died) while its PR is OPEN with checks
+        passing or pending: the work is done, only the merge is missing. Returns
+        {pr, slug, view} or None. The PR is data.pr of the worker's report, else
+        the open PR for the node's branch."""
+        key, path = w.node["key"], getattr(w, "path", None)
+        cwd = path if path and path != "-" and os.path.isdir(path) else None
+        pr, slug = None, None
+        d = s.get("report_data") if isinstance(s.get("report_data"), dict) else {}
+        if d.get("pr") or d.get("pr_url"):
+            ref = str(d.get("pr") or d.get("pr_url"))
+            m = re.search(r"github\.com/([^/]+/[^/]+)/pull/(\d+)", ref) or re.fullmatch(r"([\w.-]+/[\w.-]+)#(\d+)", ref)
+            if m:
+                slug, pr = m.group(1), m.group(2)
+            else:
+                m = re.fullmatch(r"#?(\d+)", ref.strip())
+                pr = m.group(1) if m else None
+        if not pr:
+            rc, out = self._sh(["gh", "pr", "list", "--head", "graph/" + key, "--state", "open", "--json", "number",
+                                "--jq", ".[0].number"], cwd)
+            m = re.fullmatch(r"(\d+)", out.strip()) if rc == 0 else None
+            pr = m.group(1) if m else None
+        if not pr:
+            return None
+        cmd = ["gh", "pr", "view", pr] + (["-R", slug] if slug else []) + ["--json", "number,state,url,statusCheckRollup"]
+        rc, out = self._sh(cmd, cwd)
+        if rc:
+            return None
+        try:
+            view = json.loads(out)
+        except ValueError:
+            return None
+        if view.get("state") != "OPEN":
+            return None
+        for c in view.get("statusCheckRollup") or []:
+            res = str(c.get("conclusion") or c.get("state") or "").upper()
+            if res in ("FAILURE", "ERROR", "CANCELLED", "TIMED_OUT", "ACTION_REQUIRED", "STARTUP_FAILURE"):
+                return None
+        return {"pr": pr, "slug": slug, "view": view, "view_json": out}
+
+    def start_landing(self, w, s, lb):
+        """Claim a run as graph-dispatch and run the lander with no agent. Not an attempt."""
+        n, key = w.node, w.node["key"]
+        self.landing[key] = lb["pr"]
+        try:
+            card = self.api.claim(self.g, n["id"], "graph-dispatch")
+        except APIError as e:
+            self.say("claim %s refused: %s" % (key, e))
+            return False
+        path = getattr(w, "path", None)
+        cwd = path if path and path != "-" and os.path.isdir(path) else os.getcwd()
+        cmd = [LAND_PR, lb["pr"]] + (["-R", lb["slug"]] if lb["slug"] else []) + ["--timeout", str(self.args.land_timeout)]
+        log = os.path.join(self.logs, "%s.%d.landing.log" % (key, self.attempts.get(key, 1)))
+        lw = Worker(n, log)
+        lw.kind, lw.run_id, lw.cmd, lw.last_hb, lw.lb, lw.orig = "landing", card["run_id"], cmd, time.time(), lb, (w, s)
+        try:
+            with open(log, "w") as f:
+                lw.proc = subprocess.Popen(cmd, cwd=cwd, stdin=subprocess.DEVNULL, stdout=f,
+                                           stderr=subprocess.STDOUT, start_new_session=True)
+        except OSError as e:
+            self.say("landing %s: could not start the lander: %s" % (key, e))
+            try:
+                self.api.complete(self.g, n["id"], card["run_id"], {"status": "failed", "error": "could not start the lander: %s" % e,
+                                                                  "evidence": [], "data": {"runner": "graph-dispatch"}})
+            except APIError:
+                pass
+            return True  # still landing_blocked: listed for a person, never triaged
+        self.workers[key] = lw
+        self.say("landing %s pid=%d run=%s: %s log=%s" % (key, lw.proc.pid, lw.run_id, " ".join(cmd), log))
+        return True
+
+    def finish_landing(self, w):
+        rc = w.proc.returncode
+        with open(w.log_path, errors="replace") as f:
+            out = f.read()
+        ow, os_ = w.orig
+        ok = rc == 0
+        evid = [
+            {"kind": "note", "text": clip("worker report: " + (os_.get("result_text") or os_.get("report_error") or "-"), 3000)},
+            {"kind": "command", "cmd": "gh pr view %s --json number,state,url,statusCheckRollup" % w.lb["pr"],
+             "exit": 0, "output": clip(w.lb["view_json"], 3000)},
+            {"kind": "command", "cmd": " ".join(w.cmd), "exit": rc, "output": clip(out)},
+        ]
+        body = {"status": "succeeded" if ok else "failed", "evidence": evid, "pr": w.lb["view"].get("url"),
+                "data": {"report": "1. %s: PR #%s was open with checks passing or pending (landing_blocked: the worker "
+                         "could not run the lander); the lander exited %d (%s). Run by graph-dispatch with no agent."
+                         % ("MET" if ok else "NOT MET", w.lb["pr"], rc, LAND_CODES.get(rc, "unknown")),
+                         "runner": "graph-dispatch", "outcome": "landing_blocked"}}
+        if not ok:
+            body["error"] = "landing_blocked: lander exit %d (%s): %s" % (rc, LAND_CODES.get(rc, "unknown"), out.strip()[-500:])
+        if not body["pr"]:
+            del body["pr"]
+        try:
+            self.api.complete(self.g, w.node["id"], w.run_id, body)
+            self.say("landing %s exit=%d -> run %s %s" % (w.key, rc, w.run_id, body["status"]))
+        except APIError as e:
+            self.say("complete %s failed: %s" % (w.key, e))
+        if ok:
+            self.landing.pop(w.key, None)
 
     # --- salvage a denied push / PR
     def _sh(self, cmd, cwd, timeout=300):
@@ -1932,8 +2043,13 @@ class Dispatcher:
             elif not self.workers and not launched and not busy:
                 idle += 1
                 if idle >= 2:
-                    left = sorted(n["key"] for n in nodes if n.get("status") == "failed" and n.get("key") != LEASE_KEY)
-                    left += sorted(k for k in self.denied if k not in left)
+                    blocked = sorted(self.landing)
+                    left = sorted(n["key"] for n in nodes if n.get("status") == "failed" and n.get("key") != LEASE_KEY
+                                  and n.get("key") not in self.landing)
+                    left += sorted(k for k in self.denied if k not in left and k not in self.landing)
+                    if blocked:
+                        self.say("landing-blocked (PR open, not landed; never triaged): %s" % ", ".join(blocked))
+                    left += blocked
                     if left:
                         self.say("nothing runnable or running; exiting 6: failed or denied nodes remain: %s (peak %d)"
                                  % (", ".join(left), self.peak))

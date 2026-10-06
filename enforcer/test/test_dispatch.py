@@ -1908,6 +1908,125 @@ class GraphBasesAndHold(unittest.TestCase):
         self.assertTrue(os.path.exists(os.path.join(self.state, "pids.json")))
 
 
+class LandingBlocked(unittest.TestCase):
+    """A worker reports failed while its PR is open and green: the dispatcher lands it itself."""
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.state = os.path.join(self.tmp, "s")
+        os.makedirs(os.path.join(self.state, "logs"))
+        self.bin = os.path.join(self.tmp, "bin")
+        os.makedirs(self.bin)
+        self.log = os.path.join(self.tmp, "calls.log")
+        self.view = json.dumps({"number": 7, "state": "OPEN", "url": "https://github.com/o/r/pull/7",
+                                "statusCheckRollup": [{"conclusion": "SUCCESS"}, {"status": "IN_PROGRESS", "conclusion": ""}]})
+        self.script("gh", "#!/bin/sh\necho \"gh $*\" >> %s\ncase \"$1 $2\" in\n"
+                    "\"pr list\") echo 7;;\n\"pr view\") echo \"$FAKE_VIEW\";;\nesac\n" % self.log)
+        self.land = self.script("land-pr.sh", "#!/bin/sh\necho \"land $*\" >> %s\necho landed-output\nexit ${FAKE_LAND_EXIT:-0}\n" % self.log)
+        self.oldpath, self.oldland = os.environ["PATH"], gd.LAND_PR
+        os.environ["PATH"] = self.bin + ":" + self.oldpath
+        os.environ["FAKE_VIEW"] = self.view
+        os.environ.pop("FAKE_LAND_EXIT", None)
+        gd.LAND_PR = self.land
+
+    def tearDown(self):
+        os.environ["PATH"], gd.LAND_PR = self.oldpath, self.oldland
+        os.environ.pop("FAKE_VIEW", None)
+        os.environ.pop("FAKE_LAND_EXIT", None)
+
+    def script(self, name, body):
+        p = os.path.join(self.bin, name)
+        with open(p, "w") as f:
+            f.write(body)
+        os.chmod(p, 0o755)
+        return p
+
+    def dispatcher(self, nodes=None):
+        import subprocess
+        api = TriageAPI(nodes or [node("a", status="failed", repo="r")])
+        d = gd.Dispatcher(api, args(state_dir=self.state, workers=1, stop_file=os.path.join(self.state, "STOP"),
+                                    interval=0.05, claude="/nonexistent/claude"), io.StringIO())
+        log = os.path.join(self.tmp, "w.log")
+        ev = [{"type": "system", "subtype": "init", "session_id": "s1", "mcp_servers": []},
+              {"type": "assistant", "message": {"content": [
+                  {"type": "tool_use", "id": "r1", "name": "mcp__plugin_enforcer_enforcer__graph_report",
+                   "input": {"node_id": "id-a", "status": "failed", "error": "could not run the lander",
+                             "data": {"pr": "https://github.com/o/r/pull/7"}}}]}},
+              {"type": "result", "subtype": "success", "num_turns": 3, "permission_denials": [], "result": "PR 7 open", "usage": {}}]
+        with open(log, "w") as f:
+            f.write("\n".join(json.dumps(e) for e in ev))
+        w = gd.Worker(api._nodes[0], log)
+        w.proc = subprocess.Popen(["true"])
+        w.proc.wait()
+        d.workers["a"] = w
+        return d, api
+
+    def settle(self, d):
+        d.reap()
+        deadline = time.time() + 10
+        while "a" in d.workers and time.time() < deadline:
+            time.sleep(0.05)
+            d.reap()
+
+    def test_landing_blocked_open_pr_with_green_checks_is_not_failed(self):
+        d, api = self.dispatcher()
+        d.reap()
+        text = d.out.getvalue()
+        self.assertIn("LANDING-BLOCKED a: PR #7 open, landing", text)
+        self.assertNotIn("FAILED a", text)
+        self.assertEqual(d.failures.get("a"), None)
+        self.assertEqual(d.landing, {"a": "7"})
+        self.settle(d)
+
+    def test_landing_blocked_lands_and_completes_without_a_remediation_launch(self):
+        d, api = self.dispatcher()
+        self.settle(d)
+        comp = [c for c in api.calls if c[0] == "complete"]
+        self.assertEqual(len(comp), 1, api.calls)
+        body = comp[0][2]
+        self.assertEqual(body["status"], "succeeded")
+        self.assertEqual(body["data"]["runner"], "graph-dispatch")
+        self.assertEqual([e["kind"] for e in body["evidence"]], ["note", "command", "command"])
+        self.assertIn("PR 7 open", body["evidence"][0]["text"])
+        self.assertIn('"state": "OPEN"', body["evidence"][1]["output"])
+        self.assertIn("landed-output", body["evidence"][2]["output"])
+        self.assertEqual(d.failures, {})
+        self.assertEqual(d.fail_session, {})
+        self.assertEqual(d.attempts.get("a", 0), 0)
+        self.assertIn("land 7", open(self.log).read())
+
+    def test_landing_blocked_is_not_triaged(self):
+        os.environ["FAKE_LAND_EXIT"] = "2"
+        d, api = self.dispatcher()
+        self.settle(d)
+        self.assertEqual([c for c in api.calls if c[0] == "complete"][0][2]["status"], "failed")
+        nodes = api.nodes("g")
+        self.assertEqual(d.failed_for_triage(nodes, set()), [])
+        self.assertEqual(d.candidates(nodes), [])
+        self.assertEqual(d.attempts.get("a", 0), 0)
+        self.assertEqual(d.failures, {})
+
+    def test_failing_checks_or_closed_pr_is_a_plain_failure(self):
+        bad = json.loads(self.view)
+        bad["statusCheckRollup"] = [{"conclusion": "FAILURE"}]
+        os.environ["FAKE_VIEW"] = json.dumps(bad)
+        d, api = self.dispatcher()
+        d.reap()
+        self.assertIn("FAILED a", d.out.getvalue())
+        self.assertNotIn("LANDING-BLOCKED", d.out.getvalue())
+        bad.update(state="MERGED", statusCheckRollup=[])
+        os.environ["FAKE_VIEW"] = json.dumps(bad)
+        d, api = self.dispatcher()
+        d.reap()
+        self.assertNotIn("LANDING-BLOCKED", d.out.getvalue())
+
+    def test_exit_6_lists_landing_blocked_separately(self):
+        os.environ["FAKE_LAND_EXIT"] = "2"
+        d, api = self.dispatcher()
+        self.settle(d)
+        self.assertEqual(d.run(), 6)
+        self.assertIn("landing-blocked (PR open, not landed; never triaged): a", d.out.getvalue())
+
+
 class ExitCodes(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
