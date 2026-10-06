@@ -1484,7 +1484,11 @@ class Dispatcher:
                                  "run /enforcer:login, then restart. Launching no more workers (drain).")
                 elif s["mcp"]:
                     self.mcp_down = 0
-                graph_denied = [t for t in s["denied_tools"] if GRAPH_TOOL_RE.search(t)]
+                # A denial the GOVERNOR issued (its decision JSON is in the denial text) is policy, not the
+                # harness refusing the work-loop tools: on 2026-10-06 the loop detector stopped a worker that
+                # was heartbeating and the old heuristic below drained the whole dispatcher for it.
+                governor_denied = governor_denied_tools(s)
+                graph_denied = [t for t in s["denied_tools"] if GRAPH_TOOL_RE.search(t) and t not in governor_denied]
                 if graph_denied and not self.blocked:
                     self.blocked = True
                     self.say("BLOCKED: %s denied in a headless worker. The MCP server marks the graph work-loop "
@@ -2401,6 +2405,16 @@ def _strings(o):
     elif isinstance(o, list):
         for v in o:
             yield from _strings(v)
+
+
+
+def governor_denied_tools(s):
+    """Tool names whose permission denial carries an enforcer-governor decision."""
+    out = set()
+    for d in s.get("denied_inputs") or []:
+        if "enforcer-governor:decision" in json.dumps(d):
+            out.add(str(d.get("tool_name")))
+    return out
 
 
 def summarize(path, harness="claude"):

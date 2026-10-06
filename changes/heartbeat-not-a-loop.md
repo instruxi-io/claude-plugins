@@ -1,0 +1,1 @@
+- Governor: graph_heartbeat and graph_plan_status no longer count toward the loop detector; the dispatcher no longer treats a governor-issued denial of a graph tool as the harness refusing headless work (#148).
