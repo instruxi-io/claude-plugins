@@ -21,6 +21,7 @@ const SUITES = [
   ['governor', { cmd: 'npm', args: ['test'], cwd: join(ROOT, 'lib/governor') }],
   ['graph (hooks, evidence, session, run.test against the stub graph)', nodeTest('test/graph/*.test.mjs')],
   ['dispatch/runtime', nodeTest('test/dispatch/runtime.test.mjs')],
+  ['dispatch/logs', nodeTest('test/dispatch/logs.test.mjs')],
   ['dispatch/salvage', nodeTest('test/dispatch/salvage.test.mjs')],
   ['python test/', isolatedPy('-m', 'unittest', 'discover', 'test')],
   ['python lib/graph', isolatedPy('-m', 'unittest', 'discover', '-s', 'lib/graph', '-p', 'test_*.py')],
