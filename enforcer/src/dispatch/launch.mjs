@@ -1,7 +1,8 @@
 // Launching workers: the claude/grok/codex command lines, the worker environment, detached spawn,
 // and process-group kill (SIGTERM, a grace period, then SIGKILL) by process.kill(-pid).
 import { spawn } from 'node:child_process';
-import { readFileSync, openSync, closeSync, realpathSync } from 'node:fs';
+import { readFileSync, closeSync, realpathSync } from 'node:fs';
+import { openStream, redactFile } from './logs.mjs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DOT } from '../../hooks/claude/paths.mjs';
@@ -111,7 +112,7 @@ export function launchCmd(prompt, model, args, key, { session = null, resume = f
 /** A launched process: `detached` (its own session and group, group id = pid), output to a log file.
  *  .exited is null while it runs, then {code, signal}; .done resolves at exit. */
 export function spawnWorker(cmd, { cwd, logPath, env = process.env }) {
-  const fd = openSync(logPath, 'w');
+  const fd = openStream(logPath);
   let child;
   try { child = spawn(cmd[0], cmd.slice(1), { cwd, env, detached: true, stdio: ['ignore', fd, fd] }); } finally { closeSync(fd); }
   const p = { child, pid: child.pid, exited: null, returncode: null };
@@ -119,6 +120,7 @@ export function spawnWorker(cmd, { cwd, logPath, env = process.env }) {
     child.on('error', (e) => { if (!p.exited) { p.exited = { code: 127, signal: null, error: e }; p.returncode = 127; res(p.exited); } });
     child.on('exit', (code, signal) => {
       p.exited = { code, signal };
+      redactFile(logPath);
       p.returncode = code ?? (signal === 'SIGKILL' ? 137 : 143);
       res(p.exited);
     });

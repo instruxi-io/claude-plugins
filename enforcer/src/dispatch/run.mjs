@@ -17,6 +17,7 @@ import { countTurns } from './stream.mjs';
 import { unsafeIdent } from './triage.mjs';
 import { loadRepoBases } from './prune.mjs';
 import { clip, parseTs } from './util.mjs';
+import { writeLog, redactFile, pruneLogs, DEFAULT_LOG_DAYS, DEFAULT_LOG_MAX_BYTES } from './logs.mjs';
 
 /** Per-worker spend cap passed as --max-budget-usd unless the operator overrides it. */
 export const DEFAULT_MAX_BUDGET_USD = 5;
@@ -64,10 +65,10 @@ export class Dispatcher {
     this.wake = null;
   }
 
-  say(msg) {
+  say(msg, fields = {}) {
     const line = `${new Date().toISOString().slice(11, 19)} ${msg}\n`;
     this.out(line);
-    if (!this.args.dryRun) { try { appendFileSync(join(this.state, 'dispatcher.log'), line); } catch { /* state dir gone */ } }
+    if (!this.args.dryRun) writeLog(this.state, line, msg, { key: fields.key ?? msg.match(/^\S+ (\S+?)[:\s]/)?.[1] ?? null, run: fields.run ?? null, fields });
   }
 
   stopping() { return existsSync(this.args.stopFile); }
@@ -433,7 +434,11 @@ export class Dispatcher {
       await this.tick();
       return 0;
     }
-    mkdirSync(this.logs, { recursive: true });
+    mkdirSync(this.logs, { recursive: true, mode: 0o700 });
+    if (!this.args.dryRun) {
+      const gone = pruneLogs(this.logs, { days: this.args.logDays ?? DEFAULT_LOG_DAYS, maxBytes: this.args.logMaxBytes ?? DEFAULT_LOG_MAX_BYTES });
+      if (gone.length) this.say(`pruned ${gone.length} old worker log(s)`, { removed: gone.length });
+    }
     this.say(`dispatching graph ${this.g} with ${a.workers} workers; stop file ${a.stopFile}`);
     let idle = 0;
     while (!this.terminating) {
