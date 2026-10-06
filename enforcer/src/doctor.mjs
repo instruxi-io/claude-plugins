@@ -21,12 +21,15 @@ export function hookCommandsCheck(root = ROOT) {
   return missing.length ? { ok: false, detail: `missing under the plugin root: ${[...new Set(missing)].join(', ')}` } : { ok: true, detail: `${n} script paths resolve` };
 }
 
-export async function runChecks({ fetchImpl = defaultFetch, network = true } = {}) {
+export const WINDOWS_STATEMENT = 'Windows: MCP, files and the governor are supported; graph hooks are supported after the Node port; enforcer dispatch is POSIX only (no bash, chmod is a no-op so credential file protection is advisory, no process groups): use WSL for dispatch';
+
+export async function runChecks({ fetchImpl = defaultFetch, network = true, platform = process.platform } = {}) {
   const rows = [];
   const add = (name, c) => rows.push({ name, ...c });
   const major = Number(process.versions.node.split('.')[0]);
   add('node version', { ok: major >= 18, detail: process.versions.node });
-  add('dispatch platform', { ok: true, detail: process.platform === 'win32' ? 'enforcer dispatch is not supported on Windows (process groups and POSIX signals): use WSL' : `${process.platform}: enforcer dispatch supported` });
+  if (platform === 'win32') add('windows support', { ok: true, detail: WINDOWS_STATEMENT });
+  add('dispatch platform', { ok: true, detail: platform === 'win32' ? 'enforcer dispatch is not supported on Windows (process groups and POSIX signals): use WSL' : `${process.platform}: enforcer dispatch supported` });
   try {
     const d = stateBase(); mkdirSync(d, { recursive: true }); accessSync(d, constants.W_OK);
     const mode = statSync(d).mode & 0o777;
