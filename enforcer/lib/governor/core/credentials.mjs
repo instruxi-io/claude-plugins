@@ -27,7 +27,7 @@
 // history. key_id also means a revoked key's segments stay identifiable after
 // the fact, which is most of what a device id was for.
 
-import { readFileSync, writeFileSync, mkdirSync, renameSync, chmodSync } from 'node:fs';
+import { readFileSync, mkdirSync, renameSync, chmodSync, openSync, writeSync, fsyncSync, closeSync, rmdirSync, statSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
@@ -69,15 +69,77 @@ export function readCredentials() {
 export function saveCredentials(doc) {
   const dir = SHARED_DIR();
   mkdirSync(dir, { recursive: true, mode: 0o700 });
+  try { chmodSync(dir, 0o700); } catch { /* not ours to chmod */ }
   const tmp = join(dir, `.credentials.${process.pid}.tmp`);
-  writeFileSync(tmp, JSON.stringify(doc, null, 2) + '\n', { mode: 0o600 });
+  const fd = openSync(tmp, 'w', 0o600);
+  try { writeSync(fd, JSON.stringify(doc, null, 2) + '\n'); fsyncSync(fd); } finally { closeSync(fd); }
   chmodSync(tmp, 0o600);
   renameSync(tmp, SHARED_FILE());
 }
 
+/**
+ * Origins a token_endpoint or saved base_url may point at. Both come from
+ * files an agent can write, so without this a planted file would have the
+ * refresh token POSTed to an attacker. https only, and only the production
+ * origin or the one the operator set in ENFORCER_BASE_URL.
+ */
+export function allowedOrigins() {
+  const out = new Set([new URL(DEFAULT_BASE_URL).origin]);
+  try { if (process.env.ENFORCER_BASE_URL) out.add(new URL(process.env.ENFORCER_BASE_URL).origin); } catch { /* ignore */ }
+  return out;
+}
+export function isAllowedUrl(u) {
+  try {
+    const url = new URL(String(u));
+    if (!allowedOrigins().has(url.origin)) return false;
+    // https required, except for an origin the operator named in the environment.
+    return url.protocol === 'https:' || (!!process.env.ENFORCER_BASE_URL && url.origin === new URL(process.env.ENFORCER_BASE_URL).origin);
+  } catch { return false; }
+}
+
+/**
+ * A saved base_url may be any https origin (self-hosted and staging installs
+ * sign in to their own), or plain http to the loopback for local development.
+ * Anything else is ignored. token_endpoint is stricter: isAllowedUrl.
+ */
+export function isSafeBase(u) {
+  if (isAllowedUrl(u)) return true;
+  try {
+    const url = new URL(String(u));
+    return url.protocol === 'https:' || (url.protocol === 'http:' && ['127.0.0.1', 'localhost', '[::1]'].includes(url.host.replace(/:\d+$/, '')));
+  } catch { return false; }
+}
+
+// One refresh lock for Node and Python: a directory, because mkdir is atomic
+// everywhere and both languages can use it (flock is not visible across them).
+// A holder that died leaves a directory behind; past STALE_MS it is broken.
+const LOCK_TIMEOUT_MS = 2000;
+const LOCK_STALE_MS = 15_000;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+export const refreshLockPath = () => join(SHARED_DIR(), '.refresh.lock');
+
+/** Acquire the shared refresh lock; returns a release function, or null on timeout. */
+export async function acquireRefreshLock(timeoutMs = LOCK_TIMEOUT_MS) {
+  const dir = SHARED_DIR();
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  try { chmodSync(dir, 0o700); } catch { /* not ours */ }
+  const lock = refreshLockPath();
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    try { mkdirSync(lock, { mode: 0o700 }); return () => { try { rmdirSync(lock); } catch { /* gone */ } }; }
+    catch (e) {
+      if (e.code !== 'EEXIST') return null;
+      try { if (Date.now() - statSync(lock).mtimeMs > LOCK_STALE_MS) { rmdirSync(lock); continue; } } catch { /* raced */ }
+    }
+    if (Date.now() >= deadline) return null;
+    await sleep(25);
+  }
+}
+
 /** Enforcer's public origin for this credential. */
 export function baseUrl(cfg = {}) {
-  const b = readCredentials()?.enforcer?.base_url || cfg.centralUrl || DEFAULT_BASE_URL;
+  const saved = readCredentials()?.enforcer?.base_url;
+  const b = (saved && isSafeBase(saved) ? saved : null) || cfg.centralUrl || DEFAULT_BASE_URL;
   return String(b).replace(/\/+$/, '');
 }
 
@@ -121,26 +183,40 @@ export async function authHeaders({ fetchImpl = globalThis.fetch, now = Date.now
   if (!o.expires_at || Date.parse(o.expires_at) - now() > REFRESH_SKEW_MS) {
     return { Authorization: `Bearer ${o.access_token}` };
   }
+  const stale = { Authorization: `Bearer ${o.access_token}` };
   if (!o.refresh_token || !o.token_endpoint || !o.client_id || typeof fetchImpl !== 'function') return {};
+  if (!isAllowedUrl(o.token_endpoint)) return {};
+  const release = await acquireRefreshLock();
+  // A hook has a few seconds in total; if another process holds the lock
+  // that long, use the token we have rather than block or lose it.
+  if (!release) return stale;
   try {
-    const body = new URLSearchParams({ grant_type: 'refresh_token', refresh_token: o.refresh_token, client_id: o.client_id });
-    const res = await fetchImpl(o.token_endpoint, {
+    // Re-read under the lock: whoever held it before us may have rotated the pair.
+    const cur = readCredentials();
+    const c = cur?.enforcer?.oauth;
+    if (c?.access_token && c.expires_at && Date.parse(c.expires_at) - now() > REFRESH_SKEW_MS) {
+      return { Authorization: `Bearer ${c.access_token}` };
+    }
+    const doc2 = cur || doc; const o2 = c || o;
+    if (!o2.refresh_token || !isAllowedUrl(o2.token_endpoint)) return {};
+    const body = new URLSearchParams({ grant_type: 'refresh_token', refresh_token: o2.refresh_token, client_id: o2.client_id || o.client_id });
+    const res = await fetchImpl(o2.token_endpoint, {
       method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body,
-      signal: AbortSignal.timeout(5000),
+      signal: AbortSignal.timeout(1800),
     });
     if (!res.ok) return {};
     const t = await res.json();
     if (!t?.access_token) return {};
     const next = {
-      ...o,
+      ...o2,
       access_token: t.access_token,
-      refresh_token: t.refresh_token || o.refresh_token,
+      refresh_token: t.refresh_token || o2.refresh_token,
       expires_at: new Date(now() + (Number(t.expires_in) || 900) * 1000).toISOString(),
-      scope: t.scope || o.scope,
+      scope: t.scope || o2.scope,
     };
-    saveCredentials({ ...doc, enforcer: { ...doc.enforcer, oauth: next } });
+    saveCredentials({ ...doc2, enforcer: { ...doc2.enforcer, oauth: next } });
     return { Authorization: `Bearer ${next.access_token}` };
-  } catch { return {}; }
+  } catch { return stale; } finally { release(); }
 }
 
 /**

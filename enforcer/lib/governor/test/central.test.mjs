@@ -185,7 +185,7 @@ await ok('policyOn:false asks nobody', async () => {
 await ok('an expiring OAuth token is refreshed and the rotated pair saved', async () => {
   const t = Date.parse('2026-09-14T12:00:00Z');
   saveCredentials({ enforcer: { oauth: {
-    access_token: 'old', refresh_token: 'r1', client_id: 'mcp_x', token_endpoint: 'https://as.test/token',
+    access_token: 'old', refresh_token: 'r1', client_id: 'mcp_x', token_endpoint: 'https://api.instruxi.dev/token',
     expires_at: new Date(t + 30_000).toISOString(),
   } } });
   let sent;
