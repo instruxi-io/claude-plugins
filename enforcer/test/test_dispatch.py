@@ -149,6 +149,19 @@ class StreamSummary(unittest.TestCase):
         self.assertEqual((s["turns"], s["result"], s["denials"]), (2, "success", 0))
 
 
+class JudgeLines(unittest.TestCase):
+    def test_judge_lines_rejected_lowest_first(self):
+        v = {"state": "rejected", "score": 0.4, "confidence": 0.9, "criteria": [
+            {"text": "b", "probability": 0.9}, {"text": "a" * 200, "probability": 0.1}]}
+        out = gd.judge_lines("k", v)
+        self.assertEqual(out[0], "JUDGE k score=0.4 conf=0.9")
+        self.assertEqual(out[1], "  0.10 " + "a" * 120)
+        self.assertEqual(out[2], "  0.90 b")
+
+    def test_judge_lines_verified_silent(self):
+        self.assertEqual(gd.judge_lines("k", {"state": "verified", "criteria": []}), [])
+
+
 class FakeAPI:
     def __init__(self, nodes):
         self._nodes = nodes

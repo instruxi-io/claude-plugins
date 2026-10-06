@@ -1402,6 +1402,8 @@ class Dispatcher:
                             "resumed" if getattr(w, "resumed", False) else "cold",
                             u.get("cache_read_input_tokens", "-"), u.get("cache_creation_input_tokens", "-"),
                             u.get("output_tokens", "-")))
+                for ln in judge_lines(key, s.get("verification")):
+                    self.say(ln)
                 outcome = failed_outcome(s, w.proc.returncode)
                 if sess is not None and sess.repo and not self.args.no_warm:
                     if s["reported"] and s["result"] == "success" and w.proc.returncode == 0 and outcome is None:
@@ -2291,6 +2293,7 @@ def summarize(path, harness="claude"):
                     s["card_skills"] = skills_of(text) or s["card_skills"]
                 elif c.get("tool_use_id") in reports:
                     s["rejection"] = rejection_of(text, "verification") or s["rejection"]
+                    s["verification"] = verification_of(text) or s.get("verification")
         elif t == "system" and e.get("subtype") == "init":
             s["started"] = True
             s["session_id"] = e.get("session_id") or s["session_id"]
@@ -2383,6 +2386,39 @@ def tool_text(content):
     if isinstance(content, list):
         return "".join(c.get("text", "") for c in content if isinstance(c, dict))
     return ""
+
+
+def verification_of(text):
+    """The report answer's `verification` dict, or None."""
+    try:
+        d = json.loads(text)
+    except ValueError:
+        return None
+    v = d.get("verification") if isinstance(d, dict) else None
+    return v if isinstance(v, dict) else None
+
+
+def judge_lines(key, v):
+    """Log lines for a judge verdict that is rejected, unverified or escalated:
+    `JUDGE <key> score=<s> conf=<c>`, then one indented line per criterion,
+    `  <p> <text[:120]>`, lowest probability first. [] for any other verdict."""
+    if not isinstance(v, dict):
+        return []
+    if v.get("state") not in ("rejected", "unverified") and not v.get("escalated") and v.get("state") != "escalated":
+        return []
+    score = v.get("score", "-")
+    conf = v.get("confidence", "-")
+    crit = [c for c in (v.get("criteria") or []) if isinstance(c, dict)]
+
+    def prob(c):
+        p = c.get("probability")
+        return p if isinstance(p, (int, float)) else 2
+    out = ["JUDGE %s score=%s conf=%s" % (key, score, conf)]
+    for c in sorted(crit, key=prob):
+        p = c.get("probability")
+        out.append("  %s %s" % ("%.2f" % p if isinstance(p, (int, float)) else "-",
+                                " ".join(str(c.get("text") or c.get("criterion") or "").split())[:120]))
+    return out
 
 
 def rejection_of(text, field):
