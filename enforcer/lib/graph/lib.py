@@ -192,46 +192,110 @@ def _expires_in(o):
 
 
 def _save_credentials(doc):
-    """Atomic and 0600, like the Node writer: a hook and the MCP helper read
-    this file concurrently, so neither may ever see half of it."""
+    """Atomic, fsynced and 0600, like the Node writer: a hook and the MCP helper
+    read this file concurrently, so neither may ever see half of it."""
     d = _enforcer_home()
     os.makedirs(d, mode=0o700, exist_ok=True)
+    try:
+        os.chmod(d, 0o700)
+    except OSError:
+        pass
     tmp = os.path.join(d, ".credentials.%d.tmp" % os.getpid())
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w") as f:
         json.dump(doc, f, indent=2)
         f.write("\n")
+        f.flush()
+        os.fsync(f.fileno())
     os.chmod(tmp, 0o600)
     os.replace(tmp, _credentials_file())
+
+
+DEFAULT_BASE_URL = "https://api.instruxi.dev"
+REFRESH_LOCK_TIMEOUT_S = 2.0
+REFRESH_LOCK_STALE_S = 15.0
+
+
+def _allowed_url(u):
+    """https, and the production origin or the one in ENFORCER_BASE_URL: the
+    token endpoint comes from a file an agent can write."""
+    import urllib.parse
+
+    def origin(x):
+        p = urllib.parse.urlsplit(str(x))
+        return (p.scheme, p.netloc.lower())
+    try:
+        o = origin(u)
+        env = os.environ.get("ENFORCER_BASE_URL")
+        if env and o == origin(env):
+            return True
+        return o == origin(DEFAULT_BASE_URL)
+    except Exception:
+        return False
+
+
+def _acquire_refresh_lock(timeout=REFRESH_LOCK_TIMEOUT_S):
+    """The lock Node shares: mkdir ~/.enforcer/.refresh.lock (atomic everywhere).
+    Returns the path to rmdir when done, or None after `timeout` seconds."""
+    import time
+    d = _enforcer_home()
+    os.makedirs(d, mode=0o700, exist_ok=True)
+    try:
+        os.chmod(d, 0o700)
+    except OSError:
+        pass
+    lock = os.path.join(d, ".refresh.lock")
+    deadline = time.time() + timeout
+    while True:
+        try:
+            os.mkdir(lock, 0o700)
+            return lock
+        except FileExistsError:
+            try:
+                if time.time() - os.stat(lock).st_mtime > REFRESH_LOCK_STALE_S:
+                    os.rmdir(lock)
+                    continue
+            except OSError:
+                pass
+        except OSError:
+            return None
+        if time.time() >= deadline:
+            return None
+        time.sleep(0.025)
 
 
 def _refresh(doc):
     """Redeem the refresh token and write the rotated pair back. Returns the new
     access token, or None (signed out) on any failure.
 
-    Refresh tokens are single-use and rotate, and several hooks can fire at
-    once, so the exchange runs under a lock and re-reads the file first: if
-    another process already refreshed, its token is used instead of spending a
-    refresh token that has just been superseded."""
-    import fcntl, urllib.parse, urllib.request
-    os.makedirs(_enforcer_home(), mode=0o700, exist_ok=True)
-    with open(os.path.join(_enforcer_home(), ".refresh.lock"), "w") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
+    Refresh tokens are single-use and rotate, and several hooks (Python and
+    Node) can fire at once, so the exchange runs under the shared mkdir lock and
+    re-reads the file first: if another process already refreshed, its token is
+    used instead of spending a refresh token that has just been superseded.
+    If the lock cannot be had in 2 s the stale token is returned."""
+    import urllib.parse, urllib.request
+    stale = ((doc.get("enforcer") or {}).get("oauth") or {}).get("access_token")
+    lock = _acquire_refresh_lock()
+    if lock is None:
+        return stale
+    try:
         doc = read_credentials() or doc
         o = doc["enforcer"].get("oauth") or {}
         if o.get("access_token") and _expires_in(o) > REFRESH_SKEW_S:
             return o["access_token"]
         if not (o.get("refresh_token") and o.get("token_endpoint") and o.get("client_id")):
             return None
+        if not _allowed_url(o["token_endpoint"]):
+            return None
         body = urllib.parse.urlencode({"grant_type": "refresh_token", "refresh_token": o["refresh_token"],
                                        "client_id": o["client_id"]}).encode()
         req = urllib.request.Request(o["token_endpoint"], data=body, method="POST",
                                      headers={"Content-Type": "application/x-www-form-urlencoded", "User-Agent": USER_AGENT})
         try:
-            with urllib.request.urlopen(req, timeout=max(HTTP_TIMEOUT, 3.0)) as r:
+            with urllib.request.urlopen(req, timeout=1.8) as r:
                 t = json.loads(r.read() or b"{}")
         except Exception:
-            return None
+            return stale
         if not t.get("access_token"):
             return None
         import datetime
@@ -246,6 +310,11 @@ def _refresh(doc):
         except Exception:
             pass  # the token still works for this call; the next hook refreshes again
         return o["access_token"]
+    finally:
+        try:
+            os.rmdir(lock)
+        except OSError:
+            pass
 
 
 def auth_headers(cfg):

@@ -48,6 +48,7 @@ const srv = createServer(async (req, res) => {
 });
 await new Promise((r) => srv.listen(0, '127.0.0.1', r));
 const tokenEndpoint = `http://127.0.0.1:${srv.address().port}/token`;
+process.env.ENFORCER_BASE_URL = new URL(tokenEndpoint).origin; // the operator names the one origin refresh may talk to
 
 const oauth = (access, expiresAt, refresh = 'rt-1') => ({
   enforcer: { base_url: 'https://api.example.test', oauth: {
