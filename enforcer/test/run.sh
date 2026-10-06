@@ -411,8 +411,16 @@ t=[h[\"timeout\"] for m in d for h in m[\"hooks\"] if \"event pre-tool-use\" in 
 assert t >= 25, t"'
 
 # --- full outputs beyond the clip go to the user's enforcer-files (adapter-files)
-check "attach: full outputs upload to enforcer-files, and every failure leaves the item as it was (unittest)" \
-  'env -u GRAPH_API_KEY -u CLAUDE_PLUGIN_DATA python3 -m unittest discover -s test -p "test_*.py" 2>&1 | tail -3 | grep -q "^OK"'
+attach_unittest() {
+  # fresh HOME/TMPDIR and no inherited stub port or run files; the unittest's own failure text is printed
+  local log; log="$(mktemp)"
+  ( export ISOLATED_TEST_RUN=1; bash test/isolated.sh env -u GRAPH_API_KEY -u CLAUDE_PLUGIN_DATA -u PORT -u STUB_LOG -u STUB_HEALTH_FILE \
+      python3 -m unittest discover -s test -p "test_*.py" ) > "$log" 2>&1
+  local rc=$?
+  if [ $rc -eq 0 ] && grep -q "^OK$" "$log"; then rm -f "$log"; return 0; fi
+  echo "--- attach unittest failed (exit $rc); output tail:" >&2; tail -60 "$log" >&2; rm -f "$log"; return 1
+}
+check "attach: full outputs upload to enforcer-files, and every failure leaves the item as it was (unittest)" 'attach_unittest'
 
 # --- the skill every worker loads: real tools and params, and the worker rule kept
 check "skill: frontmatter names the skill, description within 1024 chars" 'python3 test/check_skill.py frontmatter'
