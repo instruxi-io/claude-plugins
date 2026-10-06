@@ -32,17 +32,20 @@
 // of the action text, which is what lets it keep refusing when everything
 // else is broken.
 
-import { readFileSync, writeFileSync, mkdirSync, renameSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, renameSync, chmodSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { DIR } from './store.mjs';
 import { ruleId, ruleAuthz } from './capability.mjs';
-import { authHeaders, baseUrl, credentialId } from './credentials.mjs';
+import { authHeaders, baseUrl, credentialId, acquireRefreshLock } from './credentials.mjs';
 
 export const RESOURCE_TYPE = 'agent_action';
 const API = '/api/v1/enforcer';
 const CACHE = () => join(DIR, 'policy-cache.json');
 const IDENTITY_TTL_MS = 60 * 60 * 1000;
+// An outage must not cost every matched call the full timeout: remember that a
+// host was unreachable for this long.
+const NEGATIVE_TTL_MS = 60 * 1000;
 
 export const ALLOW = 'allow';
 export const DENY = 'deny';
@@ -66,13 +69,21 @@ const ACCOUNT_PREFIX = /^account policy:\s*/i;
 const isPlatformReason = (r) => /^[a-z_]+$/.test(String(r || ''));
 
 const readCache = () => { try { return JSON.parse(readFileSync(CACHE(), 'utf8')) || {}; } catch { return {}; } };
-function writeCache(c) {
+// Read-modify-write under the shared lock, tmp+rename, mode 0600. `mutate`
+// gets a fresh read so concurrent hooks do not clobber each other.
+async function updateCache(mutate) {
+  let release = null;
   try {
+    release = await acquireRefreshLock();
+    const c = readCache();
+    mutate(c);
     mkdirSync(DIR, { recursive: true });
     const tmp = CACHE() + `.${process.pid}.tmp`;
-    writeFileSync(tmp, JSON.stringify(c));
+    writeFileSync(tmp, JSON.stringify(c), { mode: 0o600 });
+    chmodSync(tmp, 0o600);
     renameSync(tmp, CACHE());
   } catch { /* a cache that cannot be written only costs a round trip */ }
+  finally { if (release) release(); }
 }
 
 async function call(fetchImpl, url, init, timeoutMs) {
@@ -128,6 +139,11 @@ export async function consult(rule, cfg = {}, { fetchImpl = globalThis.fetch, no
   const cacheKey = createHash('sha256').update(`${base}|${cred}|${id}|${action}`).digest('hex').slice(0, 24);
 
   const cache = readCache();
+  const host = (() => { try { return new URL(base).host; } catch { return base; } })();
+  const neg = cache.negative?.[host];
+  if (neg && Number.isFinite(neg.at) && neg.at <= now() && now() - neg.at < NEGATIVE_TTL_MS) {
+    return { opinion: UNREACHABLE, detail: neg.detail || 'Enforcer could not be reached', cached: true };
+  }
   const hit = cache.decisions?.[cacheKey];
   if (hit && Number.isFinite(hit.at) && hit.at <= now() && now() - hit.at < ttl) return { ...hit.result, cached: true };
 
@@ -162,13 +178,15 @@ export async function consult(rule, cfg = {}, { fetchImpl = globalThis.fetch, no
     // Only real answers are cached. Caching "unreachable" would pin a blip for
     // the whole TTL; caching a decision is what keeps a burst of matched
     // commands from each paying a round trip.
-    if (result.opinion !== UNREACHABLE) {
-      cache.decisions = { ...(cache.decisions || {}), [cacheKey]: { at: now(), result } };
-    }
-    writeCache(cache);
+    await updateCache((c) => {
+      c.identity = { ...(c.identity || {}), [cred]: who };
+      if (result.opinion !== UNREACHABLE) c.decisions = { ...(c.decisions || {}), [cacheKey]: { at: now(), result } };
+      if (c.negative) delete c.negative[host];
+    });
     return result;
   } catch (e) {
     const detail = e?.name === 'TimeoutError' || e?.name === 'AbortError' ? `no answer within ${timeoutMs}ms` : 'Enforcer could not be reached';
+    await updateCache((c) => { c.negative = { ...(c.negative || {}), [host]: { at: now(), detail } }; });
     return { opinion: UNREACHABLE, detail };
   }
 }
