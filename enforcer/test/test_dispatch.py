@@ -1455,6 +1455,36 @@ class FailureRemediation(unittest.TestCase):
         self.assertIn("TRIAGE a -> gate: created gate gate-a", text)
         self.assert_no_report_of_failed_node(api)
 
+    def test_triage_gate_long_decision_truncates_title_keeps_description(self):
+        long = " ".join(["decide"] * 50)[:300]
+        os.environ["FAKE_TRIAGE"] = json.dumps({"action": "gate", "reason": "r", "decision": long})
+        rc, d, api, text, launches = self.run_dispatch()
+        g = [w[1] for w in api.writes if w[0] == "node" and w[1]["type"] == "gate"][0]
+        self.assertLessEqual(len(g["title"]), gd.TITLE_MAX)
+        self.assertTrue(g["title"].endswith("\u2026"))
+        self.assertIn(long, g["description"])
+        self.assertEqual(g["data"]["decision"], long)
+        self.assertEqual(g["key"], "gate-a")
+
+    def test_triage_gate_apierror_logs_server_detail(self):
+        e = gd.APIError(400, json.dumps({"error": "invalid_body", "detail": "title: too long"}))
+        self.assertEqual(e.detail(), "HTTP 400: title: too long")
+        self.assertEqual(gd.safe_key("Gate_X y!"), "gate_x-y")
+
+    def test_triage_gate_landing_only_blocker_routes_to_landing_blocked(self):
+        os.environ["FAKE_TRIAGE"] = json.dumps({"action": "gate", "reason": "r", "decision": "land it"})
+        orig, started = gd.Dispatcher.landing_blocked_info, []
+        gd.Dispatcher.landing_blocked_info = lambda self, w, s: {"pr": "9", "slug": None, "view": {}, "view_json": "{}"}
+        orig_sl = gd.Dispatcher.start_landing
+        gd.Dispatcher.start_landing = lambda self, w, s, lb: started.append(lb["pr"]) or self.landing.update({w.key: lb["pr"]}) or True
+        try:
+            rc, d, api, text, launches = self.run_dispatch()
+        finally:
+            gd.Dispatcher.landing_blocked_info, gd.Dispatcher.start_landing = orig, orig_sl
+        self.assertEqual(started, ["9"])
+        self.assertIn("LANDING-BLOCKED a: PR #9 open, landing", text)
+        self.assertFalse([w for w in api.writes if w[0] == "node" and w[1]["type"] == "gate"])
+
     def test_triage_that_reports_the_failed_node_applies_nothing(self):
         os.environ["FAKE_TRIAGE_WRONG_NODE"] = "1"
         rc, d, api, text, launches = self.run_dispatch()
