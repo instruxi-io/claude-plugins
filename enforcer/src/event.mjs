@@ -11,7 +11,6 @@ import { LEGACY_PROJECT_CONFIG } from '../hooks/claude/paths.mjs';
 
 const root = (p) => fileURLToPath(new URL(`../${p}`, import.meta.url));
 export const GRAPH_TOOL = /^mcp__(plugin_enforcer_enforcer|enforcer|enforcer-graph)__graph_/;
-const STAMPED = /^mcp__(plugin_enforcer_enforcer|enforcer|enforcer-graph)__graph_(next_work|heartbeat|report)$/;
 const PRE_GRAPH = /^mcp__(plugin_enforcer_enforcer|enforcer|enforcer-graph)__graph_(next_work|report|remember|heartbeat)$/;
 const POST_GRAPH = /^mcp__(plugin_enforcer_enforcer|enforcer|enforcer-graph)__graph_(next_work|report|heartbeat)$/;
 
@@ -96,7 +95,7 @@ function python(handlers, raw, deadline) {
 }
 
 // PostToolUse and PostToolUseFailure handlers run in this process: no python on the hot path.
-const NATIVE = { track_run: ['track-run', 'trackRun'], capture_evidence: ['capture', 'captureEvidence'], heartbeat: ['heartbeat', 'heartbeat'] };
+const NATIVE = { track_run: ['track-run', 'trackRun'], capture_evidence: ['capture', 'captureEvidence'], heartbeat: ['heartbeat', 'heartbeat'], attach_evidence: ['attach', 'attachEvidence'] };
 export async function native(handlers, ev, deadline) {
   let out = null;
   for (const h of handlers) {
@@ -136,14 +135,10 @@ export async function runEvent(name) {
   if (denied) handlers = [];
   let code = 0;
   if (handlers.length) {
-    const stamped = event === 'PreToolUse' && STAMPED.test(tool);
-    const noPy = (event === 'SessionStart' || stamped) && python3Missing();
+    const noPy = event === 'SessionStart' && python3Missing(); // the attach hook is Node: no python needed
     if (noPy && event === 'SessionStart') {
       const msg = 'enforcer: python3 is not on PATH, so the graph hooks (evidence capture, heartbeats, attestation) cannot run. Install python3, then run `enforcer doctor`. Graph calls are attested hooks=off:python3.';
       out = merge(out, { systemMessage: msg, hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: msg } });
-    } else if (noPy && stamped) {
-      const v = (() => { try { return JSON.parse(readFileSync(root('plugin.json'), 'utf8')).version; } catch { return 'unknown'; } })();
-      out = merge(out, { hookSpecificOutput: { hookEventName: 'PreToolUse', updatedInput: { ...(ev.tool_input || {}), client: `enforcer-graph-plugin/${v}; hooks=off:python3` } } });
     } else if (!noPy && (event === 'SessionStart' || graphContextLive(ev))) { // session-start notices print with or without a graph
       const deadline = Date.now() + (spec.budget || 5000);
       const r = handlers.every((h) => NATIVE[h]) ? await native(handlers, ev, deadline) : python(handlers, raw, deadline);
