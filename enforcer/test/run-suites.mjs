@@ -18,7 +18,7 @@ const SUITES = [
   ['dispatch/injection', node('test/dispatch/injection.test.mjs')],
   ['dispatch/pure', nodeTest('test/dispatch/pure.test.mjs')],
   ['dispatch/env', nodeTest('test/dispatch/env.test.mjs')],
-  ['dispatch/injection', nodeTest('test/dispatch/injection.test.mjs')],
+  ['dispatch/injection', node('test/dispatch/injection.test.mjs')],
   ['governor', { cmd: 'npm', args: ['test'], cwd: join(ROOT, 'lib/governor') }],
   ['config', node('test/config.test.mjs')],
   ['graph (hooks, evidence, session, run.test against the stub graph)', nodeTest('test/graph/*.test.mjs')],
