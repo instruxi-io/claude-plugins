@@ -1,0 +1,1 @@
+test/run.sh's 116 checks became node:test against a Node stub graph server (test/graph/run.test.mjs); npm test runs every suite and writes test-results/junit.xml; privateDir no longer spins on an unwritable /proc path.

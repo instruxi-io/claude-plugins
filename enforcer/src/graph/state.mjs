@@ -7,8 +7,19 @@ import { stateBase } from '../state.mjs';
 export { stateBase };
 export { migrateDir } from '../../lib/governor/core/migrate.mjs';
 
+// mkdir -p that cannot spin: Node's recursive mkdir loops forever on an unwritable tree such as /proc/nonexistent/x.
+function mkdirp(d) {
+  try { mkdirSync(d, { mode: 0o700 }); } catch (e) {
+    if (e.code === 'EEXIST') return;
+    const up = dirname(d);
+    if (e.code !== 'ENOENT' || up === d) throw e;
+    mkdirp(up);
+    mkdirSync(d, { mode: 0o700 });
+  }
+}
+
 export function privateDir(d) {
-  mkdirSync(d, { recursive: true, mode: 0o700 });
+  mkdirp(d);
   try { if ((statSync(d).mode & 0o777) !== 0o700) chmodSync(d, 0o700); } catch {}
   return d;
 }

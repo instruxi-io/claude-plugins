@@ -1,7 +1,7 @@
 import tmpclean  # noqa: F401
 """Full outputs beyond the clip go to the USER's enforcer-files (adapter-files).
 
-Run by test/run.sh (python3 -m unittest); pytest collects it too. Everything is
+Run by npm test (python3 -m unittest); pytest collects it too. Everything is
 local: a stub enforcer-files on 127.0.0.1 with the real routes and shapes
 (GET /storage/provider -> {provider, configured, upload_mode}; multipart POST
 /storage/file/{provider}/upload -> {success, data: {file_id}}).
