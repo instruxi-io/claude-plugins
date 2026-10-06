@@ -1,1 +1,0 @@
-- land-pr waits for every workflow run on the head sha to complete, not only the check runs already registered; #148 had merged with its test job still queued.

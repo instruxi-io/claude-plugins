@@ -1,1 +1,0 @@
-- CI release gate accepts a `changes/<slug>.md` fragment instead of a version bump on PRs that touch enforcer/, so parallel fix PRs do not conflict on CHANGELOG.md.

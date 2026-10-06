@@ -1,1 +1,0 @@
-- Dispatcher runtime ported to Node (src/dispatch: api, lease, worktree, launch, run): process-group kill, signal drain, pids.json orphan reaping, usage-limit and CI holds; `enforcer dispatch` runs it (not on Windows).

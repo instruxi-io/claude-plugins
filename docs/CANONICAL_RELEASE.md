@@ -52,7 +52,7 @@ per-harness extensions.**
 
 ```
 enforcer/
-  plugin.json              Agent Plugins 1.0 (name enforcer, version 1.0.6, $schema)
+  plugin.json              Agent Plugins 1.0 (name enforcer, version 1.1.0, $schema)
   mcp.json                 streamable-http, api.instruxi.dev/mcp
   .claude-plugin/plugin.json   Claude compatibility fallback (same version)
   .mcp.json                Claude: http + headersHelper (until OAuth verified)
@@ -71,7 +71,7 @@ enforcer/
   src/dispatch/            the dispatcher (Node)
   test/                    node tests and bash install checks; harness fixtures
 docs/CANONICAL_RELEASE.md  this file
-.claude-plugin/marketplace.json   enforcer 1.0.6; jev-hooks; deprecated aliases
+.claude-plugin/marketplace.json   enforcer 1.1.0; jev-hooks; deprecated aliases
 .agents/plugins/marketplace.json  Codex marketplace, same artifact
 ```
 

@@ -1,1 +1,0 @@
-- The MCP tool manifest lives in the spec lock: check-allowlist reads it (with a per-profile view), the vendored fixture and the soft MCP_MANIFEST_TOKEN step are gone, and tool-result shape tests cover graph_next_work and graph_heartbeat.

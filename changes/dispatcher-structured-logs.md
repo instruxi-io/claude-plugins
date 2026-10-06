@@ -1,1 +1,0 @@
-- The dispatcher logs JSONL (ts, level, event, key, run, fields) to dispatcher.jsonl beside the human dispatcher.log; worker streams are 0600, redacted on exit, and pruned on start past 14 days or 2 GB.

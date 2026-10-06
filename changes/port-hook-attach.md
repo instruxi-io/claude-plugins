@@ -1,1 +1,0 @@
-- Run attach_evidence (evidence gate, gh PR resolution, enforcer-files upload, client attestation, usage) in-process in Node (src/graph/hooks/attach.mjs); the PreToolUse graph hook no longer needs python3.

@@ -1,1 +1,0 @@
-- Run track_run, heartbeat and capture_evidence in-process in Node (src/graph/hooks/*), so a graph-live PostToolUse spawns no python3; differential test against the Python handlers.

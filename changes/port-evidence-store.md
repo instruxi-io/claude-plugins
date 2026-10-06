@@ -1,1 +1,0 @@
-- Port the evidence store (locked O_APPEND append, 50 MB cap, sweep, failing-first select, merge) to src/graph/evidence.mjs, byte-identical to the Python jsonl, with a differential test.

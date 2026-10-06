@@ -1,1 +1,0 @@
-- One error mapping (src/errors.mjs) from server machine codes to user and model messages: each code is announced once per session and logged locally, and the server's warnings[] (hooks_inactive, client_outdated) are surfaced once.

@@ -1,1 +1,0 @@
-A checked-in manifest of every API call the plugin makes (test/contract/used.json, from scripts/extract-api-usage.mjs) and a contract test of it against the pinned specs on every run and against the deployed and main specs nightly (contract-nightly); the two audit drifts are recorded as known drift.

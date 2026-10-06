@@ -1,1 +1,0 @@
-ENFORCER_DEBUG=1 appends one JSON line per hook run to hooks.log.jsonl (rotated at 10 MB, two generations, 0600); the third failure of a hook in a session adds a one-line systemMessage naming the hook and the log (hook-debug-log).

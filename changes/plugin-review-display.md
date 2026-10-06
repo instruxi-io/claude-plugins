@@ -1,1 +1,0 @@
-- `enforcer dispatch status` prints each failed criterion of a review item with its probability and the threshold.
