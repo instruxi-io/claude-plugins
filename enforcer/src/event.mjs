@@ -42,7 +42,7 @@ const EVENTS = {
   PostToolUse: { gov: 'post-tool-use.mjs', budget: 4500 },
   PostToolUseFailure: { budget: 4500 },
   SessionStart: { gov: 'session.mjs', budget: 9000 },
-  SessionEnd: { gov: 'session.mjs' },
+  SessionEnd: { gov: 'session.mjs', budget: 4500 },
   UserPromptSubmit: { gov: 'user-prompt-submit.mjs' },
   SubagentStart: { gov: 'subagent.mjs' },
   PreCompact: { budget: 9000 },
@@ -79,7 +79,7 @@ async function governor(file, raw) {
 
 // Every graph handler runs in this process.
 const NATIVE = { track_run: ['track-run', 'trackRun'], capture_evidence: ['capture', 'captureEvidence'], heartbeat: ['heartbeat', 'heartbeat'], attach_evidence: ['attach', 'attachEvidence'],
-  session_start: ['session', 'sessionStart'], remember_on_compact: ['session', 'rememberOnCompact'], open_run_guard: ['session', 'openRunGuard'] };
+  session_start: ['session', 'sessionStart'], start_ticker: ['ticker', 'startTicker'], stop_ticker: ['ticker', 'stopTicker'], remember_on_compact: ['session', 'rememberOnCompact'], open_run_guard: ['session', 'openRunGuard'] };
 /** The run id for a hook log line: the live run of this actor's session, else the environment's. */
 const runOf = (ev) => { try { return loadRun(actorKey(ev))?.run_id || undefined; } catch { return undefined; } };
 export async function native(handlers, ev, deadline) {
@@ -116,11 +116,13 @@ export async function runEvent(name) {
   let handlers = [];
   const tool = ev.tool_name || '';
   if (event === 'PreToolUse' && PRE_GRAPH.test(tool)) handlers = ['attach_evidence'];
-  else if (event === 'PostToolUse') handlers = [...(POST_GRAPH.test(tool) ? ['track_run'] : []), 'capture_evidence', 'heartbeat'];
-  else if (event === 'PostToolUseFailure') handlers = ['capture_evidence', 'heartbeat'];
+  else if (event === 'PreToolUse' && tool === 'Bash') handlers = ['start_ticker'];
+  else if (event === 'PostToolUse') handlers = [...(POST_GRAPH.test(tool) ? ['track_run'] : []), 'stop_ticker', 'capture_evidence', 'heartbeat'];
+  else if (event === 'PostToolUseFailure') handlers = ['stop_ticker', 'capture_evidence', 'heartbeat'];
+  else if (event === 'SessionEnd') handlers = ['stop_ticker'];
   else if (event === 'SessionStart' && (!ev.source || /^(startup|resume|compact|clear)$/.test(ev.source))) handlers = ['session_start'];
   else if (event === 'PreCompact') handlers = ['remember_on_compact'];
-  else if (event === 'Stop' || event === 'SubagentStop') handlers = ['open_run_guard'];
+  else if (event === 'Stop' || event === 'SubagentStop') handlers = ['stop_ticker', 'open_run_guard'];
   if (denied) handlers = [];
   let code = 0;
   if (handlers.length && (event === 'SessionStart' || graphContextLive(ev))) { // session-start notices print with or without a graph

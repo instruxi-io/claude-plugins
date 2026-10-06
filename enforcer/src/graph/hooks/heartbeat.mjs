@@ -46,12 +46,16 @@ export async function heartbeat(inp, post) {
     const sid = actorKey(inp);
     if (isGraphTool(inp.tool_name)) return null;
     const run = loadRun(sid);
-    if (!run || run.reclaimed) return null;
+    if (!run) return null;
+    // the ticker (hooks/ticker.mjs) saw a non-ok heartbeat while a tool ran: say it now
+    let state, pending = false;
+    if (run.pending_state) { state = run.pending_state; delete run.pending_state; pending = true; saveRun(sid, run); }
+    else if (run.reclaimed) return null;
     const now = Date.now() / 1000;
     const longCall = inp.tool_name === 'Bash' && callSeconds(inp) > leaseSeconds(run) / 2;
-    if (!due(run, now, longCall)) return null;
+    if (!pending && !due(run, now, longCall)) return null;
     lastCall = null;
-    const state = await beat(inp, run, sid, now, post);
+    if (!pending) state = await beat(inp, run, sid, now, post);
     const said = [], ctxs = [];
     if (lastCall) {
       const n = lastCall.status >= 400 ? notice(sid, { status: lastCall.status, body: lastCall.errBody || {} }, { run: true }) : null;
