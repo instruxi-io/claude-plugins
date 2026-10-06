@@ -96,7 +96,7 @@ jobs:
         run: HOME=$(mktemp -d) node enforcer/bin/enforcer-headers.mjs | node -e 'const h=JSON.parse(require("fs").readFileSync(0,"utf8")); if (Object.keys(h).length) process.exit(1); console.log("{} ok")'
 
   # The same per-suite runner on every OS. Windows runs hooks and CLIs only (the runner skips
-  # dispatcher, governor and python suites there with a reason); JUnit is uploaded per OS.
+  # dispatcher and governor suites there with a reason); JUnit is uploaded per OS.
   matrix:
     strategy:
       fail-fast: false

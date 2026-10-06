@@ -49,17 +49,12 @@ const sb = stateBase();
 assert.equal(sb, join(home, '.config', 'enforcer', 'sessions', 'claude'));
 assert.equal(JSON.parse(readFileSync(join(sb, 'runs', 'sess1.json'), 'utf8')).run_id, 'r1'); ok('session state moved to sessions/claude');
 
-// the Python side computes the same path and migrates the same way
 mkdirSync(join(legacyStateDir(), 'evidence'), { recursive: true });
 rmLegacyPointer();
 function rmLegacyPointer() { try { execFileSync('rm', ['-f', join(legacyStateDir(), 'MOVED_TO')]); } catch {} }
 writeFileSync(join(legacyStateDir(), 'evidence', 'e.jsonl'), '{}\n');
-const py = execFileSync('python3', ['-c', 'import sys;sys.path.insert(0,"lib/graph");import lib;print(lib.evidence_dir())'],
-  { env: { ...process.env, HOME: home }, cwd: join(import.meta.dirname, '..') }).toString().trim();
-assert.equal(py, join(sb, 'evidence')); assert.equal(existsSync(join(sb, 'evidence', 'e.jsonl')), true); ok('python hooks agree on the path and migrate');
-
 // no dot-claude string anywhere in the package outside the Claude shims
-const grep = execFileSync('bash', ['-c', "grep -rn '\\." + "claude' . --include=*.mjs --include=*.py --include=*.sh --exclude-dir=node_modules | grep -v 'hooks/claude/' | wc -l"],
+const grep = execFileSync('bash', ['-c', "grep -rn '\\." + "claude' . --include=*.mjs --include=*.sh --exclude-dir=node_modules | grep -v 'hooks/claude/' | wc -l"],
   { cwd: join(import.meta.dirname, '..') }).toString().trim();
 assert.equal(grep, '0'); ok('no dot-claude string outside hooks/claude/');
 console.log(`\nmigration: ${n} checks passed`);

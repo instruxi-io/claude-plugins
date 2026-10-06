@@ -1,10 +1,9 @@
+import { createHash } from 'node:crypto';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, statSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { stateBase, dataDir, evidenceDir, tightenState, actorKey, privateWrite } from '../../src/graph/state.mjs';
 import { loadRun, saveRun, runPath } from '../../src/graph/run.mjs';
 import { http, httpStatus } from '../../src/graph/http.mjs';
@@ -56,14 +55,13 @@ test('legacy runs migrate when CLAUDE_PLUGIN_DATA is set, and honour CLAUDE_CONF
   restore();
 });
 
-test('actor key agrees with python', () => {
-  const LIB = fileURLToPath(new URL('../../lib/graph/lib.py', import.meta.url));
-  const inputs = [{ agent_id: 'agent-123' }, { agent_id: 'x', session_id: 's' }, { session_id: 'sess-9' }, {}, null];
-  const code = `import importlib.util,json,sys
-s=importlib.util.spec_from_file_location("graph_lib",sys.argv[1]);m=importlib.util.module_from_spec(s);s.loader.exec_module(m)
-print(json.dumps([m.actor_key(i) for i in json.load(sys.stdin)]))`;
-  const want = JSON.parse(execFileSync('python3', ['-I', '-c', code, LIB], { input: JSON.stringify(inputs), encoding: 'utf8' }));
-  assert.deepEqual(inputs.map(actorKey), want);
+test('actor key: sha256 of agent_id:<id> for a subagent, else the session id', () => {
+  const sha = (x) => createHash('sha256').update(`agent_id:${x}`).digest('hex').slice(0, 32);
+  assert.equal(actorKey({ agent_id: 'agent-123' }), sha('agent-123'));
+  assert.equal(actorKey({ agent_id: 'x', session_id: 's' }), sha('x'));
+  assert.equal(actorKey({ session_id: 'sess-9' }), 'sess-9');
+  assert.equal(actorKey({}), 'unknown');
+  assert.equal(actorKey(null), 'unknown');
 });
 
 test('http returns null / status 0 without credentials or on failure, never throws', async () => {

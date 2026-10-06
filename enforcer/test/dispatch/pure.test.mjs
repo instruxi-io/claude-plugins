@@ -1,4 +1,4 @@
-// `node --test test/dispatch/pure.test.mjs`: the dispatcher's pure logic, ported 1:1 from test_dispatch.py.
+// `node --test test/dispatch/pure.test.mjs`: the dispatcher's pure logic, ported from the Python dispatcher's suite.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, utimesSync } from 'node:fs';

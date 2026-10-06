@@ -1,4 +1,4 @@
-// PostToolUse / PostToolUseFailure: append what the tool did to the run's evidence file (port of capture_evidence.py).
+// PostToolUse / PostToolUseFailure: append what the tool did to the run's evidence file.
 import { actorKey } from '../state.mjs';
 import { loadRun } from '../run.mjs';
 import { appendEvidence, PR_RE } from '../evidence.mjs';

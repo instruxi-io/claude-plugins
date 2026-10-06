@@ -6,7 +6,7 @@
    export ENFORCER_BASE_URL=https://enforcer.example.com
    ```
 
-   `login`, `doctor`, the hooks, the governor and `graph-dispatch` all read it; it beats whatever a previous sign-in saved. The graph API becomes `$ENFORCER_BASE_URL/api/v1/graph`; set `GRAPH_BASE_URL` only if yours differs.
+   `login`, `doctor`, the hooks, the governor and the dispatcher all read it; it beats whatever a previous sign-in saved. The graph API becomes `$ENFORCER_BASE_URL/api/v1/graph`; set `GRAPH_BASE_URL` only if yours differs.
 
 2. Sign in: `/enforcer:login` (or `enforcer login`). The sign-in saves the base URL, so later shells without the variable still reach your server. `--base-url https://other.example` overrides both for one run.
 

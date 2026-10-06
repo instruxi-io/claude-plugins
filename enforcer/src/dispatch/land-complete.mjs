@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { clip } from './util.mjs';
 
 export const LAND_CODES = { 0: 'merged', 2: 'CI failed', 3: 'conflict with the base', 4: 'timed out', 5: 'usage or gh error', 7: 'CI unavailable' };
-export const ACCEPT_RUNNERS = ['node', 'python3', 'bash', 'grep', 'ls'];
+export const ACCEPT_RUNNERS = ['node', 'bash', 'grep', 'ls'];
 
 /** The node's `<command> prints ...` acceptance lines, read-only runners only; PR (gh/git) lines are skipped. */
 export function acceptanceCommands(node) {

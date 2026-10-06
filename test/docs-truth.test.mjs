@@ -27,6 +27,7 @@ test('no doc names a removed path', () => {
     [/enforcer hook\b/, '`enforcer hook` (the command is `enforcer event`)'],
     [/hooks\/(session_start|track_run|heartbeat|remember_on_compact|open_run_guard|capture_evidence|attach_evidence)\.py/, 'old python hook path'],
     [/\.claude\/graph\.json/, 'old project config path'],
+    [/bin\/graph-dispatch|lib\/graph\/|check_skill\.py|test_dispatch\.py|claude_paths\.py/, 'removed python runtime path'],
   ]), []);
 });
 

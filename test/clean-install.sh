@@ -19,26 +19,29 @@ echo "\$ claude plugin details enforcer@instruxi | grep Hooks"; claude plugin de
 
 # Fire the installed copy's PreToolUse hook on a graph_next_work call, as the
 # harness would: matcher from hooks.json, command with CLAUDE_PLUGIN_ROOT set.
-python3 - <<'EOF'
-import json, os, re, subprocess
-cfg = os.environ["CLAUDE_CONFIG_DIR"]
-inst = json.load(open(os.path.join(cfg, "plugins", "installed_plugins.json")))["plugins"]
-root = inst["enforcer@instruxi"][0]["installPath"]
-hooks = json.load(open(os.path.join(root, "hooks", "hooks.json")))["hooks"]
-tool = "mcp__plugin_enforcer_enforcer__graph_next_work"
-for g in hooks["PreToolUse"]:
-    m = g.get("matcher")
-    if m not in (None, "", "*") and not re.fullmatch(m, tool):
-        continue
-    for h in g["hooks"]:
-        cmd = h["command"].replace("${CLAUDE_PLUGIN_ROOT}", root)
-        env = {**os.environ, "CLAUDE_PLUGIN_ROOT": root, "GRAPH_ID": "g1", "CLAUDE_PLUGIN_DATA": os.path.join(cfg, "plugins", "data", "enforcer-instruxi")}
-        stdin = json.dumps({"session_id": "clean-install", "hook_event_name": "PreToolUse", "tool_name": tool,
-                            "tool_input": {"graph": "g1", "runner": "clean-install"}, "cwd": "/tmp"})
-        out = subprocess.run(cmd, shell=True, input=stdin, capture_output=True, text=True, env=env)
-        print(f"hook fired: PreToolUse {tool} -> {cmd.split('/')[-1]} exit={out.returncode}")
-        if out.stdout.strip():
-            ui = json.loads(out.stdout).get("hookSpecificOutput", {}).get("updatedInput")
-            if ui is not None:
-                print("updatedInput:", json.dumps(ui))
+node --input-type=module - <<'EOF'
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { spawnSync } from 'node:child_process';
+const cfg = process.env.CLAUDE_CONFIG_DIR;
+const inst = JSON.parse(readFileSync(join(cfg, 'plugins', 'installed_plugins.json'), 'utf8')).plugins;
+const root = inst['enforcer@instruxi'][0].installPath;
+const hooks = JSON.parse(readFileSync(join(root, 'hooks', 'hooks.json'), 'utf8')).hooks;
+const tool = 'mcp__plugin_enforcer_enforcer__graph_next_work';
+for (const g of hooks.PreToolUse) {
+  const m = g.matcher;
+  if (m && m !== '*' && !new RegExp(`^(?:${m})$`).test(tool)) continue;
+  for (const h of g.hooks) {
+    const cmd = h.command.replaceAll('${CLAUDE_PLUGIN_ROOT}', root);
+    const env = { ...process.env, CLAUDE_PLUGIN_ROOT: root, GRAPH_ID: 'g1', CLAUDE_PLUGIN_DATA: join(cfg, 'plugins', 'data', 'enforcer-instruxi') };
+    const stdin = JSON.stringify({ session_id: 'clean-install', hook_event_name: 'PreToolUse', tool_name: tool,
+      tool_input: { graph: 'g1', runner: 'clean-install' }, cwd: '/tmp' });
+    const out = spawnSync(cmd, { shell: true, input: stdin, encoding: 'utf8', env });
+    console.log(`hook fired: PreToolUse ${tool} -> ${cmd.split('/').pop()} exit=${out.status}`);
+    if (out.stdout.trim()) {
+      const ui = JSON.parse(out.stdout).hookSpecificOutput?.updatedInput;
+      if (ui !== undefined) console.log('updatedInput:', JSON.stringify(ui));
+    }
+  }
+}
 EOF

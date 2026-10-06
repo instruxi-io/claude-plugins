@@ -1,6 +1,6 @@
 # Configuration
 
-One resolver, `src/config.mjs`, decides which server every component talks to. The Python hooks (`lib/graph/lib.py`) and the dispatcher (`bin/graph-dispatch`) follow the same order. `login`, `doctor`, the hooks, `dispatch` and `plan check` agree.
+One resolver, `src/config.mjs`, decides which server every component talks to. The graph hooks and the dispatcher read it through the same resolver. `login`, `doctor`, the hooks, `dispatch` and `plan check` agree.
 
 ## Base URL precedence
 

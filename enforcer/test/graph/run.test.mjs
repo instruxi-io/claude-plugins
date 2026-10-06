@@ -484,60 +484,12 @@ test("attach: the attach hook's timeout covers the upload budget and the PR chec
   assert.ok(t >= 25, String(t));
 });
 
-// --- the python suites and skill checks that remain python ---------------------------------------------------------------------------------
-const py = (args, extra = {}) => spawnSync('python3', args, { cwd: ROOT, env: { ...baseEnv, ...extra }, encoding: 'utf8' });
-const isolatedPy = (args) => {
-  const e = { ...baseEnv }; delete e.CLAUDE_PLUGIN_DATA; delete e.GRAPH_API_KEY;
-  return spawnSync('bash', ['test/isolated.sh', 'python3', ...args], { cwd: ROOT, env: { ...e, ISOLATED_TEST_RUN: '1' }, encoding: 'utf8' });
-};
-test('attach: full outputs upload to enforcer-files, and every failure leaves the item as it was (unittest)', async () => {
-  const r = isolatedPy(['-m', 'unittest', 'discover', '-s', 'test', '-p', 'test_*.py']);
-  assert.ok(r.status === 0 && /^OK$/m.test(r.stderr + r.stdout), `exit ${r.status}\n${(r.stderr + r.stdout).split('\n').slice(-40).join('\n')}`);
-});
-
-// --- the skill every worker loads: real tools and params, and the worker rule kept ------------------------------------------------------
-const skill = (what) => () => { const r = py(['test/check_skill.py', what]); assert.equal(r.status, 0, r.stdout + r.stderr); };
-test('skill: frontmatter names the skill, description within 1024 chars', skill('frontmatter'));
-test('skill: names only real graph tools, with their real params', skill('tools'));
-test('skill: keeps the worker rule, evidence, stale-acceptance, merge and coordinator rules', skill('rules'));
-test('skill: the enforcer-files upload command it gives exists and takes --dir', skill('upload'));
-test('agent: graph-worker has name, sonnet, tool allowlist for all three server prefixes, no api_write', skill('agent'));
-test("plan: a node that says 'see plan section' or a brief over 5 files / 30 KB is rejected; skill and agent state the budget", skill('plan'));
-
-// --- bin/graph-dispatch: tier -> model, contested resources, dry run, drain, merge by script ------------------------------------------------
-let dispatchOut = null;
-const dispatchLines = () => {
-  if (dispatchOut === null) {
-    const e = { ...baseEnv }; delete e.GRAPH_API_KEY; delete e.GRAPH_AUTH_HELPER;
-    const r = spawnSync('python3', ['-m', 'unittest', 'discover', '-s', 'test', '-p', 'test_dispatch.py', '-v'], { cwd: ROOT, env: e, encoding: 'utf8' });
-    dispatchOut = (r.stdout || '') + (r.stderr || '');
-  }
-  return dispatchOut;
-};
-const dispatchCheck = (label, names, n) => test(label, async () => {
-  const re = new RegExp(`^test_(${names.join('|')}) .* ok$`, 'gm');
-  assert.equal((dispatchLines().match(re) || []).length, n);
-});
-dispatchCheck('dispatch: tier -> model (mechanical/standard sonnet, deep opus, user tier beats the cap, explicit model wins)',
-  ['tiers', 'cap_applies_to_planner_tier', 'user_tier_wins_over_cap', 'explicit_model_wins'], 4);
-dispatchCheck('dispatch: never two workers on one data.resources value; one land-pr per repo',
-  ['never_two_on_one_value', 'held_elsewhere_blocks', 'one_land_per_repo', 'held_elsewhere_counts_live_runs_not_lapsed'], 4);
-dispatchCheck('dispatch: dry run launches nothing; stop file drains; a denied graph tool drains; merge landed by script',
-  ['dry_run_launches_nothing', 'stop_file_drains', 'denied_graph_tool_blocks_and_drains', 'merge_landed_by_script'], 4);
-dispatchCheck('dispatch: warm workers (resume in repo, life cap retires, failed resume falls back cold, affinity, one --plugin-dir each, max_turns)',
-  ['next_node_in_repo_resumes_the_session', 'session_life_cap_retires', 'session_usable_caps', 'failed_resume_falls_back_to_cold', 'affinity_prefers_warm_repo', 'one_plugin_dir_each_and_max_turns'], 6);
-dispatchCheck('dispatch: failure -> remediation launch (resumed, error + last_rejection) -> triage; at most 2 attempts + 1 triage',
-  ['failure_then_remediation_then_triage', 'bounded_two_attempts_one_triage', 'failed_outcome', 'no_triage_flag', 'ordinary_failure_is_still_relaunched'], 5);
-dispatchCheck('dispatch: lease (second dispatcher refuses unless --takeover), transient retry, triage grace, scout/milestone/ops default',
-  ['second_dispatcher_refuses_unless_takeover', 'expired_lease_is_taken_and_lease_node_is_never_work', 'defaults_include_scout_milestone_ops_not_gate', 'api_retries_transient_errors_then_succeeds', 'network_error_never_crashes_a_pass', 'sh_retries_transient_gh_failure', 'triage_waits_grace_and_rechecks_status'], 7);
-dispatchCheck('dispatch: triage outcomes revise / prerequisite / gate write the graph; a triage never reports the failed node',
-  ['triage_revise', 'triage_prerequisite', 'triage_gate', 'triage_that_reports_the_failed_node_applies_nothing', 'invalid_decision_applies_nothing'], 5);
 test('agent + skill: a structured graph_remember before any failed report; the remediation/triage loop documented', async () => {
   assert.ok(readFileSync(join(ROOT, 'agents/graph-worker.md'), 'utf8').includes('Before ANY `failed` report, `graph_remember`'));
   assert.ok(/^## When a node fails: remember, remediate, triage/m.test(readFileSync(join(ROOT, 'skills/graph/SKILL.md'), 'utf8')));
 });
 test('dispatch: --help works and names the flags', async () => {
-  const r = spawnSync(join(ROOT, 'bin/graph-dispatch'), ['--help'], { cwd: ROOT, env: baseEnv, encoding: 'utf8' });
+  const r = spawnSync(process.execPath, [join(ROOT, 'bin/enforcer'), 'dispatch', '--help'], { cwd: ROOT, env: baseEnv, encoding: 'utf8' });
   assert.ok((r.stdout || '').includes('--workers'));
 });
 

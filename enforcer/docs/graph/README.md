@@ -259,14 +259,14 @@ Paths are relative to `enforcer/` in this repo, listed once:
 skills/graph/SKILL.md
 agents/graph-worker.md
 hooks/hooks.json                  # every event -> bin/enforcer event <name>
-lib/graph/                        # python helpers the Node hooks mirror, with their tests
 src/graph/hooks/*.mjs             # attach, capture, heartbeat, session, track-run, version-check
 src/graph/*.mjs                   # run file, state, http, redact, clip, evidence
 src/dispatch/*.mjs  src/dispatch-command.mjs
-bin/land-pr.sh  bin/graph-dispatch   # land one PR; keep N headless workers busy
+bin/land-pr.sh                    # land one PR (Node behind `enforcer land`)
 docs/graph/settings.example.json
 test/graph/*.test.mjs  test/graph/stub-graph.mjs   # every hook against a local stub of the API
-test/dispatch/  test/test_dispatch.py              # the dispatcher against a fake API and a fake claude
+test/dispatch/                    # the dispatcher against a fake API and a fake claude
+test/skill.test.mjs               # structural checks on the skill and the agent
 ```
 
 ```bash

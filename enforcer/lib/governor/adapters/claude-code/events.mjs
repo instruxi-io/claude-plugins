@@ -85,7 +85,7 @@ export function matchText(tool, toolInput) {
 
 // A subagent's hooks carry agent_id next to the parent's session_id. Key by it
 // so parallel subagents each get their own loop window, budget and burn; the
-// parent keeps the bare session key (as lib/graph/lib.py actor_key does).
+// parent keeps the bare session key (as src/graph/state.mjs actorKey does).
 const idPart = v => String(v).replace(/[^\w-]/g, '').slice(0, 8);
 export const agentOf = ev => {
   const base = ev.session_id ? 'claude:' + String(ev.session_id).slice(0, 8) : 'claude-code';

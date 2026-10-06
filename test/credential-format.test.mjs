@@ -1,13 +1,13 @@
-// ~/.enforcer/credentials.json is ONE file with FOUR readers and writers:
-//   enforcer/src/credentials.mjs        (the enforcer plugin; MCP header helper, /enforcer:login)
-//   enforcer-governor src/credentials.mjs (folded in at enforcer/lib/governor)
-//   enforcer/lib/graph/lib.py         (Python)
+// ~/.enforcer/credentials.json is ONE file with THREE readers and writers:
+//   enforcer/src/credentials.mjs        (the enforcer plugin; /enforcer:login)
+//   enforcer/lib/governor/src/credentials.mjs (the governor, folded in)
+//   enforcer/bin/enforcer-headers.mjs   (the MCP header helper and files, read in a separate process)
 // A format change in one signs the others out. This writes the file with each
 // implementation and reads it with every other, including a token REFRESHED by
 // one and read by another (refresh tokens rotate: a reader that misses the
 // write-back would spend a dead refresh token).
 //
-//   GOVERNOR_DIR=../enforcer-governor node test/credential-format.test.mjs
+//   node test/credential-format.test.mjs
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createServer } from 'node:http';
@@ -19,7 +19,7 @@ import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const root = resolve(new URL('..', import.meta.url).pathname);
-const governorDir = resolve(process.env.GOVERNOR_DIR || join(root, '..', 'enforcer-governor'));
+const governorDir = resolve(process.env.GOVERNOR_DIR || join(root, 'enforcer/lib/governor'));
 const home = mkdtempSync(join(tmpdir(), 'cred-format-'));
 Object.assign(process.env, { HOME: home, ENFORCER_HOME: join(home, '.enforcer'), GOVERNOR_HOME: join(home, '.g') });
 delete process.env.ENFORCER_API_KEY; delete process.env.GRAPH_API_KEY;
@@ -27,14 +27,10 @@ delete process.env.ENFORCER_API_KEY; delete process.env.GRAPH_API_KEY;
 const E = await import(pathToFileURL(join(root, 'enforcer/src/credentials.mjs')).href);
 const G = await import(pathToFileURL(join(governorDir, 'src/credentials.mjs')).href);
 
-// The Python reader, as the graph hooks call it: no key configured, so it uses the
-// sign-in. ASYNC on purpose: the token endpoint below lives in this process, and a
-// synchronous child would block the event loop it needs to answer.
-const py = async () => JSON.parse((await promisify(execFile)('python3', ['-c', `
-import json, sys
-sys.path.insert(0, ${JSON.stringify(join(root, 'enforcer/lib/graph'))})
-import lib
-print(json.dumps(lib.auth_headers({"api_key": ""})))`], { env: process.env })).stdout);
+// The headers helper, as Claude Code runs it for the MCP server and as files uses it: a separate
+// process, no key configured, so it uses the sign-in. ASYNC on purpose: the token endpoint below
+// lives in this process, and a synchronous child would block the event loop it needs to answer.
+const py = async () => JSON.parse((await promisify(execFile)(process.execPath, [join(root, 'enforcer/bin/enforcer-headers.mjs')], { env: process.env })).stdout);
 
 let pass = 0;
 const ok = async (label, fn) => { await fn(); pass++; console.log('  ok  ' + label); };
@@ -59,7 +55,7 @@ const future = new Date(Date.now() + 3600e3).toISOString();
 const past = new Date(Date.now() - 60e3).toISOString();
 const file = () => JSON.parse(readFileSync(E.SHARED_FILE(), 'utf8'));
 
-await ok('a sign-in written by the enforcer plugin is read the same by the governor and the graph hooks', async () => {
+await ok('a sign-in written by the enforcer plugin is read the same by the governor and the headers helper', async () => {
   E.saveCredentials(oauth('at-1', future));
   const want = { Authorization: 'Bearer at-1' };
   assert.deepEqual(await E.authHeaders(), want);
@@ -67,7 +63,7 @@ await ok('a sign-in written by the enforcer plugin is read the same by the gover
   assert.deepEqual(await py(), want);
 });
 
-await ok('a saved API key wins over a sign-in, in all three', async () => {
+await ok('a saved API key wins over a sign-in, in all three readers', async () => {
   const d = oauth('at-1', future); d.enforcer.api_key = 'env3_' + 'k'.repeat(43);
   G.saveCredentials(d); // written by the governor this time
   const want = { 'X-API-Key': d.enforcer.api_key };
@@ -76,9 +72,9 @@ await ok('a saved API key wins over a sign-in, in all three', async () => {
   assert.deepEqual(await py(), want);
 });
 
-await ok('a token the graph hooks refresh is written back in a shape Node reads (no second refresh)', async () => {
+await ok('a token the headers helper refresh is written back in a shape Node reads (no second refresh)', async () => {
   E.saveCredentials(oauth('at-1', past, 'rt-1'));
-  assert.deepEqual(await py(), { Authorization: 'Bearer at-2' }, 'python refreshed rt-1');
+  assert.deepEqual(await py(), { Authorization: 'Bearer at-2' }, 'helper refreshed rt-1');
   const o = file().enforcer.oauth;
   assert.deepEqual([o.access_token, o.refresh_token], ['at-2', 'rt-2'], 'rotated pair written back');
   assert.ok(Date.parse(o.expires_at) > Date.now(), 'expires_at parses in JS');
@@ -86,11 +82,11 @@ await ok('a token the graph hooks refresh is written back in a shape Node reads 
   assert.deepEqual(await G.authHeaders(), { Authorization: 'Bearer at-2' }, 'so does the governor');
 });
 
-await ok('a token Node refreshes is read by the graph hooks without refreshing again', async () => {
+await ok('a token Node refreshes is read by the headers helper without refreshing again', async () => {
   const d = file(); d.enforcer.oauth.expires_at = past; E.saveCredentials(d); // at-2 expired; refresh token rt-2
   assert.deepEqual(await G.authHeaders(), { Authorization: 'Bearer at-3' }, 'governor refreshed rt-2');
   assert.equal(file().enforcer.oauth.refresh_token, 'rt-3');
-  assert.deepEqual(await py(), { Authorization: 'Bearer at-3' }, 'python reads the governor\'s write-back');
+  assert.deepEqual(await py(), { Authorization: 'Bearer at-3' }, 'helper reads the governor\'s write-back');
 });
 
 await ok('the file stays private (0600) whoever wrote it last', () => {

@@ -1,4 +1,4 @@
-// Secret redaction: the same pattern set, order and output as lib/graph/lib.py redact().
+// Secret redaction: pattern set and order are part of the contract (test/graph/redact.test.mjs).
 const R = [
   ['pem', /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$(?![\s\S]))/g, null],
   ['bearer', /(\bBearer\s+)[A-Za-z0-9._~+/=-]{8,}/gi, '$1'],

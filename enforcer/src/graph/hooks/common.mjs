@@ -64,7 +64,7 @@ export function actorTranscript(inp) {
   return tp;
 }
 
-/** Tokens, model and tool calls in a transcript since an ISO time; null when nothing found. Same maths as lib.py. */
+/** Tokens, model and tool calls in a transcript since an ISO time; null when nothing found. */
 export function transcriptUsage(path, since) {
   if (!path) return null;
   const seen = new Set(), tools = new Set();

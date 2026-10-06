@@ -45,7 +45,7 @@ test('used manifest matches the code', () => {
 });
 
 test('every used call has an api-used declaration where it sends or reads fields', () => {
-  assert.ok(used.calls.length >= 40, `${used.calls.length} call sites extracted`);
+  assert.ok(used.calls.length >= 30, `${used.calls.length} call sites extracted`);
   assert.ok(used.calls.some((c) => c.sends.length) && used.calls.some((c) => c.reads.length) && used.calls.some((c) => c.headers.length));
 });
 

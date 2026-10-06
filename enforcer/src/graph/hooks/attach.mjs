@@ -1,4 +1,4 @@
-// PreToolUse on graph_next_work / graph_heartbeat / graph_report / graph_remember (port of attach_evidence.py).
+// PreToolUse on graph_next_work / graph_heartbeat / graph_report / graph_remember.
 // Stamps `client`, attaches captured evidence and usage, gates succeeded reports on the card's evidence hints.
 // A hook cannot edit the model's arguments; it returns the whole argument object through updatedInput.
 // Fails open: nothing captured, no data dir, garbage input -> no output.
