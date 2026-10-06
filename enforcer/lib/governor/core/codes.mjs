@@ -38,6 +38,7 @@ export const CODES = Object.freeze({
   outside_worktree: 'the working directory is not a git worktree on a graph/<key> branch',
   delivery_shape: 'a headless worker ran a delivery command (push, remote, pull request create/merge, api, land-pr.sh) that is not exactly a recognised shape',
   settings_write: 'an edit to plugin or governor settings',
+  protected_path: 'a headless worker changing CI workflows, release or deploy scripts, or secret files (a release node may)',
 
   // ── tenant policy (central.mjs, composed in gate.mjs) ────────────────────
   tenant_policy: "the organisation's Enforcer policy decided",

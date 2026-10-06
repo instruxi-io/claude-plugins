@@ -1,0 +1,1 @@
+- Node text is untrusted: the worker prompt fences it as data, the headless governor profile denies edits to .github/, release/deploy scripts and secret files (release nodes excepted), headless tree deletes inside the worker's own worktree are allowed, and workers default to --max-budget-usd 5.

@@ -18,6 +18,8 @@ import { unsafeIdent } from './triage.mjs';
 import { loadRepoBases } from './prune.mjs';
 import { clip, parseTs } from './util.mjs';
 
+/** Per-worker spend cap passed as --max-budget-usd unless the operator overrides it. */
+export const DEFAULT_MAX_BUDGET_USD = 5;
 export const DEFAULT_TYPES = 'task,bug,chore,merge,scout,milestone,ops'; // gate stays human
 export const CI_UNAVAILABLE = 7;
 export const CI_STATUS_URL = 'https://www.githubstatus.com/api/v2/components.json';
@@ -37,7 +39,7 @@ export async function actionsStatus(fetchText = null, url = CI_STATUS_URL) {
 }
 
 export function defaultArgs(o = {}) {
-  return { workers: 3, repoRoot: join(homedir(), 'apps'), repoBases: null, dryRun: false, model: null, maxTurns: 150, maxBudgetUsd: null,
+  return { workers: 3, repoRoot: join(homedir(), 'apps'), repoBases: null, dryRun: false, model: null, maxTurns: 150, maxBudgetUsd: DEFAULT_MAX_BUDGET_USD,
     maxAttempts: 2, types: DEFAULT_TYPES, interval: 30, exitWhenIdle: false, heartbeat: 120, landTimeout: 3000, stateDir: null, stopFile: null,
     onLimit: 'wait', limitBackoff: 1800, ciBackoff: 300, ciProbeInterval: 300, ciStatusUrl: CI_STATUS_URL, pluginDir: [], takeover: false,
     noLease: false, harness: 'claude', experimental: false, agentBin: null, grok: null, codex: null, leaseRenew: LEASE_TTL / 3, killGrace: 30,
@@ -201,7 +203,7 @@ export class Dispatcher {
     const logPath = join(this.logs, `${n.key}.${attempt}.jsonl`);
     let token = null;
     try { token = typeof this.api.call === 'function' ? await mintWorkerToken(this.api, process.env, `worker-${n.key}`.slice(0, 60)) : null; } catch (e) { this.say(`worker token not minted for ${n.key}: ${e.message}`); }
-    const proc = spawnWorker(cmd, { cwd: path, logPath, env: workerEnv(this.g, process.env, { token }) });
+    const proc = spawnWorker(cmd, { cwd: path, logPath, env: workerEnv(this.g, process.env, { token, release: n.type === 'release' }) });
     const w = { kind: 'agent', node: n, key: n.key, logPath, proc, started: now(), resources: resourcesOf(n), path, model, turns: 0,
                 maxTurns: Math.max(a.maxTurns, turnsCap || 0), session };
     this.workers.set(n.key, w);
@@ -517,7 +519,7 @@ export function parseDispatchArgs(argv, env = process.env) {
   const stateDir = v['state-dir'] || join(cfg, 'dispatch', graph);
   const d = defaultArgs();
   return { ...d, graph, workers, repoRoot: v['repo-root'] || d.repoRoot, repoBases: v['repo-bases'] || null, dryRun: !!v['dry-run'],
-    model: v.model || null, maxTurns: num(v['max-turns'], d.maxTurns), maxBudgetUsd: v['max-budget-usd'] ? Number(v['max-budget-usd']) : null,
+    model: v.model || null, maxTurns: num(v['max-turns'], d.maxTurns), maxBudgetUsd: v['max-budget-usd'] ? Number(v['max-budget-usd']) : d.maxBudgetUsd,
     maxAttempts: num(v['max-attempts'], d.maxAttempts), types: v.types || d.types, interval: num(v.interval, d.interval),
     exitWhenIdle: !!v['exit-when-idle'], heartbeat: num(v.heartbeat, d.heartbeat), landTimeout: num(v['land-timeout'], d.landTimeout),
     stateDir, stopFile: v['stop-file'] || join(stateDir, 'STOP'), onLimit: v['on-limit'] === 'exit' ? 'exit' : 'wait',

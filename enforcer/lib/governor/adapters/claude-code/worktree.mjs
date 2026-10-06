@@ -38,7 +38,7 @@ export function workerContext(ev, env = process.env) {
   const cmd = typeof ev?.tool_input?.command === 'string' ? ev.tool_input.command : '';
   const at = gitDir(cmd);
   const dir = at ? resolve(ev.cwd || '.', at) : ev.cwd;
-  return { headless: headlessFrom(env), branch: branchOf(dir), pluginRoot: env.CLAUDE_PLUGIN_ROOT || null };
+  return { headless: headlessFrom(env), branch: branchOf(dir), pluginRoot: env.CLAUDE_PLUGIN_ROOT || null, release: env.ENFORCER_RELEASE_NODE === '1' };
 }
 
 /**
