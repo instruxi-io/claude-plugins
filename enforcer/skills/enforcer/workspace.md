@@ -9,4 +9,4 @@ Run the command and print the result verbatim. After a `switch`, also call `enfo
 
 `switch` only moves between workspaces you already belong to. If it says you are not a member, use `/enforcer:login <WORKSPACE-CODE>` or accept an invite instead.
 
-Run `node bin/enforcer-workspace.mjs <arguments>` from the plugin root.
+Run `enforcer workspace <arguments>`; if `enforcer` is not on PATH (Claude Code), run `node "${CLAUDE_PLUGIN_ROOT}/bin/enforcer" workspace <arguments>`.
