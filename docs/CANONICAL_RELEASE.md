@@ -17,7 +17,7 @@ Instruxi ships **two** plugins:
   one every other adapter is tested against.
 - **`jev-hooks`** — Instruxi staff only. The nine Jev-backed *quality* hooks
   (narrow output, loop detection, pre-compact triage, stop self-check, subagent
-  verify, model routing…). It declares `enforcer` as a dependency and contains **no
+  verify, model routing…). It expects `enforcer` to be installed and contains **no
   allow/deny policy**: that is the governor's, inside `enforcer`.
 
 `enforcer-graph`, `enforcer-files` and `enforcer-governor` stop existing as
@@ -42,11 +42,11 @@ per-harness extensions.**
 |---|---|---|
 | MCP connection | `mcp.json`: `{"type": "streamable-http", "url": "https://api.instruxi.dev/mcp"}`. The endpoint already answers 401 with `WWW-Authenticate: Bearer resource_metadata=…/.well-known/oauth-protected-resource/mcp`; Codex and Grok complete OAuth from that. | Claude: `.mcp.json` keeps the `headersHelper` shim for API-key users until Claude's remote-MCP OAuth is verified against this server; then the shim goes. |
 | Skills | `skills/<name>/SKILL.md` for enforcer (login, workspace, setup), files (find/read/share/upload/download), graph (claim/work/heartbeat/report), governor (status/config/limit/verify). Slash commands become skills; a command file stays only where Claude needs the `/enforcer:x` surface. | none |
-| Policy engine | `bin/enforcer governor decide` — reads the common event JSON (`hook_event_name`, `tool_name`, `tool_input`, `session_id`, `cwd`, `transcript_path`, `model`), returns the 2.9.0 decision record (`{"decision","code","rule","tool","summary"}`), writes the tamper-evident log. Harness-neutral; no Claude field names inside. | `hooks/claude/*.mjs`, `extensions.com.openai.hooks` (Codex), `harness/grok/hooks/*.json` (Grok): ten-line shims that map stdin → event JSON and the record → that harness's exit code / `hookSpecificOutput`. |
-| Graph worker hooks | `bin/enforcer hook <event>` — evidence capture, heartbeat, open-run guard, remember-on-compact, version check — **self-gated**: they do nothing unless a graph context is live (`GRAPH_ID` set or a claimed run in the session state). | same three shims as above; one `hooks.json` per harness. |
-| Dispatcher | `bin/graph-dispatch --harness claude|codex|grok` — lease, salvage, triage, `data.base`, contested resources are harness-neutral already; only the launch command and the stream parser differ (`claude -p --output-format stream-json`, `codex exec --json`, `grok -p … --output-format json`). | per-harness launcher + parser modules with fixtures recorded from real runs. |
+| Policy engine | `bin/enforcer governor decide` — reads the common event JSON (`hook_event_name`, `tool_name`, `tool_input`, `session_id`, `cwd`, `transcript_path`, `model`), returns the 2.9.0 decision record (`{"decision","code","rule","tool","summary"}`), writes the tamper-evident log. Harness-neutral; no Claude field names inside. | `hooks/claude/*.mjs`, `extensions.com.openai.hooks` (Codex), `harness/grok/hooks/enforcer.json` (Grok, shims in `hooks/grok/`): short shims that map stdin → event JSON and the record → that harness's exit code / `hookSpecificOutput`. |
+| Graph worker hooks | `bin/enforcer hook <event>` — evidence capture, heartbeat, open-run guard, remember-on-compact, version check — gated in `bin/enforcer` by `graphContextLive`: they do nothing unless a graph context is live (`GRAPH_ID` set or a claimed run in the session state). The governor hooks are not gated this way; they always run. | same three shims as above; one hooks file per harness. |
+| Dispatcher | `bin/graph-dispatch --harness claude|codex|grok` — lease, salvage, triage, `data.base`, contested resources are harness-neutral already; only the launch command and the stream parser differ (`claude -p --output-format stream-json`, `codex exec --json`, `grok -p … --output-format json`). | per-harness launcher + parser modules parsers are tested on fixtures in `test/fixtures/dispatch` (Claude and Grok from real runs; the Codex parser is a stub, see CHANGELOG). |
 | Graph-worker agent | Claude-only extra (`agents/graph-worker.md`); Codex skips agent handlers, Grok has `.grok/agents/` — a Grok agent file is generated from the same source. | |
-| State | `~/.config/enforcer/` — governor records, session state, dispatcher state (credentials stay in `~/.enforcer/credentials.json`, shared by every plugin on the machine) — keyed by harness where it differs. No `~/.claude` path anywhere in the package. | migration on first run moves what exists. |
+| State | `~/.config/enforcer/` — governor records, session state, dispatcher state (credentials stay in `~/.enforcer/credentials.json`, shared by every plugin on the machine) — keyed by harness where it differs. No `~/.claude` path in the package outside `hooks/claude/` and the Claude plugin-cache lookup in `bin/graph-dispatch`. | migration on first run moves what exists. |
 
 ## Package layout
 
@@ -61,9 +61,10 @@ enforcer/
   commands/*.md            Claude extra, thin: each just invokes its skill
   hooks/hooks.json         Claude adapter wiring -> bin/enforcer hook|governor
   hooks/claude/*.mjs       the shims
-  enforcer/harness/codex/   plugin.json extensions.com.openai overlay, hooks wiring
-  harness/grok/            hooks/*.json templates, config.toml [mcp_servers.enforcer] snippet, agents/
-  bin/enforcer             node CLI: login, workspace, files, headers, governor, hook, harness install <claude|codex|grok>
+  harness/codex/mcp.json   Codex MCP snippet (the hooks overlay is `extensions.com.openai` in plugin.json, wired to hooks/hooks.json)
+  harness/grok/            hooks/enforcer.json template, config.toml.snippet ([mcp_servers.enforcer]), agents/, fixtures/
+  hooks/grok/              Grok shims
+  bin/enforcer             node CLI: login, workspace, files, headers, governor, hook, dispatch, plan, harness install|uninstall <codex|grok> (Claude installs from the marketplace)
   bin/graph-dispatch       python
   bin/land-pr.sh
   lib/governor/            the decision core (moved from enforcer-governor with history)
@@ -76,15 +77,31 @@ docs/CANONICAL_RELEASE.md  this file
 
 ## Rules every node follows
 
-1. **No `~/.claude` in the package.** State under `~/.config/enforcer/`.
+1. **No `~/.claude` in the package.** State under `~/.config/enforcer/`; credentials
+   stay in `~/.enforcer/credentials.json`. Exceptions: `hooks/claude/` and the Claude
+   plugin-cache lookup in `bin/graph-dispatch`. Pinned by `enforcer/test/migration.test.mjs`
+   and `enforcer/test/state.test.mjs` (old state moves to the new location, and
+   `CLAUDE_CONFIG_DIR` is honoured for the legacy dir). Nothing greps the tree for the string.
 2. **No Claude field names below the shim.** The core takes the common event JSON.
-3. **Every hook self-gates.** A user who never touches a graph pays nothing.
+   Pinned by `enforcer/lib/governor/test/core-boundary.test.mjs` (core/ imports only core/
+   and Node built-ins).
+3. **Every graph worker hook is gated.** `bin/enforcer hook <event>` exits with no output
+   and no python when no graph context is live, so a user who never touches a graph pays
+   nothing. Pinned by `enforcer/test/hooks.test.mjs`, `enforcer/test/grok-shims.test.mjs`
+   (silent without a graph context) and `enforcer/test/test_noop_hooks.py` (silent, and
+   under the latency budget). The governor hooks always run.
 4. **Fixtures are verbatim.** A parser or shim is tested against the exact JSON a real
    harness emitted (copied from a run log), never a hand-written approximation —
    the salvage parser was "fixed" twice against invented cards before a real one
-   showed the slug nested under `skill`.
-5. **One version.** `plugin.json`, `.claude-plugin/plugin.json`, `package.json` and
-   the marketplace carry the same string; the version-check hook compares one.
+   showed the slug nested under `skill`. Met for Grok (`enforcer/test/fixtures/grok`,
+   copies of `enforcer/harness/grok/fixtures`, from a grok 1.0.41 run; pinned by
+   `enforcer/test/grok-shim.test.mjs` and `enforcer/test/grok-shims.test.mjs`) and for the
+   Claude and Grok dispatcher streams (`enforcer/test/fixtures/dispatch`). **Not met for
+   Codex:** `enforcer/test/fixtures/codex` is written from Codex's documented payload
+   (`enforcer/test/codex-shims.test.mjs`); replace it when a Codex run is available.
+5. **One version.** `plugin.json`, `.claude-plugin/plugin.json`, `package.json`, `kit.json`
+   and the marketplace entries carry the same string; the version-check hook compares one.
+   Pinned by `enforcer/test/validate-plugin.test.mjs`.
 6. **History moves with code.** `enforcer-governor` and `enforcer-graph` fold in by
    `git subtree add` (or filter-repo), not by copy.
 7. **Claude first.** Nothing lands that makes the Claude install worse than 0.27.3 /
@@ -128,7 +145,7 @@ client registration (`registration_endpoint`), so a client needs no pre-issued c
   `enforcer/harness/codex/mcp.json`), then `codex mcp login enforcer`. Codex discovers the metadata
   above, registers itself, and opens the browser for the authorization-code + PKCE flow.
 - **Grok:** `grok mcp add --transport http enforcer https://api.instruxi.dev/mcp` (or merge
-  `harness/grok/config.toml`). Grok completes OAuth in the browser on first connect;
+  `harness/grok/config.toml.snippet`). Grok completes OAuth in the browser on first connect;
   `grok mcp doctor` diagnoses connectivity.
 
 The Codex and Grok flows were not completed here (browser sign-in is interactive; codex is not

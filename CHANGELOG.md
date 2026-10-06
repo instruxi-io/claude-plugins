@@ -31,9 +31,9 @@ One plugin, `enforcer`, as an Agent Plugins 1.0 package that installs in Claude 
 ### Adapters
 - **Claude Code**: `.claude-plugin/plugin.json` fallback and hook shims in `hooks/claude/`.
 - **Codex CLI**: `extensions.com.openai` overlay, `.agents/plugins/marketplace.json`, shims tested on Codex-shaped stdin.
-- **Grok Build**: `harness/grok` hooks, `config.toml` MCP section, agent, `enforcer harness install grok`, fixtures recorded from a live grok run.
+- **Grok Build**: `harness/grok` hooks, `config.toml.snippet` MCP section, agent, `enforcer harness install grok` (experimental), hook fixtures captured from a grok 1.0.41 run.
 - **MCP**: remote OAuth path proven without a shim; Codex and Grok MCP snippets.
-- **Dispatcher**: `graph-dispatch --harness claude|codex|grok`. Claude and Grok parsers are tested on recorded fixtures; the Codex parser is a stub until a real `codex exec --json` sample exists.
+- **Dispatcher**: `graph-dispatch --harness claude|codex|grok`. Claude and Grok parsers are tested on fixtures from real runs; Grok is experimental (`--experimental`); the Codex parser is a stub until a real `codex exec --json` sample exists.
 
 ### Deprecated aliases
 `enforcer-graph`, `enforcer-files` and `enforcer-governor` are marketplace aliases for one release. Install `enforcer` instead: `claude plugin install enforcer@instruxi`.
