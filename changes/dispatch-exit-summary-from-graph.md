@@ -1,1 +1,0 @@
-- Exit code 6's failed/denied list is recomputed from current graph status (failed or needs_review), not the session's denial memory; exit 0 when none remain.

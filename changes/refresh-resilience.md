@@ -1,1 +1,0 @@
-- OAuth refresh retries once on timeout/5xx and keeps the current token until its real expiry; only invalid_grant/400/401 signs out, and the reason is recorded in oauth.last_refresh_error.

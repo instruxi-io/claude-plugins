@@ -1,1 +1,0 @@
-Port of four hooks: session.mjs/version-check.mjs; python3 probe and hooks=off:python3 removed from bin/enforcer and src/event.mjs; doctor and preflight drop the python3 and fcntl checks (port-hooks-session).

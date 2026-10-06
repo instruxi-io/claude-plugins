@@ -1,1 +1,0 @@
-Added: enforcer plan check streams each result as it is known (running count on stderr), survives read-only temp trees (Go module cache), and takes --only <key> and --timeout <s>; the exit code reflects MISMATCH only.

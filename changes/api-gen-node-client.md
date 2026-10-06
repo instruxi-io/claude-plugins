@@ -1,1 +1,0 @@
-- Generated TypeScript types and openapi-fetch clients under lib/api from the pinned specs (npm run gen:api), with a staleness test and tsc in npm test.

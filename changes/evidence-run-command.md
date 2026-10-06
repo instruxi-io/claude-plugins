@@ -1,1 +1,0 @@
-Added `enforcer evidence run <graph>:<node>`: runs a node's acceptance lines (Go test flags, placeholders, cd prefix, one retry on collision, PR lines skipped) and prints evidence items; the dispatcher's landing completion, plan check and the graph skill use it.

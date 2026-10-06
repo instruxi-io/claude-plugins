@@ -1,1 +1,0 @@
-Docs truth pass 2: graph README, WORKER_BRIEF, CANONICAL_RELEASE and README alias table match the current layout (lib/graph, src/graph, `enforcer event`, no plugin dependency); test/docs-truth.test.mjs guards removed paths and versions.

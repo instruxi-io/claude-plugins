@@ -1,1 +1,0 @@
-- Spec lock: pinned OpenAPI specs and the MCP manifest for every server the plugin calls, with a sync script and a test that fails on drift (#135).

@@ -1,1 +1,0 @@
-- One config resolver (src/config.mjs, docs/CONFIG.md): base URL precedence flag > ENFORCER_BASE_URL > saved sign-in > default across hooks, login, doctor and the dispatcher; named errors for malformed env vars; docs/SELF_HOSTED.md recipe.

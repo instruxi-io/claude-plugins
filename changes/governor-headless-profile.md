@@ -1,1 +1,0 @@
-- Governor: the headless-worker rules are one named profile (`lib/governor/profiles/headless-worker.mjs`: allow, deny, loop, spend, untrusted framing) that `core/worker.mjs` evaluates; the dispatcher sets `ENFORCER_PROFILE=headless-worker`; one adversarial test replays the 2026-10-06 incidents and the injection fixtures.
