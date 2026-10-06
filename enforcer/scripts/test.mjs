@@ -1,4 +1,4 @@
-// `npm test`: run every suite in its own process, report every suite's result (a failure never masks the
+// `npm test` (node scripts/test.mjs): run every suite in its own process, report every suite's result (a failure never masks the
 // ones after it), and write JUnit XML to test-results/junit.xml for CI.
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
@@ -6,29 +6,25 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const node = (file, ...rest) => ({ cmd: process.execPath, args: ['--import', './test/tmp-cleanup.mjs', file, ...rest] });
-const nodeTest = (...files) => ({ cmd: process.execPath, args: ['--test', ...files] });
-
-// every top-level test/*.test.mjs runs under the isolating preload, discovered so a new suite never needs a list edit
-const top = readdirSync(join(ROOT, 'test')).filter((n) => n.endsWith('.test.mjs')).sort().map((n) => [n.replace('.test.mjs', ''), node(`test/${n}`)]);
+// Every *.test.mjs under test/ and lib/governor/test/ is discovered, so a new suite never needs a list edit
+// (package.json's test script is one fixed line). Each runs in its own process under the isolating preload
+// (test/tmp-cleanup.mjs) with a per-suite timeout. Slow end-to-end suites (graph/run, hooks-latency) run last.
+const TIMEOUT_MS = Number(process.env.SUITE_TIMEOUT_MS) || 300_000;
+const PRELOAD = join(ROOT, 'test', 'tmp-cleanup.mjs');
+const walk = (dir) => readdirSync(join(ROOT, dir), { withFileTypes: true }).flatMap((e) =>
+  e.isDirectory() ? (e.name === 'node_modules' || e.name === 'fixtures' ? [] : walk(`${dir}/${e.name}`)) : e.name.endsWith('.test.mjs') ? [`${dir}/${e.name}`] : []);
+// test/dispatch/runtime SIGTERMs its own process, which the preload's signal handler turns into exit 1: it runs bare
+const NO_PRELOAD = /(^|\/)dispatch\/runtime\.test\.mjs$/;
+const SLOW = /(^|\/)(graph\/run|hooks-latency)\.test\.mjs$/;
+const files = [...walk('test'), ...walk('lib/governor/test')].sort((a, b) => SLOW.test(a) - SLOW.test(b) || a.localeCompare(b));
 const SUITES = [
-  ...top,
+  ...files.map((f) => [f.replace(/\.test\.mjs$/, ''), { cmd: process.execPath, args: [...(NO_PRELOAD.test(f) ? [] : ['--import', PRELOAD]), join(ROOT, f)] }]),
   // tsc through node, not node_modules/.bin: on Windows the .bin entry is a .cmd shim Node will not spawn without a shell
   ['tsc (generated API types)', { cmd: process.execPath, args: [join(ROOT, 'node_modules/typescript/bin/tsc'), '--noEmit', '-p', 'lib/api/tsconfig.json'] }],
-  ['dispatch/injection', node('test/dispatch/injection.test.mjs')],
-  ['contract', node('test/contract/contract.test.mjs')],
-  ['dispatch/pure', nodeTest('test/dispatch/pure.test.mjs')],
-  ['dispatch/env', nodeTest('test/dispatch/env.test.mjs')],
-  ['governor', { cmd: 'npm', args: ['test'], cwd: join(ROOT, 'lib/governor') }],
-  ['graph (hooks, evidence, session, run.test against the stub graph)', nodeTest('test/graph/*.test.mjs')],
-  ['dispatch/runtime', nodeTest('test/dispatch/runtime.test.mjs')],
-  ['dispatch/logs', nodeTest('test/dispatch/logs.test.mjs')],
-  ['dispatch/status', nodeTest('test/dispatch/status.test.mjs')],
-  ['dispatch/salvage', nodeTest('test/dispatch/salvage.test.mjs')],
 ];
 
 // Per-platform profile: on Windows only hooks and CLIs run; the dispatcher and governor suites are skipped with a reason.
-const WIN_SKIP = /^(dispatch\/|governor|graph \()/;
+const WIN_SKIP = /^(test\/dispatch\/|lib\/governor\/|test\/graph\/)/;
 const skipReason = (name) => (process.platform === 'win32' && WIN_SKIP.test(name) ? 'dispatcher/governor suites are not supported on Windows (hooks and CLIs only)' : null);
 // test/quarantine.json: [{suite, owner, expires: YYYY-MM-DD, reason, os?}]. A quarantined suite still runs; its failure is
 // reported as skipped, not red, until the expiry date, after which it fails the run again. An optional `os` list
@@ -47,8 +43,9 @@ for (const [name, { cmd, args, cwd }] of SUITES) {
   if (skip) { process.stdout.write(`skip  ${name} (${skip})\n`); results.push({ name, ok: true, skipped: skip, seconds: 0, out: '', status: 0 }); continue; }
   const t = Date.now();
   // glob arguments for node --test are expanded by node itself (>= 21); older nodes get the shell's expansion
-  const r = spawnSync(cmd, args, { cwd: cwd || ROOT, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024, shell: args.some((a) => /\*/.test(a)) && process.versions.node.split('.')[0] < 21 });
-  const out = (r.stdout || '') + (r.stderr || '') + (r.error ? `\n${r.error.message}` : '');
+  const r = spawnSync(cmd, args, { cwd: cwd || ROOT, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024, timeout: TIMEOUT_MS });
+  const timedOut = r.error && r.error.code === 'ETIMEDOUT';
+  const out = (r.stdout || '') + (r.stderr || '') + (r.error ? `\n${timedOut ? `suite timed out after ${TIMEOUT_MS}ms` : r.error.message}` : '');
   const q = r.status === 0 ? null : quarantined(name);
   const ok = r.status === 0 || !!q;
   process.stdout.write(`${r.status === 0 ? 'ok  ' : q ? 'quar' : 'FAIL'}  ${name} (${((Date.now() - t) / 1000).toFixed(1)}s)\n`);
@@ -78,6 +75,6 @@ ${results.map((r) => `  <testsuite name="${esc(r.name)}" tests="1" failures="${r
 </testsuites>
 `;
 writeFileSync(join(ROOT, 'test-results', 'junit.xml'), xml);
-console.log(`\n${results.length - failed.length} passed, ${failed.length} failed`);
+console.log(`\n${results.length - failed.length} suites passed, ${failed.length} failed`);
 if (failed.length) console.log(`failed: ${failed.map((r) => r.name).join(', ')}`);
 process.exit(failed.length ? 1 : 0);

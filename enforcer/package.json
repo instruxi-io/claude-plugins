@@ -6,7 +6,7 @@
   "scripts": {
     "pretest": "node test/ensure-deps.mjs",
     "posttest": "node test/tmp-posttest.mjs",
-    "test": "node test/run-suites.mjs",
+    "test": "node scripts/test.mjs",
     "sync:spec": "node lib/api/sync-spec.mjs",
     "gen:api": "node lib/api/gen.mjs"
   },
