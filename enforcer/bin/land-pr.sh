@@ -123,10 +123,19 @@ while :; do
   if [ "$manual" = 1 ] && [ "$ms" != "BEHIND" ] && [ "$ms" != "BLOCKED" ]; then
     total=$(view statusCheckRollup "$ROLLUP | length")
     pending=$(view statusCheckRollup "$ROLLUP | map(select(.done | not)) | length")
+    # The rollup lists only check runs that have REGISTERED. A workflow whose first job finished
+    # while its second was still queued showed total=1, pending=0, and #148 merged with its test job
+    # unstarted (2026-10-06). So also require every workflow run for the head sha to be completed
+    # and not failed; a run that has not registered yet is a pending run, not "nothing to wait for".
+    head=$(view headRefOid .headRefOid)
+    runs_json=$(gh run list ${R[@]+"${R[@]}"} --commit "$head" --json status,conclusion,name 2>/dev/null || echo "[]")
+    runs_total=$(printf '%s' "$runs_json" | jq 'length')
+    runs_pending=$(printf '%s' "$runs_json" | jq 'map(select(.status != "completed")) | length')
+    runs_bad=$(printf '%s' "$runs_json" | jq -r 'map(select(.status == "completed" and (.conclusion | IN("success","skipped","neutral") | not))) | map(.name) | join(", ")')
+    if [ -n "$runs_bad" ]; then echo "land-pr: #$pr workflow run(s) failed: $runs_bad" >&2; exit 2; fi
     # A fresh push has no checks yet; give them 90s to register before
     # treating "no checks" as "nothing to wait for".
-    if [ "${pending:-1}" = 0 ] && { [ "${total:-0}" -gt 0 ] || [ $(( $(date +%s) - start )) -ge 90 ]; }; then
-      head=$(view headRefOid .headRefOid)
+    if [ "${pending:-1}" = 0 ] && [ "${runs_pending:-1}" = 0 ] && { [ "${total:-0}" -gt 0 ] && [ "${runs_total:-0}" -gt 0 ] || [ $(( $(date +%s) - start )) -ge 90 ]; }; then
       gh pr merge "$pr" ${R[@]+"${R[@]}"} "$method" --delete-branch --match-head-commit "$head" >/dev/null 2>&1 || true
     fi
   fi
