@@ -1,0 +1,1 @@
+The test script is now `node scripts/test.mjs`, which discovers every `*.test.mjs` under enforcer/test and lib/governor/test and runs each in its own process under the isolating preload with a per-suite timeout, so a new suite no longer edits a shared package.json line.

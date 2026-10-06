@@ -116,22 +116,11 @@ console.log('ok   kit defaults: only enforcer and jev-hooks are selectable, only
 // no suite reads the real home directory: every node suite runs under the isolating preload,
 // and none asks the OS for the home itself.
 {
-  const dirs = [['test', 'package.json'], ['lib/governor/test', 'lib/governor/package.json']];
-  for (const [d, pj] of dirs) {
-    // the top package's `test` is test/run-suites.mjs: every top-level suite is listed there under the isolating preload
-    const runner = d === 'test' ? readFileSync(new URL('./run-suites.mjs', import.meta.url), 'utf8') : '';
-    const script = rd(pj).scripts.test + runner;
-    for (const f of readdirSync(new URL(`../${d}`, import.meta.url)).filter((n) => n.endsWith('.test.mjs'))) {
-      if (d === 'test') {
-        // run-suites discovers every top-level *.test.mjs and runs it under the tmp-cleanup preload
-        assert.ok(runner.includes("endsWith('.test.mjs')") && runner.includes('./test/tmp-cleanup.mjs'), `${d}/${f} is run by test/run-suites.mjs under the isolating preload`);
-        continue;
-      }
-      assert.match(script, new RegExp(`--import \\S*tmp-cleanup\\.mjs ${d.split('/').pop()}/${f.replace('.', '\\.')}`), `${d}/${f} runs under the isolating preload`);
-    }
-  }
-  const top = readFileSync(new URL('./run-suites.mjs', import.meta.url), 'utf8');
-  assert.equal(rd('package.json').scripts.test, 'node test/run-suites.mjs');
+  // one assertion: the discovering runner applies the preload to every suite it spawns
+  const runner = readFileSync(new URL('../scripts/test.mjs', import.meta.url), 'utf8');
+  assert.ok(runner.includes("'--import', PRELOAD") && runner.includes("'test', 'tmp-cleanup.mjs'"), 'the runner applies the isolating preload');
+  assert.equal(rd('package.json').scripts.test, 'node scripts/test.mjs');
+  console.log('ok   the runner applies the isolating preload');
   for (const d of ['test', 'lib/governor/test']) {
     for (const f of readdirSync(new URL(`../${d}`, import.meta.url)).filter((n) => /\.test\.mjs$/.test(n))) {
       const src = readFileSync(new URL(`../${d}/${f}`, import.meta.url), 'utf8');
