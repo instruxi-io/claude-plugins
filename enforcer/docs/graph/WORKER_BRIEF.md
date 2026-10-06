@@ -1,66 +1,57 @@
-# WORKER_BRIEF: claude-plugins / enforcer-graph
+# WORKER_BRIEF: claude-plugins / the graph worker in `enforcer/`
 
-Read this and the repo CLAUDE.md first, then only the files your node names.
-Scope here: the `enforcer-graph/` plugin (skill, hooks, agent, bin, tests).
+Read this and the repo CLAUDE.md (if the repo has one) first, then only the files your node names.
+Scope: the graph worker inside the `enforcer` plugin (skill, hooks, agent, dispatcher, tests). It is not a separate plugin: `enforcer-graph` is an empty deprecated alias in `aliases/`, and there is no plugin dependency.
 
-## 1. Layout (where things live)
+## 1. Layout (paths relative to `enforcer/`)
 
-- `.claude-plugin/plugin.json`: name, `version` (currently 0.23.0). Only version source.
-- `skills/graph/SKILL.md` (22 KB): the loop; "Writing a plan" (~line 263) is the node/brief format.
-- `agents/graph-worker.md` (7 KB): one-node worker, maxTurns 80, reads CLAUDE.md + this brief.
-- `hooks/hooks.json`: wiring. Scripts in `hooks/*.py`, shared code in `hooks/lib.py` (28 KB).
-- `bin/land-pr.sh`: lands one PR, no model. `bin/graph-dispatch` (31 KB, python): keeps N headless workers busy.
-- `test/graph/run.test.mjs`: every hook against `test/graph/stub-graph.mjs` (local fake API). Also `check_skill.py`, `test_dispatch.py`, `test_attach_evidence.py`, `test_usage.py`.
-- `settings.example.json`: allowlist forms. `README.md`: user docs.
-- The sibling `enforcer/` plugin depends on this one (`"dependencies": ["enforcer-graph"]` in its plugin.json, #25), so the graph tools never load without these hooks. The dependency is unversioned.
+- `plugin.json` (and `.claude-plugin/plugin.json`): name, `version`. One version for the whole kit; `npm run bump <version>` edits every manifest (see `docs/RELEASE_CHECKLIST.md` at the repo root).
+- `skills/graph/SKILL.md`: the loop; "Writing a plan" is the node/brief format.
+- `agents/graph-worker.md`: one-node worker, reads CLAUDE.md and this brief.
+- `hooks/hooks.json`: wiring. Every event runs `node ${CLAUDE_PLUGIN_ROOT}/bin/enforcer event <name>` (`src/event.mjs`).
+- `src/graph/hooks/`: the hook handlers (`attach`, `capture`, `heartbeat`, `session`, `track-run`, `version-check`, shared `common`). `src/graph/`: run file, state, http, redact, clip, evidence.
+- `lib/graph/`: the python helpers the Node hooks mirror, with their `test_*.py`.
+- `bin/land-pr.sh`: lands one PR, no model. `bin/graph-dispatch` and `src/dispatch/*.mjs`: keep N headless workers busy.
+- `test/graph/*.test.mjs` (hooks against `test/graph/stub-graph.mjs`, a local fake API), `test/dispatch/`, `test/test_dispatch.py`, `test/check_skill.py`.
+- `docs/graph/settings.example.json`: allowlist forms. `docs/graph/README.md`: user docs; `DISPATCHER.md`: dispatcher flags.
+- Run state: `$ENFORCER_STATE_DIR`, else the harness plugin data dir, else `~/.config/enforcer/sessions/<harness>` (`src/state.mjs`); `runs/<session>.json` and `evidence/<session>.jsonl` under it.
+- Project config: `.enforcer/graph.json`, found by walking up from the cwd.
 
-### Hooks and matchers (hooks/hooks.json)
+### Hooks (hooks/hooks.json)
 
-| Event | Matcher | Script |
-|---|---|---|
-| SessionStart | `startup\|resume\|compact` | session.mjs sessionStart (prints frontier/running/failed; silent without `.enforcer/graph.json` (the older Claude project config is still read) or on 401) |
-| PreToolUse | `mcp__(plugin_enforcer_enforcer\|enforcer\|enforcer-graph)__graph_(next_work\|report\|remember\|heartbeat)` | attach_evidence.py (merges captured records with the worker's own) |
-| PostToolUse | same prefixes, `graph_(next_work\|report\|heartbeat)` | track_run.py (writes the run file) |
-| PostToolUse | `.*` | capture_evidence.py (records your tool results), heartbeat.py (lease keepalive) |
-| PreCompact | `manual\|auto` | session.mjs rememberOnCompact |
-| Stop | none | session.mjs openRunGuard (refuses to stop with a run open) |
+All events call `bin/enforcer event <name>`; `src/event.mjs` routes to the handlers and they exit silently unless a graph context is live. The table of handlers is in `docs/graph/README.md` "Hooks". Heartbeat is by elapsed time (a third of the lease), not every Nth call.
 
 ## 2. Verify loop
 
 ```bash
-node --test enforcer-graph/test/graph/run.test.mjs > /tmp/r.log 2>&1; echo EXIT=$?; tail -12 /tmp/r.log
+cd enforcer && node --test test/graph/*.test.mjs > /tmp/r.log 2>&1; echo EXIT=$?; tail -12 /tmp/r.log
 ```
-Last line must be `N passed, 0 failed` (109 on 0.17.0). No network, key, or Jev needed. Run only the python piece you touched, e.g. `python3 enforcer-graph/test/check_skill.py plan`.
+Whole suite: `cd enforcer && npm test`. No network, key, or Jev needed. Docs checks: `node --test test/docs-truth.test.mjs` from the repo root.
 
-Land: open the PR (body ends with the Claude Code line), then from your worktree
-`~/apps/claude-plugins/enforcer-graph/bin/land-pr.sh <pr> --timeout 3000`.
-Exit 0 merged (prints JSON + merge-base line); 2 CI red; 3 conflict (rebase, read both sides); 4 timeout; 5 usage/gh error.
+Land: open the PR (body ends with the Claude Code line), then from your worktree `enforcer/bin/land-pr.sh <pr> --timeout 3000`.
+Exit 0 merged; 2 CI red; 3 conflict (rebase, read both sides); 4 timeout; 5 usage/gh error.
 
 ### Version bump
-Bump `.claude-plugin/plugin.json` version for any change to hooks, skill, agent or bin (behaviour installed users get). Docs-only and test-only changes need no bump. Do not edit `enforcer/`'s version for this.
+A change under `enforcer/` needs a `changes/<slug>.md` fragment (one line) or a version bump; CI's `version-bump` job checks.
 
 ## 3. Traps
 
-- **Tool-name prefixes.** The graph tools load as `mcp__plugin_enforcer_enforcer__graph_*` (server declared by the `enforcer` plugin). Standalone servers give `mcp__enforcer__` or `mcp__enforcer-graph__`. Matchers and allowlists must name the form your session shows; unmatched, every call prompts a human.
-- **Hooks fire only on `graph_*` tools.** Evidence capture, heartbeat and run tracking see `graph_next_work/report/heartbeat`. Anything routed through `enforcer_api_write` is invisible to them and waits for a human to confirm; never heartbeat or report that way.
-- **Plugin must be enabled.** `claude plugin enable enforcer-graph@instruxi`. A disabled plugin = no hooks, and `graph_*` answers carry a `hooks_inactive` warning (no `X-Graph-Client`).
-- **Headless (`claude -p`).** Since MCP 0.9.10 (enforcer-v3-mcp #86) `graph_next_work`, `graph_heartbeat`, `graph_report` and `graph_remember` carry no `requiresUserInteraction`, so a headless worker can run the whole loop; every OTHER hosted write tool (e.g. `enforcer_api_write`) still does and is refused (`MCPTool requires permission.`). A headless `git push` of a `graph/<key>` branch under the jev-hooks plugin (0.25.0+) needs `JEV_HOOKS_HEADLESS=1` (the hook cannot tell headless from interactive, so the allow is opt-in); graph-dispatch exports it into every worker's environment and nowhere else. A worker denied a push/PR/tool is logged `DENIED <key> ... Worktree: <path>` and is NOT relaunched that session; land it by hand. A failed (not denied) node is relaunched once as a REMEDIATION launch (resumed session, previous error and last_rejection in the prompt), then triaged once (`TRIAGE` lines in the dispatcher log); see SKILL.md "When a node fails".
-- **Evidence is merged by the hook.** Captured tool results of THIS run (after its claim) come first, then your own verbatim command/file/artifact records that are not duplicates (cmd+exit); prose `note` records are dropped. Run the evidence commands as the LAST commands before reporting.
-- **Hooks fail open.** Python hooks swallow errors and print nothing; a test that expects output must assert it, silence is not a pass.
-- `hooks/hooks.json` is JSON: a trailing comma disables every hook with no error. `README.md` "Files" has duplicated lines; do not copy that pattern.
+- **Tool-name prefixes.** The graph tools load as `mcp__plugin_enforcer_enforcer__graph_*`. Standalone servers give `mcp__enforcer__` or `mcp__enforcer-graph__`. Allowlists must name the form your session shows; unmatched, every call prompts a human.
+- **Hooks fire only on `graph_*` tools** for evidence, run tracking and the client stamp. Anything routed through `enforcer_api_write` is invisible to them and waits for a human; never heartbeat or report that way.
+- **Plugin must be enabled.** `claude plugin enable enforcer@instruxi`. A disabled plugin = no hooks, and `graph_*` answers carry a `hooks_inactive` warning.
+- **Headless (`claude -p`).** `graph_next_work`, `graph_heartbeat`, `graph_report` and `graph_remember` carry no `requiresUserInteraction`, so a headless worker can run the whole loop; other hosted write tools are refused. A worker denied a push/PR/tool is logged `DENIED <key> ... Worktree: <path>` and is not relaunched that session; land it by hand. A failed node is relaunched once as a REMEDIATION launch, then triaged once; see SKILL.md "When a node fails".
+- **Evidence is merged by the hook.** Captured tool results of THIS run come first, then your own verbatim command/file/artifact records that are not duplicates; prose `note` records are dropped. Run the evidence commands as the LAST commands before reporting.
+- **Hooks fail open.** A hook swallows errors and prints nothing; a test that expects output must assert it, silence is not a pass.
+- `hooks/hooks.json` is JSON: a trailing comma disables every hook with no error.
 
 ## 4. Where to look for X
 
-- A matcher or event: `hooks/hooks.json`. Run-file shape: `track_run.py`, `lib.py`.
-- Evidence rules ("claimed PR is resolved, not trusted"): README sections of those names, then `attach_evidence.py`.
-- Dispatcher selection/model/tier rules: docstring of `bin/graph-dispatch` (first 40 lines).
+- A matcher or event: `hooks/hooks.json`, `src/event.mjs`. Run-file shape: `src/graph/run.mjs`.
+- Evidence rules: `docs/graph/README.md` ("A claimed pull request is resolved, not trusted"), then `src/graph/hooks/attach.mjs`.
+- Dispatcher selection/model/tier rules: `src/dispatch/select.mjs`, `src/dispatch/model.mjs`.
 - Plan-writing rules a test asserts: SKILL.md "Writing a plan" and `test/check_skill.py`.
-- Adding a hook test: append a `test('label', ...)` in `test/graph/run.test.mjs`.
+- Adding a hook test: a `test('label', ...)` in the matching `test/graph/*.test.mjs`.
 
 ## 5. Never read whole
 
-- `hooks/lib.py` (28 KB): grep the function, read a range.
-- `bin/graph-dispatch` (31 KB): docstring plus the function you change.
-- `test/graph/run.test.mjs`: grep the check label; edit near the end.
-- `skills/graph/SKILL.md` (22 KB) and `README.md` (20 KB): `grep -n '^#'`, then a range.
-- `test/test_dispatch.py` (11 KB), `test/test_attach_evidence.py` (12 KB): only the case you change.
+`grep -n '^#'` then a range for `skills/graph/SKILL.md` and `docs/graph/README.md`; grep the function in `src/graph/` and `bin/graph-dispatch`.

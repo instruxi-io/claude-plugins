@@ -1,43 +1,35 @@
-# enforcer-graph plugin for Claude Code
+# The graph worker in the enforcer plugin
 
-A skill that teaches the claim / work / heartbeat / report loop, and seven hooks
+A skill that teaches the claim / work / heartbeat / report loop, and hooks
 that keep a session honest while it holds a node of a plan — including the two
 that make the evidence in a report something the model did not author.
 
 **No hook calls Jev, an LLM, or any model. No Jev key is needed.** Hooks are
-plain HTTP to the enforcer-graph API with the same credential the MCP server
+plain HTTP to the graph API with the same credential the MCP server
 uses: the Enforcer sign-in, or a key.
 Judgment (verification, dedupe, contradiction) happens server-side, on the
 tenant's opt-in, and reaches this plugin only as fields in the tool results.
 
 ## Install
 
-One install. The `enforcer` plugin (the MCP server and the sign-in) depends on
-this one, so installing it installs and enables these hooks too:
+One install. The graph worker is part of the `enforcer` plugin: there is no
+separate plugin and no plugin dependency. Installing `enforcer` installs the
+skill, the agent and the hooks:
 
 ```bash
 claude plugin marketplace add instruxi-io/claude-plugins
-claude plugin install enforcer@instruxi    # ✔ ... (+ 1 dependency: enforcer-graph)
+claude plugin install enforcer@instruxi
 ```
 
 Then, in Claude Code: `/enforcer:login`, then `/enforcer:setup` (shows the
 allow rules for the worker loop and the plugin commands, applies only on your
 yes).
 
-**Existing installs** keep working: an `enforcer-graph` you installed yourself
-satisfies the dependency as it is. Update with
-`claude plugin update enforcer@instruxi` and then `claude plugin install
-enforcer@instruxi` once more (or `/reload-plugins`), which installs the
-dependency when it is new: `plugin update` alone does not, and `enforcer` then
-fails to load with `Dependency "enforcer-graph@instruxi" is not installed — run
-claude plugin install enforcer-graph@instruxi` (bash test/upgrade-install.sh
-shows each step); session start says so once when an installed copy is older
-than the marketplace's, and says `claude plugin install enforcer@instruxi`
-when enforcer-graph is installed without it. If enforcer-graph is DISABLED,
-`enforcer` now fails to load (`Dependency "enforcer-graph@instruxi" is
-disabled`) instead of serving the graph tools with no hooks behind them; fix
-with `claude plugin enable enforcer-graph@instruxi`. A Claude Code too old for
-plugin dependencies installs the two separately, as before.
+**Existing installs:** the old `enforcer-graph`, `enforcer-files` and
+`enforcer-governor` plugins are deprecated aliases now. Uninstall them, run
+`claude plugin update enforcer@instruxi`, then `/reload-plugins`. The hooks
+are loaded from `enforcer`'s own `hooks/hooks.json`; if `enforcer` is
+disabled, no graph hook runs (`claude plugin enable enforcer@instruxi`).
 
 ### The client attestation
 
@@ -63,7 +55,7 @@ refreshed by whichever reads it when the token is close to expiry). It grants th
 work loop (claim, heartbeat, report, remember) and plan authoring (import,
 templates, nodes, edges); deletes and sharing stay with a person.
 
-From a checkout of this repo instead: `claude --plugin-dir ./enforcer-graph`.
+From a checkout of this repo instead: `claude --plugin-dir ./enforcer`.
 
 **CI and containers** can skip the sign-in and use a scoped key: set
 `GRAPH_API_KEY` (or `ENFORCER_API_KEY`), and add the server with it:
@@ -81,7 +73,7 @@ npx skills add instruxi-io/claude-plugins --skill graph
 
 ## Configure
 
-`.enforcer/graph.json` (the older Claude project config is still read) in the project (found by walking up from the cwd):
+`.enforcer/graph.json` in the project (found by walking up from the cwd):
 
 ```json
 { "graph_id": "<uuid>" }
@@ -182,46 +174,47 @@ The one command is `/enforcer:dispatch <graph-id>` (or `enforcer dispatch <graph
 It will ask three things of you: resolve the gates (smoke tests and releases are never dispatched), look at the review items where a verdict needs a person, and unblock a node marked "landing blocked" (a conflict or CI outage the dispatcher could not clear) or "needs you". Merged work is reported as done, never as failed.
 
 
-The flag reference lives in [DISPATCHER.md](DISPATCHER.md).
-
 ## The plugin must be ENABLED, and the allowlist must name the tools as they load
 
-Both failed together on the agents-platform build, so no hook ran at all:
-
-- `"enforcer-graph@instruxi": false` was set in `~/.claude/settings.json` for the
-  whole build. A disabled plugin contributes no hooks: no lease keepalive, no
+- A disabled `enforcer` plugin contributes no hooks: no lease keepalive, no
   evidence capture, no usage stamp, no Stop guard. Check with
-  `claude plugin list`; fix with `claude plugin enable enforcer-graph@instruxi`.
-- The permission allowlist named `mcp__enforcer-graph__graph_*`, but the tools
-  load as `mcp__plugin_enforcer_enforcer__graph_*` (the server is declared by the
-  `enforcer` plugin; a session's tool list shows
-  `mcp__plugin_enforcer_enforcer__graph_heartbeat`, `...__graph_report`,
-  `...__graph_next_work`). Unmatched, every call prompts the human, and workers
-  routed around the prompts through `enforcer_api_write`.
+  `claude plugin list`; fix with `claude plugin enable enforcer@instruxi`.
+- The tools load as `mcp__plugin_enforcer_enforcer__graph_*` (the server is
+  declared by the `enforcer` plugin). An allowlist that names
+  `mcp__enforcer-graph__graph_*` does not match, every call prompts the human,
+  and workers route around the prompts through `enforcer_api_write`.
 
-`settings.example.json` now lists all three forms: `mcp__plugin_enforcer_enforcer__`
+`settings.example.json` lists all three forms: `mcp__plugin_enforcer_enforcer__`
 (the plugin's server), `mcp__enforcer__` and `mcp__enforcer-graph__` (a
 standalone server added with `claude mcp add`). Keep the one your session shows.
 
 ## Hooks
 
-| Event | Script | What it does |
+Every hook is the one command `node ${CLAUDE_PLUGIN_ROOT}/bin/enforcer event <name>`
+(`hooks/hooks.json`); the graph handlers live in `src/graph/hooks/` and do
+nothing unless a graph context is live.
+
+| Event | Handler | What it does |
 |---|---|---|
-| SessionStart (startup, resume, compact) | `src/graph/hooks/session.mjs` (sessionStart) | Prints plan status: counts, frontier, running, failed, and whether THIS session still holds a run. Two HTTP GETs. |
-| PostToolUse on `graph_next_work` / `graph_report` / `graph_heartbeat` | `track_run.py` | Records the run this session holds in `${CLAUDE_PLUGIN_DATA}/runs/<session_id>.json` from the tool result; clears it on report or when a heartbeat says `reclaimed` / `finished`. No HTTP. |
-| PostToolUse on every tool | `capture_evidence.py` | While a run is held, appends what the tool actually did to `~/.config/enforcer/sessions/<harness>/evidence/<session_id>.jsonl`: `Bash` as `{kind:"command", cmd, exit, output}` (output clipped to 4000 chars), `Edit`/`Write`/`MultiEdit` as `{kind:"file", path, excerpt}`. `Read`/`Grep`/`Glob` are not captured. No HTTP. |
-| PreToolUse on `graph_report` | `attach_evidence.py` | Reads the capture, caps it at the 20 items the server accepts (failing commands first, then the most recent commands, then file changes) and merges it into the tool's arguments as `evidence` via `hookSpecificOutput.updatedInput`. Anything the model wrote in `evidence` is replaced. No HTTP. |
-| PostToolUse on every tool | `heartbeat.py` | Every 10th tool call, if a run is held, one HTTP heartbeat (1.5s timeout, 3s hook timeout). Silent on `ok`. On `cancel_requested`, `reclaimed` or `finished` it says so in one line to you and to the model, and forgets a run that is no longer ours. |
-| PreCompact (manual, auto) | `src/graph/hooks/session.mjs` (rememberOnCompact) | If a run is held, writes one progress observation (the last assistant message) on the node, so the state of the work survives in the graph, not only in the summary. |
-| Stop | `src/graph/hooks/session.mjs` (openRunGuard) | If a run is held and the final message does not say it was reported or deliberately left open, sends the session back once with the reason. `stop_hook_active` prevents a second block. |
+| SessionStart (startup, resume, compact, clear) | `session.mjs` (sessionStart) | Prints plan status: counts, frontier, running, failed, and whether THIS session still holds a run. Two HTTP GETs. |
+| PostToolUse on `graph_next_work` / `graph_report` / `graph_heartbeat` | `track-run.mjs` | Records the run this session holds in `<state>/runs/<session_id>.json` from the tool result; clears it on report or when a heartbeat says `reclaimed` / `finished`. No HTTP. |
+| PostToolUse on every tool | `capture.mjs` | While a run is held, appends what the tool actually did to `<state>/evidence/<session_id>.jsonl`: `Bash` as `{kind:"command", cmd, exit, output}` (output clipped to 4000 chars), `Edit`/`Write`/`MultiEdit` as `{kind:"file", path, excerpt}`. `Read`/`Grep`/`Glob` are not captured. No HTTP. |
+| PreToolUse on `graph_report` | `attach.mjs` | Reads the capture, caps it at the 20 items the server accepts (failing commands first, then the most recent commands, then file changes) and merges it into the tool's arguments as `evidence` via `hookSpecificOutput.updatedInput`. Anything the model wrote in `evidence` is replaced. No HTTP. |
+| PostToolUse on every tool | `heartbeat.mjs` | By elapsed time, not call count: when a third of the lease is spent (at least `GRAPH_HEARTBEAT_MIN_GAP`, default 20 s, since the last one), and right after a long tool call, one HTTP heartbeat. Silent on `ok`. On `cancel_requested`, `reclaimed` or `finished` it says so in one line to you and to the model, and forgets a run that is no longer ours. |
+| PreCompact (manual, auto) | `session.mjs` (rememberOnCompact) | If a run is held, writes one progress observation (the last assistant message) on the node, so the state of the work survives in the graph, not only in the summary. |
+| Stop | `session.mjs` (openRunGuard) | If a run is held and the final message does not say it was reported or deliberately left open, sends the session back once with the reason. `stop_hook_active` prevents a second block. |
+
+State lives in `$ENFORCER_STATE_DIR`, else the directory the harness gives the
+plugin (`${CLAUDE_PLUGIN_DATA}`), else `~/.config/enforcer/sessions/<harness>`
+(`src/state.mjs` `stateBase()`).
 
 ## Evidence the model did not author
 
 Verification used to judge prose, and prose can be invented: a fabricated
 report with invented file paths, line numbers and test names has scored full
 marks. Evidence the model writes about itself does not fix that — a fabricator
-fabricates that too. So `capture_evidence.py` records tool results as they come
-back, and `attach_evidence.py` attaches them at report time. The model is not
+fabricates that too. So `capture.mjs` records tool results as they come
+back, and `attach.mjs` attaches them at report time. The model is not
 in that path.
 
 `updatedInput` **does** apply to MCP tool calls. The published hooks reference
@@ -251,7 +244,7 @@ What the guarantee is and is not:
   can still hand the server a self-written report; the server's answer to that
   is to score it `unsupported`.
 - The capture is a local file. It is honest about a model that invents, not
-  hardened against a user who edits `${CLAUDE_PLUGIN_DATA}` by hand.
+  hardened against a user who edits the state directory by hand.
 
 Every hook fails open: no config, no key, API down, or malformed input means
 exit 0 and no output. The graph is a coordination service; it must never be
@@ -259,26 +252,25 @@ the reason a session stalls.
 
 ## Files
 
-Working on this plugin (agents and humans): start from [docs/WORKER_BRIEF.md](docs/WORKER_BRIEF.md).
+Working on this code (agents and humans): start from [WORKER_BRIEF.md](WORKER_BRIEF.md).
+Paths are relative to `enforcer/` in this repo, listed once:
 
 ```
-enforcer-graph/
-  .claude-plugin/plugin.json
-  skills/graph/SKILL.md
-  agents/graph-worker.md
-  hooks/hooks.json  hooks/lib.py
-  hooks/{session_start,track_run,heartbeat,remember_on_compact,open_run_guard}.py (now src/graph/hooks/*.mjs)
-  hooks/{capture_evidence,attach_evidence}.py
-  bin/land-pr.sh  bin/graph-dispatch   # land one PR; keep N headless workers busy
-  bin/land-pr.sh  bin/graph-dispatch   # land one PR; keep N headless workers busy
-  settings.example.json
-  test/graph/run.test.mjs  test/graph/stub-graph.mjs   # every hook against a local stub of the API
-  test/test_dispatch.py               # graph-dispatch against a fake API and a fake claude
-  test/test_dispatch.py               # graph-dispatch against a fake API and a fake claude
+skills/graph/SKILL.md
+agents/graph-worker.md
+hooks/hooks.json                  # every event -> bin/enforcer event <name>
+lib/graph/                        # python helpers the Node hooks mirror, with their tests
+src/graph/hooks/*.mjs             # attach, capture, heartbeat, session, track-run, version-check
+src/graph/*.mjs                   # run file, state, http, redact, clip, evidence
+src/dispatch/*.mjs  src/dispatch-command.mjs
+bin/land-pr.sh  bin/graph-dispatch   # land one PR; keep N headless workers busy
+docs/graph/settings.example.json
+test/graph/*.test.mjs  test/graph/stub-graph.mjs   # every hook against a local stub of the API
+test/dispatch/  test/test_dispatch.py              # the dispatcher against a fake API and a fake claude
 ```
 
 ```bash
-node --test enforcer-graph/test/graph/run.test.mjs
+cd enforcer && node --test test/graph/run.test.mjs
 ```
 
 A five-minute demo (two sessions, one killed, the lease reclaimed) lives with the

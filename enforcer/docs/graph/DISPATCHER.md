@@ -6,7 +6,7 @@ Moved from README.md. For the one-command front door see "Dispatch a plan" there
 
 ```bash
 GRAPH_AUTH_HELPER='node ~/.claude/plugins/cache/instruxi/enforcer/0.4.0/bin/enforcer-headers.mjs' \
-  enforcer-graph/bin/graph-dispatch --graph <id> [--workers 3] [--repo-root ~/apps] [--dry-run]
+  enforcer/bin/graph-dispatch --graph <id> [--workers 3] [--repo-root ~/apps] [--dry-run]
 ```
 
 A python loop (stdlib only) that reads the frontier every `--interval` seconds
