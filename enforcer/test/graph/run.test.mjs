@@ -1,5 +1,6 @@
 // Every hook against a local stub of the graph API. No key, no network, no Jev.
 // Ported from test/run.sh: each check keeps its label. The checks share one state directory and run in order.
+import { realpathSync } from 'node:fs';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
@@ -17,7 +18,7 @@ const ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const CLI = join(ROOT, 'bin/enforcer');
 
 // --- isolation: a private HOME/TMPDIR, no harness or sign-in environment ---------------------------------------
-const WORK = mkdtempSync(join(tmpdir(), 'run-test-'));
+const WORK = mkdtempSync(join(realpathSync(tmpdir()), 'run-test-'));
 const HOME = join(WORK, 'home');
 mkdirSync(HOME, { recursive: true });
 const stub = await startStub();

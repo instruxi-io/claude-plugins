@@ -1,3 +1,4 @@
+import { realpathSync } from 'node:fs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
@@ -23,7 +24,7 @@ const cleanEnv = (state, home) => {
 };
 
 test('graph-live PostToolUse spawns no python3', () => {
-  const root = mkdtempSync(join(tmpdir(), 'nopy-'));
+  const root = mkdtempSync(join(realpathSync(tmpdir()), 'nopy-'));
   const bin = join(root, 'bin'); mkdirSync(bin);
   const log = join(root, 'python.log');
   writeFileSync(join(bin, 'python3'), `#!/bin/sh\necho "$@" >> ${log}\nexit 0\n`); chmodSync(join(bin, 'python3'), 0o755);
@@ -60,7 +61,7 @@ const withEnv = async (env, fn) => {
 };
 
 test('reclaimed on 409', async () => {
-  const root = mkdtempSync(join(tmpdir(), 'hb-'));
+  const root = mkdtempSync(join(realpathSync(tmpdir()), 'hb-'));
   await withServer(409, { error: 'x' }, async (base, seen) => {
     await withEnv({ ENFORCER_STATE_DIR: join(root, 's'), HOME: root, GRAPH_ID: 'g1', ENFORCER_BASE_URL: base, GRAPH_API_KEY: 'k', ENFORCER_API_KEY: 'k', GRAPH_HEARTBEAT_MIN_GAP: '0' }, async () => {
       liveRun('s2');
@@ -75,7 +76,7 @@ test('reclaimed on 409', async () => {
 });
 
 test('fail-open on 401, silent on ok, lease/3 gate', async () => {
-  const root = mkdtempSync(join(tmpdir(), 'hb-'));
+  const root = mkdtempSync(join(realpathSync(tmpdir()), 'hb-'));
   const env = (base) => ({ ENFORCER_STATE_DIR: join(root, 's'), HOME: root, GRAPH_ID: 'g1', ENFORCER_BASE_URL: base, GRAPH_API_KEY: 'k', ENFORCER_API_KEY: 'k', GRAPH_HEARTBEAT_MIN_GAP: '20' });
   await withServer(401, {}, async (base) => withEnv(env(base), async () => {
     liveRun('s3');

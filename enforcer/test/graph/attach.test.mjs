@@ -1,3 +1,4 @@
+import { realpathSync } from 'node:fs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
@@ -15,7 +16,7 @@ const NEXT = 'mcp__plugin_enforcer_enforcer__graph_next_work';
 
 let n = 0;
 function fresh(hints = [{ criterion: 'c1', kind: 'check' }, { criterion: 'c2', kind: 'file' }]) {
-  const root = mkdtempSync(join(tmpdir(), 'attach-'));
+  const root = mkdtempSync(join(realpathSync(tmpdir()), 'attach-'));
   process.env.ENFORCER_STATE_DIR = join(root, 'state');
   delete process.env.GRAPH_EVIDENCE_MODE;
   const sid = `s${++n}`;

@@ -1,3 +1,4 @@
+import { realpathSync } from 'node:fs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
@@ -9,7 +10,7 @@ import { saveRun } from '../../src/graph/run.mjs';
 
 let n = 0;
 function fresh() {
-  const root = mkdtempSync(join(tmpdir(), 'session-'));
+  const root = mkdtempSync(join(realpathSync(tmpdir()), 'session-'));
   process.env.ENFORCER_STATE_DIR = join(root, 'state');
   process.env.CLAUDE_CONFIG_DIR = join(root, 'cc');
   process.env.ENFORCER_HOME = join(root, 'eh');
