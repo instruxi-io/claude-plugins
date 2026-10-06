@@ -59,6 +59,17 @@ export function checkLine(line, cwd, env) {
   } finally { rmSync(home, { recursive: true, force: true }); }
 }
 
+/** Server-side advisory lint (one ruleset, enforcer-graph POST /graphs/{id}/acceptance/lint). Never fatal: [] on any failure. */
+export async function serverLint(base, graph, h, acceptance) {
+  try {
+    const r = await fetch(`${base}/graphs/${encodeURIComponent(graph)}/acceptance/lint`, {
+      method: 'POST', headers: { ...h, 'content-type': 'application/json' }, body: JSON.stringify({ acceptance }) });
+    if (!r.ok) return [];
+    const b = await r.json();
+    return Array.isArray(b?.warnings) ? b.warnings : Array.isArray(b?.data?.warnings) ? b.data.warnings : [];
+  } catch { return []; }
+}
+
 /** Returns {code, lines}. */
 export async function planCheck({ graph, repoRoot = join(homedir(), 'apps'), env = process.env } = {}) {
   const base = resolveConfig({ env }).graphUrl;
@@ -68,11 +79,14 @@ export async function planCheck({ graph, repoRoot = join(homedir(), 'apps'), env
   let bad = 0;
   for (const n of nodes) {
     const acc = n.data?.acceptance;
-    for (const a of Array.isArray(acc) ? acc : acc ? [acc] : []) {
+    const accs = Array.isArray(acc) ? acc : acc ? [acc] : [];
+    const warns = accs.length ? await serverLint(base, graph, h, accs.map(String)) : [];
+    for (const [i, a] of accs.entries()) {
       const cwd = n.data?.repo ? join(repoRoot, n.data.repo) : repoRoot;
       const r = checkLine(String(a), cwd, env);
       if (r.state === 'MISMATCH') bad++;
       lines.push(`${r.state} ${n.key}: ${String(a).replace(/\s+/g, ' ').slice(0, 100)}${r.note ? ' -- ' + r.note : ''}`);
+      for (const w of warns.filter((w) => w.index === i)) lines.push(`WARN ${n.key}: [${w.code}] ${w.hint ?? ''}`.trimEnd());
     }
   }
   return { code: bad ? 1 : 0, lines };
