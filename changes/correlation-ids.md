@@ -1,0 +1,1 @@
+- One run id joins the worker run, its PR, the judge's evidence and the governor receipts: X-Enforcer-Run on API calls, GRAPH_RUN_ID in worker env, graph_id on receipts, run_id on evidence items and hook log lines, and an Enforcer-Run footer on PR bodies.

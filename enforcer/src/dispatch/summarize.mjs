@@ -243,6 +243,7 @@ export function workerPrompt(graph, node, path, branch, previous = null) {
              `Claim it with graph_next_work {graph, node: "${node.id}", runner: "${node.key}"} and work it per your instructions.`);
   lines.push(branch ? `Your git worktree is ${path} on branch ${branch} (already created; work only there).`
                     : `Your working directory is ${path}.`);
+  lines.push('End the body of any pull request you open with the line `Enforcer-Run: <run_id from your claim card>`; it joins the PR to your run.');
   lines.push(untrustedBlock({ title: node.title ?? '', brief: data.brief ?? null }));
   return lines.join('\n');
 }

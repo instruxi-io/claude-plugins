@@ -5,7 +5,7 @@ import { join, normalize, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { actorKey, stateBase, tightenState, privateDir, privateWrite } from '../state.mjs';
 import { loadRun } from '../run.mjs';
-import { sweepSessions } from '../evidence.mjs';
+import { sweepSessions, prFooter } from '../evidence.mjs';
 import { http } from '../http.mjs';
 import { readCredentials } from '../../credentials.mjs';
 import { configDir } from '../../../hooks/claude/paths.mjs';
@@ -66,7 +66,7 @@ export async function statusLines(inp, post = http) {
   const fnodes = (fr || {}).data || [];
   lines.push('frontier (runnable now, not claimed): ' + (fnodes.length ? fnodes.map((n) => n.key).join(', ') : 'none'));
   const run = loadRun(actorKey(inp));
-  if (run) lines.push(`THIS SESSION HOLDS node ${run.key || run.node_id} (run ${run.run_id}). Continue it, heartbeat rides on your tool calls, and graph_report it before stopping.`);
+  if (run) lines.push(`THIS SESSION HOLDS node ${run.key || run.node_id} (run ${run.run_id}). Continue it, heartbeat rides on your tool calls, and graph_report it before stopping. End any pull request body with the line \`${prFooter(run.run_id)}\`.`);
   else lines.push(fnodes.length ? 'Next: graph_next_work to claim, or graph_plan_status for the full card.' : 'Nothing runnable; graph_next_work will say whether to wait or whether the plan is complete.');
   return lines;
 }

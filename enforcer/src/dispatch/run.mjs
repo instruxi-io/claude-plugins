@@ -221,7 +221,7 @@ export class Dispatcher {
     let card;
     try { card = await this.api.claim(this.g, n.id, 'graph-dispatch'); } catch (e) { this.say(`claim ${n.key} refused: ${e.message}`); return; }
     const logPath = join(this.logs, `${n.key}.${this.attempts.get(n.key)}.log`);
-    const proc = spawnWorker(cmd, { cwd, logPath });
+    const proc = spawnWorker(cmd, { cwd, logPath, env: { ...process.env, GRAPH_RUN_ID: card.run_id } });
     this.workers.set(n.key, { kind: 'merge', node: n, key: n.key, logPath, proc, started: now(), resources: resourcesOf(n), runId: card.run_id, cmd, lastHb: now() });
     this.peak = Math.max(this.peak, this.workers.size);
     this.say(`land ${n.key} pid=${proc.pid} run=${card.run_id}: ${cmd.join(' ')} log=${logPath}`);
