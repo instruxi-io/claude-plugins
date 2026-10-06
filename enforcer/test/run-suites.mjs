@@ -14,7 +14,8 @@ const isolatedPy = (...args) => ({ cmd: 'bash', args: ['test/isolated.sh', 'pyth
 const top = readdirSync(join(ROOT, 'test')).filter((n) => n.endsWith('.test.mjs')).sort().map((n) => [n.replace('.test.mjs', ''), node(`test/${n}`)]);
 const SUITES = [
   ...top,
-  ['tsc (generated API types)', { cmd: join(ROOT, 'node_modules/.bin/tsc'), args: ['--noEmit', '-p', 'lib/api/tsconfig.json'] }],
+  // tsc through node, not node_modules/.bin: on Windows the .bin entry is a .cmd shim Node will not spawn without a shell
+  ['tsc (generated API types)', { cmd: process.execPath, args: [join(ROOT, 'node_modules/typescript/bin/tsc'), '--noEmit', '-p', 'lib/api/tsconfig.json'] }],
   ['dispatch/injection', node('test/dispatch/injection.test.mjs')],
   ['contract', node('test/contract/contract.test.mjs')],
   ['dispatch/pure', nodeTest('test/dispatch/pure.test.mjs')],
