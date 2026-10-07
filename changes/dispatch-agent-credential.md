@@ -1,0 +1,1 @@
+`enforcer dispatch --agent <name>` runs workers on a Tier 2 agent credential (key from the OS keychain or ENFORCER_AGENT_KEY); preflight prints the identity and refuses a browser sign-in for a plan over 2 hours without --allow-browser-signin (dispatch-agent-credential).

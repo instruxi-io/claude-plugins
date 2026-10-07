@@ -204,7 +204,8 @@ export class Dispatcher {
     this.attempts.set(n.key, attempt);
     const logPath = join(this.logs, `${n.key}.${attempt}.jsonl`);
     let token = null;
-    try { token = typeof this.api.call === 'function' ? await mintWorkerToken(this.api, process.env, `worker-${n.key}`.slice(0, 60)) : null; } catch (e) { this.say(`worker token not minted for ${n.key}: ${e.message}`); }
+    if (this.args.agentKey) token = this.args.agentKey;
+    else try { token = typeof this.api.call === 'function' ? await mintWorkerToken(this.api, process.env, `worker-${n.key}`.slice(0, 60)) : null; } catch (e) { this.say(`worker token not minted for ${n.key}: ${e.message}`); }
     const proc = spawnWorker(cmd, { cwd: path, logPath, env: workerEnv(this.g, process.env, { token, release: n.type === 'release' }) });
     const w = { kind: 'agent', node: n, key: n.key, logPath, proc, started: now(), resources: resourcesOf(n), path, model, turns: 0,
                 maxTurns: Math.max(a.maxTurns, turnsCap || 0), session };
@@ -529,7 +530,7 @@ const OPTS = { graph: { type: 'string' }, workers: { type: 'string' }, 'repo-roo
   heartbeat: { type: 'string' }, 'land-timeout': { type: 'string' }, 'state-dir': { type: 'string' }, 'stop-file': { type: 'string' },
   'on-limit': { type: 'string' }, 'limit-backoff': { type: 'string' }, 'ci-backoff': { type: 'string' }, 'ci-probe-interval': { type: 'string' },
   'ci-status-url': { type: 'string' }, 'plugin-dir': { type: 'string', multiple: true }, takeover: { type: 'boolean' }, 'no-lease': { type: 'boolean' },
-  harness: { type: 'string' }, experimental: { type: 'boolean' }, grok: { type: 'string' }, codex: { type: 'string' }, claude: { type: 'string' },
+  agent: { type: 'string' }, 'allow-browser-signin': { type: 'boolean' }, harness: { type: 'string' }, experimental: { type: 'boolean' }, grok: { type: 'string' }, codex: { type: 'string' }, claude: { type: 'string' },
   // accepted for compatibility with the Python dispatcher's front door; the features they tune are not in the Node runtime yet
   'no-salvage': { type: 'boolean' }, 'no-triage': { type: 'boolean' }, 'no-warm': { type: 'boolean' }, 'triage-grace': { type: 'string' },
   'triage-model': { type: 'string' }, 'check-acceptance': { type: 'boolean' }, 'warm-max-nodes': { type: 'string' }, 'warm-max-age': { type: 'string' } };
@@ -557,7 +558,7 @@ export function parseDispatchArgs(argv, env = process.env) {
     limitBackoff: num(v['limit-backoff'], d.limitBackoff), ciBackoff: num(v['ci-backoff'], d.ciBackoff),
     ciProbeInterval: num(v['ci-probe-interval'], d.ciProbeInterval), ciStatusUrl: v['ci-status-url'] || d.ciStatusUrl,
     pluginDir: v['plugin-dir'] || [], takeover: !!v.takeover, noLease: !!v['no-lease'], harness, experimental: !!v.experimental,
-    grok: v.grok || null, codex: v.codex || null, agentBin: v['claude'] || null };
+    agent: v.agent || null, allowBrowserSignin: !!v['allow-browser-signin'], grok: v.grok || null, codex: v.codex || null, agentBin: v['claude'] || null };
 }
 
 /** `enforcer dispatch run <flags>`: the foreground dispatcher. Returns the exit code. */
@@ -565,6 +566,12 @@ export async function main(argv, env = process.env) {
   let args;
   try { args = parseDispatchArgs(argv, env); } catch (e) { process.stderr.write(`graph-dispatch: ${e.message}\n`); return 2; }
   const { resolveConfig } = await import('../config.mjs');
+  if (args.agent) {
+    const { readAgentKey } = await import('./agent.mjs');
+    args.agentKey = readAgentKey(args.agent, env);
+    if (!args.agentKey) { process.stderr.write(`graph-dispatch: agent "${args.agent}" has no key: set ENFORCER_AGENT_KEY or store one in the OS keychain\n`); return 2; }
+    env = { ...env, GRAPH_API_KEY: args.agentKey };
+  }
   const { headers } = await import('../preflight.mjs');
   const api = new API(resolveConfig({ env }).graphUrl, { headers: () => headers(env) });
   if (!args.dryRun) mkdirSync(args.stateDir, { recursive: true });
