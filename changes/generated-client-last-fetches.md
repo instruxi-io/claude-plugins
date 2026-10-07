@@ -1,0 +1,1 @@
+The last two hand-written API calls (MCP health in the version check, acceptance lint in plan check) go through the shared API client; the spec lock is refreshed so the lint endpoint is in graph.d.ts.

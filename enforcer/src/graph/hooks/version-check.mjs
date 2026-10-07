@@ -6,6 +6,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { request } from '../../../lib/api/client.mjs';
 import { DOT } from '../../../hooks/claude/paths.mjs';
 
 export const MANIFEST_DIR = `${DOT}-plugin`;
@@ -66,9 +67,7 @@ export function workspaceLine(doc) {
 
 export async function fetchHealth(base, auth = {}, timeoutMs = 1500) {
   try {
-    const res = await fetch(`${String(base).replace(/\/+$/, '')}/api/v1/mcp/health`, { headers: { 'User-Agent': 'enforcer-graph-plugin-versioncheck', ...auth }, signal: AbortSignal.timeout(timeoutMs) });
-    if (!res.ok) return null;
-    const d = await res.json();
+    const d = await request(`${String(base).replace(/\/+$/, '')}/api/v1/mcp/health`, { headers: { 'User-Agent': 'enforcer-graph-plugin-versioncheck', ...auth } }, { timeoutMs, retries: 0 });
     return d && typeof d === 'object' && !Array.isArray(d) ? d : null;
   } catch { return null; }
 }

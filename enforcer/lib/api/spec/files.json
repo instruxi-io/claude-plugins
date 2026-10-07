@@ -1674,6 +1674,16 @@
               }
             }
           },
+          "409": {
+            "description": "file_in_folder: a file in a folder changes only through the /storage/folders routes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/github_com_enforcer-files_internal_delivery_http_dto.ErrorResponse"
+                }
+              }
+            }
+          },
           "500": {
             "description": "Internal Server Error",
             "content": {
@@ -2093,6 +2103,16 @@
               }
             }
           },
+          "409": {
+            "description": "file_in_folder: a file in a folder changes only through the /storage/folders routes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/github_com_enforcer-files_internal_delivery_http_dto.ErrorResponse"
+                }
+              }
+            }
+          },
           "500": {
             "description": "Internal Server Error",
             "content": {
@@ -2488,6 +2508,16 @@
               }
             }
           },
+          "409": {
+            "description": "file_in_folder: a file in a folder changes only through the /storage/folders routes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/github_com_enforcer-files_internal_delivery_http_dto.ErrorResponse"
+                }
+              }
+            }
+          },
           "500": {
             "description": "Internal Server Error",
             "content": {
@@ -2511,7 +2541,7 @@
             "ApiKeyAuth": []
           }
         ],
-        "description": "Copies an object to a new path within the caller's S3 storage prefix.",
+        "description": "Copies an object to a new path within the caller's S3 storage prefix. The source may also be a file in a folder the caller holds read on; the copy is then a personal file of the caller (folder_id null).",
         "tags": [
           "files"
         ],
@@ -3305,6 +3335,16 @@
               }
             }
           },
+          "409": {
+            "description": "file_in_folder: a file in a folder changes only through the /storage/folders routes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/github_com_enforcer-files_internal_delivery_http_dto.ErrorResponse"
+                }
+              }
+            }
+          },
           "500": {
             "description": "Internal Server Error",
             "content": {
@@ -3692,6 +3732,16 @@
           },
           "404": {
             "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/github_com_enforcer-files_internal_delivery_http_dto.ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "file_in_folder: a file in a folder changes only through the /storage/folders routes",
             "content": {
               "application/json": {
                 "schema": {
@@ -4338,6 +4388,16 @@
           },
           "403": {
             "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/github_com_enforcer-files_internal_delivery_http_dto.ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "file_in_folder: a file in a folder changes only through the /storage/folders routes",
             "content": {
               "application/json": {
                 "schema": {
@@ -7551,6 +7611,12 @@
           },
           "file_type": {
             "type": "string"
+          },
+          "folder_id": {
+            "description": "FolderID is the folder the file belongs to, null for a file in its\nuploader's personal namespace (every file uploaded through the\n/storage/file/* routes). A foldered file is reached by folder role and\nis changed only through the folder routes: the legacy move, trash and\ndelete by file_id answer 409 file_in_folder for it.",
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
           },
           "id": {
             "type": "string"
