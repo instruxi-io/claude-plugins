@@ -178,3 +178,12 @@ test('no acceptance or no worktree attaches nothing extra', async () => {
   const { sid } = freshAcc([]);
   assert.equal(ui(await attachEvidence({ ...rep(sid), cwd: '/nonexistent-x' }, {})).evidence, undefined);
 });
+
+test('a NUL byte in captured output is stripped before the report is sent', async () => {
+  const { sid, cwd } = freshAcc([]);
+  appendEvidence(sid, { kind: 'command', cmd: 'cat bin', exit: 0, output: 'before\u0000after', _run: 'r1' });
+  const out = await attachEvidence({ ...rep(sid), cwd, tool_input: { ...rep(sid).tool_input, report: 'a\u0000b' } }, {});
+  const sent = JSON.stringify(ui(out));
+  assert.ok(!sent.includes('\\u0000'), 'no NUL escape remains in the updated input');
+  assert.ok(ui(out).evidence.some((e) => e.output === 'beforeafter'));
+});
