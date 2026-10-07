@@ -1,7 +1,7 @@
 {
   "name": "@instruxi-io/claude-plugin-enforcer",
   "private": true,
-  "version": "1.1.0",
+  "version": "1.2.0",
   "type": "module",
   "scripts": {
     "pretest": "node test/ensure-deps.mjs",

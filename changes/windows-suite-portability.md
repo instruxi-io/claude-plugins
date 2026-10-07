@@ -1,1 +1,0 @@
-Windows suites pass: tar gets --force-local for drive paths, Grok hook JSON is serialised not templated, tests use fileURLToPath and path-agnostic comparisons, and the win32 quarantine entries are gone (windows-suite-portability).

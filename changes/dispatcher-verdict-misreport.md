@@ -1,1 +1,0 @@
-The dispatcher re-reads the node's current status and the latest run's verdict (polling while pending) after a worker exits, so a verified attempt is never logged FAILED and a done node is never left for a person (dispatcher-verdict-misreport).

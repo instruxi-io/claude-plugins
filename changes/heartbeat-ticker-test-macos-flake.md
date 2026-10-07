@@ -1,1 +1,0 @@
-- test: heartbeat ticker tests no longer race the spawned ticker over the run file (macOS flake)
