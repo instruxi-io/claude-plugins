@@ -120,6 +120,10 @@ export async function preflight({ graph, repoRoot = join(homedir(), 'apps'), typ
     add('governor-lander', !denied.length, denied.length ? `the installed enforcer ${ver} denies the lander (${denied.join(', ')}); update the plugin` : `ok (enforcer ${ver})`);
   } catch (e) { add('governor-lander', false, `the installed enforcer ${ver} cannot be evaluated (${e.message}); update the plugin`); }
 
+  // 5b the plugin root workers will run: the dispatcher's checkout (--plugin-dir), not the installed release
+  const workerRoot = OWN_ROOT;
+  add('worker-plugin', true, `workers run ${workerRoot} (enforcer ${pluginVersion(workerRoot)}); the installed release is disabled for them`);
+
   // 6 frontier: claimable, not claimed
   if (authed) {
     try {

@@ -22,6 +22,10 @@ export const HARNESS_CAPS = {
            why: 'its `codex exec --json` event stream has no parser (no recorded sample), so workers would be launched and orphaned at the first reap' },
 };
 
+/** Per-launch settings: the installed release is off for the child, so the --plugin-dir checkout is the only copy of the hooks and MCP server. */
+export const DISABLED_PLUGINS = { 'enforcer@instruxi': false };
+export const workerSettings = () => JSON.stringify({ enabledPlugins: DISABLED_PLUGINS });
+
 export const allowedTools = () => [...BASE_TOOLS, ...PREFIXES.flatMap((p) => GRAPH_TOOLS.map((t) => p + t))];
 
 export function harnessKnowsModel(harness, model) {
@@ -104,6 +108,7 @@ export function launchCmd(prompt, model, args, key, { session = null, resume = f
   }
   const cmd = [args.agentBin || process.env.CLAUDE_BIN || 'claude', '-p', prompt, '--agent', AGENT, '--model', model];
   for (const d of pluginDirs(args.pluginDir)) cmd.push('--plugin-dir', d);
+  cmd.push('--settings', workerSettings());
   if (session) cmd.push(resume ? '--resume' : '--session-id', session);
   if (maxTurns) cmd.push('--max-turns', String(maxTurns));
   cmd.push('--allowedTools', allowedTools().join(','), '--permission-prompts', 'none', '--output-format', 'stream-json', '--verbose', '--name', 'graph:' + key);

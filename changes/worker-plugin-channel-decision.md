@@ -1,0 +1,1 @@
+Decision (2026-10-07): option B. Workers run the code under test, the dispatcher's checkout, not the installed release. Rejected: A (a prerelease marketplace channel: a second release train to maintain) and C (a patch release per governor change: tried this week, still lagged by the install step).

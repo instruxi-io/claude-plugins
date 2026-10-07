@@ -1,0 +1,1 @@
+`enforcer dispatch` launches each worker with `--plugin-dir` for its own checkout and a per-launch `--settings` that disables `enforcer@instruxi` for that child; preflight reports the plugin root and version workers will run; DISPATCHER.md documents the channel (worker-plugin-dir-override).
