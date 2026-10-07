@@ -5,16 +5,16 @@
       "repo": "enforcer-graph",
       "path": "docs/swagger.json",
       "kind": "swagger2",
-      "ref": "324d497aa8564d5a0c5a99d6e7dfc04bf26e55fa",
+      "ref": "ec1f53334ffb580b41621c92bd8bc281ad88a16d",
       "file": "spec/graph.json",
-      "upstream_sha256": "edb8c0c45296b13829ddcdce205a895faaad5e065aeca285be7f36ce6eeec9bb",
-      "sha256": "d8c89f4d8835885aa789d9d318a1226063855a4bf91ddc132004950bb6e38db0"
+      "upstream_sha256": "429bc6ebeddea6985981137aa68406aa4541c15cb501165248572675b09a4ca5",
+      "sha256": "60de52073356fc20bf234a62f4eae4d2f9790671109454b02ad32501ed7746ae"
     },
     "v3": {
       "repo": "enforcer-v3",
       "path": "docs/swagger.json",
       "kind": "swagger2",
-      "ref": "5c1d0145b215d86a34358c66776e2b29a593f82d",
+      "ref": "c6f4a6a8b26c4cb520db95b9d0a424795fe75bf7",
       "file": "spec/v3.json",
       "upstream_sha256": "1706a38fc347df68259e23c43cf67e8b948742131e505713dcce87d6d0d1472e",
       "sha256": "70254e8c9ecf808369491fc1e94191100f6844233fc249e47f428541b7baff9c"
@@ -23,10 +23,10 @@
       "repo": "enforcer-files",
       "path": "docs/swagger.json",
       "kind": "swagger2",
-      "ref": "2cfc25036b9612622207101381a11aa4d4399015",
+      "ref": "86d4b28f342521911d53f6a907fde2d6cb0370b9",
       "file": "spec/files.json",
-      "upstream_sha256": "5ba5d53d22db8833016a7aa3181cde5db50486d66a6a6551e192693351d2c7e2",
-      "sha256": "709e2a7d963e830dff8e891799c8697037e7c6f63c2b94538284396c60175be7"
+      "upstream_sha256": "5ea1e9c1e19be24ef1c77d7493c5ae23d80eace1b521a6f2a4e09c228314ff8a",
+      "sha256": "e2b123d1f19a43aa2f09d49b9cde6ef5d0132e7dbd2ac7fc9ef13da6edf0cda4"
     },
     "governance": {
       "repo": "enforcer-governance",

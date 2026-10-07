@@ -7,6 +7,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, rmSync, lstatSync, readdirSync, chmodSync } from 'node:fs';
 import { tmpdir, homedir } from 'node:os';
 import { join } from 'node:path';
+import { request } from '../lib/api/client.mjs';
 import { headers, allNodes } from './preflight.mjs';
 import { resolveConfig } from './config.mjs';
 import { substitute, goTestFlags } from './evidence-run.mjs'; // the one place that knows the acceptance-line rules
@@ -86,10 +87,8 @@ export function checkLine(line, cwd, env, { timeoutMs = 300000, graph = '' } = {
 /** Server-side advisory lint (one ruleset, enforcer-graph POST /graphs/{id}/acceptance/lint). Never fatal: [] on any failure. */
 export async function serverLint(base, graph, h, acceptance) {
   try {
-    const r = await fetch(`${base}/graphs/${encodeURIComponent(graph)}/acceptance/lint`, {
-      method: 'POST', headers: { ...h, 'content-type': 'application/json' }, body: JSON.stringify({ acceptance }) });
-    if (!r.ok) return [];
-    const b = await r.json();
+    const b = await request(`${base}/graphs/${encodeURIComponent(graph)}/acceptance/lint`, {
+      method: 'POST', headers: { ...h, 'content-type': 'application/json' }, body: JSON.stringify({ acceptance }) }, { retries: 0 });
     return Array.isArray(b?.warnings) ? b.warnings : Array.isArray(b?.data?.warnings) ? b.data.warnings : [];
   } catch { return []; }
 }

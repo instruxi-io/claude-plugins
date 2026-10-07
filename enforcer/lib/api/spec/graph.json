@@ -2233,6 +2233,98 @@
         }
       }
     },
+    "/graphs/{graphId}/acceptance/lint": {
+      "post": {
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "description": "Advisory only: returns warnings for lines that name no command or quoted literal, use vague phrases ('passes', 'works', 'all passed'), duplicate another line, or exceed 400 characters. Never a 400 for a weak line. Read-only (POST because it takes a body).",
+        "tags": [
+          "nodes"
+        ],
+        "summary": "Lint acceptance lines",
+        "operationId": "lintAcceptance",
+        "parameters": [
+          {
+            "name": "graphId",
+            "in": "path",
+            "description": "graph id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "description": "acceptance lines",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/internal_nodes.LintRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/internal_nodes.LintResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/enforcer-graph_internal_httpx.ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/enforcer-graph_internal_httpx.ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/enforcer-graph_internal_httpx.ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/enforcer-graph_internal_httpx.ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/graphs/{graphId}/access": {
       "get": {
         "security": [
@@ -8360,6 +8452,126 @@
         }
       }
     },
+    "/graphs/{graphId}/nodes/{nodeId}/runs/{runId}/appeal": {
+      "post": {
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "description": "The run's producer (the account that claimed it) appeals its validation rejection — by the quorum or by an arbitrator's override — within 24 hours of the decision, once per run (docs/VALIDATION_CONTRACT.md §6a). The vote re-opens with fresh seats: n judges drawn at random from the pool, excluding every judge of the first vote (Jev included, so the re-opened vote is the people's alone) and, as always, the run's parties. The node moves from failed back to verifying (dependents wait again) and the verdict is cleared until the new vote decides; a pool smaller than n escalates at once (pool_too_small). Codes: 403 not_run_producer (anyone but the producer), 409 already_appealed (a run is appealed once), 409 appeal_not_allowed (not rejected, the 24 h window has passed, or the node has moved on — a later attempt or a reset; detail says which), 400 invalid_body (note over 4000 characters). A graph the caller cannot see is 404 graph_not_found; a run not in it 404 run_not_found. Returns the re-opened validation.",
+        "tags": [
+          "validation"
+        ],
+        "summary": "Appeal a rejected run",
+        "operationId": "appealRun",
+        "parameters": [
+          {
+            "name": "graphId",
+            "in": "path",
+            "description": "graph id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "nodeId",
+            "in": "path",
+            "description": "node id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "runId",
+            "in": "path",
+            "description": "run id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "description": "the appeal",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/internal_validation.AppealRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/internal_validation.RunValidationResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/enforcer-graph_internal_httpx.ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/enforcer-graph_internal_httpx.ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/enforcer-graph_internal_httpx.ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/enforcer-graph_internal_httpx.ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/enforcer-graph_internal_httpx.ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/graphs/{graphId}/nodes/{nodeId}/runs/{runId}/cancel-request": {
       "post": {
         "security": [
@@ -8696,6 +8908,246 @@
           },
           "404": {
             "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/enforcer-graph_internal_httpx.ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/graphs/{graphId}/nodes/{nodeId}/runs/{runId}/landing": {
+      "post": {
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "description": "For a run that has ENDED (the worker reported, so the work is done) whose pull request could not land. Stamps the run `outcome: landing_blocked` with `pr_url` and `reason` and HOLDS its node in `needs_review` (never `failed`): no claim takes it, its dependents stay held and its plan stays open. The graph's review queue gets a `landing_blocked` item naming the PR; its `retry` resolution (graph admin) returns the node to `failed`, claimable again. The run must belong to the node's current epoch and the node must be failed, verifying or done (409 invalid_transition otherwise: someone moved it, nothing was written). Recording the same pr_url twice is idempotent. Requires graph editor.",
+        "tags": [
+          "runs"
+        ],
+        "summary": "Record a landing_blocked outcome on a run",
+        "operationId": "recordRunLanding",
+        "parameters": [
+          {
+            "name": "graphId",
+            "in": "path",
+            "description": "graph id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "nodeId",
+            "in": "path",
+            "description": "node id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "runId",
+            "in": "path",
+            "description": "run id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "description": "the blocked PR",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/internal_runs.LandingRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/internal_runs.RunResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/enforcer-graph_internal_httpx.ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/enforcer-graph_internal_httpx.ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/enforcer-graph_internal_httpx.ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/enforcer-graph_internal_httpx.ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "invalid_transition: the run is still running, already carries another outcome, is from an earlier epoch, or its node is not failed, verifying or done",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/enforcer-graph_internal_httpx.ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/graphs/{graphId}/nodes/{nodeId}/runs/{runId}/progress-judgment": {
+      "post": {
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "description": "Calls the judge with the run's frozen criteria and the evidence so far (the body's `evidence`, else the run's captured evidence) and returns per-criterion probabilities and the score with `interim: true`. It NEVER writes node_runs.verification, a verdict resolution, the node's status or outputs: a progress check is advice. The call is metered like a verdict: it counts against the workspace token cap and the graph's judgment_budget (a refusal comes back 200 with state `skipped` and reason `graph_budget` or `token_cap`). With no evidence nothing is asked (state `unsupported`, reason `no_evidence`); with no acceptance criteria, state `skipped` / `no_acceptance`. Check rows are not evaluated (they need the caller's credential at completion); only judged criteria are scored. Only a RUNNING run can be progress-judged (409 invalid_transition otherwise). Requires graph editor. docs/JUDGMENT_CONTRACT.md §15.",
+        "tags": [
+          "runs"
+        ],
+        "summary": "Judge a running run's progress (interim, never a verdict)",
+        "operationId": "progressJudgeRun",
+        "parameters": [
+          {
+            "name": "graphId",
+            "in": "path",
+            "description": "graph id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "nodeId",
+            "in": "path",
+            "description": "node id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "runId",
+            "in": "path",
+            "description": "run id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "description": "optional evidence and report to judge instead of the run's own",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/enforcer-graph_internal_verify.InterimRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/internal_runs.InterimResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/enforcer-graph_internal_httpx.ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/enforcer-graph_internal_httpx.ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/enforcer-graph_internal_httpx.ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/enforcer-graph_internal_httpx.ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "invalid_transition: the run is not running",
             "content": {
               "application/json": {
                 "schema": {
@@ -10150,7 +10602,7 @@
             "ApiKeyAuth": []
           }
         ],
-        "description": "Every unresolved item judgment produced for this graph, oldest first: an observation stored for review as a possible duplicate (`observation_review`), a contradiction between two observations on one node (`contradiction`), a finished run whose verdict is `rejected` or `unverified` (`verdict_rejected`, `verdict_unverified`), a declared output the judge said is in the evidence but could not pin to one value (`output_uncertain`, id `out:<run_id>:<name>`, with the candidates and the line each appeared on), and a verdict waiting for a person (`verdict_pending`: escalated out of the approval policy's uncertain band, or judged under `gate_human`; under a gate policy its node stays `verifying` until the item is approved or rejected), a gate rejection the judge was not sure of (`low_confidence_rejection`, migration 091: confidence below approval.min_reject_confidence, default 0.6; the node stays `verifying` until a person approves, rejects or re-judges it), and a node whose route waits for a person (`route_undecided`, id `route:<node_id>:<epoch>:<attempt>`: the graph's routing fallback is `arbitrator`, or Jev stayed unavailable past the router's retry bound). Items are derived from the rows judgment already writes; nothing here blocks the frontier. Pass `next_cursor` back as `cursor` for the next page. A graph the caller cannot see is a 404, never a 403.",
+        "description": "Every unresolved item judgment produced for this graph, oldest first: an observation stored for review as a possible duplicate (`observation_review`), a contradiction between two observations on one node (`contradiction`), a finished run whose verdict is `rejected` or `unverified` (`verdict_rejected`, `verdict_unverified`), a declared output the judge said is in the evidence but could not pin to one value (`output_uncertain`, id `out:<run_id>:<name>`, with the candidates and the line each appeared on), and a verdict waiting for a person (`verdict_pending`: escalated out of the approval policy's uncertain band, or judged under `gate_human`; under a gate policy its node stays `verifying` until the item is approved or rejected), a gate rejection the judge was not sure of (`low_confidence_rejection`, migration 091: confidence below approval.min_reject_confidence, default 0.6; the node stays `verifying` until a person approves, rejects or re-judges it), and a node whose route waits for a person (`route_undecided`, id `route:<node_id>:<epoch>:<attempt>`: the graph's routing fallback is `arbitrator`, or Jev stayed unavailable past the router's retry bound), and a remote agent's question (`a2a_input_required`, migration 095, id `a2a:<run_id>`: the A2A bridge's remote task is INPUT_REQUIRED or AUTH_REQUIRED; carries `a2a_input` with the state and the question). Items are derived from the rows judgment already writes; nothing here blocks the frontier. Pass `next_cursor` back as `cursor` for the next page. A graph the caller cannot see is a 404, never a 403.",
         "tags": [
           "review"
         ],
@@ -10256,7 +10708,7 @@
             "ApiKeyAuth": []
           }
         ],
-        "description": "Applies one action to one item in ONE tenant transaction and records who did it. Observation review: `keep` (clears the flag), `merge` (archives the duplicate under `into`, default its suspected original), `discard` (archives it). Contradiction: `keep_a` / `keep_b` (archives the other side), `keep_both` (records the pair as reviewed, archives nothing). Verdict: `accept` (the verdict stands; the worker stops re-judging it), `rejudge` (the verdict goes back to unverified and the worker judges the run afresh; the node is not moved; refused with 400 `invalid_action` when the run is not its node's latest attempt, since a superseded verdict can no longer move the node). Pending verdict (`verdict_pending`, requires graph admin): `approve` (the verdict stands as decided by a person; a `verifying` node moves to done and its dependents are released) or `reject` (the verdict becomes `rejected`; the node moves to failed for a retry); both write the verdict and the resolution in one transaction. Output uncertain: `dismiss` (the entry is stamped `dismissed: true` with who and when, and leaves the queue; the value stays null). Route undecided: `approve` with `profile_id` (the node is routed to that profile, method `arbitrator`, decided by the caller; 404 agent_profile_not_found when it is not an enabled profile visible to the graph, 409 route_profile_excluded when a rejected run this epoch excludes it) or `reject` (the node stays claimable, unrouted); on a graph with a validation config this is an arbitrator's call and never a worker of an earlier attempt's (self_judgment_forbidden), else graph editor. Low-confidence rejection (`low_confidence_rejection`): `approve` (the node moves to done), `reject` (the node moves to failed and the rejection counts toward max_rejections) or `rejudge`. Rejections exhausted (migration 090; the node's gate rejections this epoch reached approval.max_rejections and it is `needs_review`, claimable by no one): `retry` (requires graph admin; the node returns to `failed` with a fresh budget of max_rejections and is claimable again) — to accept or abandon the work instead, PATCH the node's status to done or cancelled (also graph admin from needs_review). A second resolve of the same item is 409 `already_resolved`; an action outside the item's kind is 400 `invalid_action`; `merge` with an `into` that is not an observation on the same node is 400 `invalid_body`. Every resolution emits one activity event with the caller as actor. Never calls the judgment service. Verdict review on an `unverified` run that HOLDS its node in `verifying` (gate): `approve` writes the verdict `verified` and moves the node to done, `reject` writes `rejected` and moves it to failed, `rejudge` asks the worker again; `accept` is refused there (400 invalid_action) because it would record a resolution and leave the node held for good. On an unverified run whose node is not held, `approve`/`reject` are refused and `accept` / `rejudge` apply. A prior `accept` on a held run is not final: the item may be resolved again with an action that releases.",
+        "description": "Applies one action to one item in ONE tenant transaction and records who did it. Observation review: `keep` (clears the flag), `merge` (archives the duplicate under `into`, default its suspected original), `discard` (archives it). Contradiction: `keep_a` / `keep_b` (archives the other side), `keep_both` (records the pair as reviewed, archives nothing). Verdict: `accept` (the verdict stands; the worker stops re-judging it), `rejudge` (the verdict goes back to unverified and the worker judges the run afresh; the node is not moved; refused with 400 `invalid_action` when the run is not its node's latest attempt, since a superseded verdict can no longer move the node). Pending verdict (`verdict_pending`, requires graph admin): `approve` (the verdict stands as decided by a person; a `verifying` node moves to done and its dependents are released) or `reject` (the verdict becomes `rejected`; the node moves to failed for a retry); both write the verdict and the resolution in one transaction. Output uncertain: `dismiss` (the entry is stamped `dismissed: true` with who and when, and leaves the queue; the value stays null). Route undecided: `approve` with `profile_id` (the node is routed to that profile, method `arbitrator`, decided by the caller; 404 agent_profile_not_found when it is not an enabled profile visible to the graph, 409 route_profile_excluded when a rejected run this epoch excludes it) or `reject` (the node stays claimable, unrouted); on a graph with a validation config this is an arbitrator's call and never a worker of an earlier attempt's (self_judgment_forbidden), else graph editor. Low-confidence rejection (`low_confidence_rejection`): `approve` (the node moves to done), `reject` (the node moves to failed and the rejection counts toward max_rejections) or `rejudge`. Rejections exhausted (migration 090; the node's gate rejections this epoch reached approval.max_rejections and it is `needs_review`, claimable by no one): `retry` (requires graph admin; the node returns to `failed` with a fresh budget of max_rejections and is claimable again) or `approve` (requires graph admin; the latest rejected verdict is re-applied as verified by a person, the node moves to done and the counter restarts). A `verdict_rejected` item likewise takes `approve` (graph admin; same effect, refused on a superseded attempt). To abandon the work instead, PATCH the node's status to done or cancelled (also graph admin from needs_review). A2A input required (graph editor): `reply` with `text` (the bridge sends it as a message on the remote task and the run goes on) or `fail` (the bridge cancels the remote task and fails the run). A second resolve of the same item is 409 `already_resolved`; an action outside the item's kind is 400 `invalid_action`; `merge` with an `into` that is not an observation on the same node is 400 `invalid_body`. Every resolution emits one activity event with the caller as actor. Never calls the judgment service. Verdict review on an `unverified` run that HOLDS its node in `verifying` (gate): `approve` writes the verdict `verified` and moves the node to done, `reject` writes `rejected` and moves it to failed, `rejudge` asks the worker again; `accept` is refused there (400 invalid_action) because it would record a resolution and leave the node held for good. On an unverified run whose node is not held, `approve`/`reject` are refused and `accept` / `rejudge` apply. A prior `accept` on a held run is not final: the item may be resolved again with an action that releases. Override (validation-v1 §6a; item `run:<run_id>` of a run whose validation the vote DECIDED, accepted or rejected): an arbitrator — owner, tenant admin or an arbitrators grant, never a party to the run (self_judgment_forbidden) — overturns the decision with a required `note` (400 missing_field otherwise): accepted becomes rejected (verdict rejected, reason overridden_by_arbitrator; the node moves to failed) and rejected becomes accepted (verdict verified; the node moves to done); both verdicts and the run's validation carry decided_by `arbitrator`, and the validation records `override` {by, at, note, from}. A pending or escalated validation is 409 validation_not_decided (an escalated run takes approve / reject); a superseded attempt is 400 invalid_action.",
         "tags": [
           "review"
         ],
@@ -10275,7 +10727,7 @@
           {
             "name": "itemId",
             "in": "path",
-            "description": "item id from the queue (obs:…, pair:…:…, run:…, out:…:…, route:…:…:…, held:…:…)",
+            "description": "item id from the queue (obs:…, pair:…:…, run:…, out:…:…, route:…:…:…, held:…:…, a2a:…)",
             "required": true,
             "schema": {
               "type": "string"
@@ -14079,6 +14531,39 @@
           }
         }
       },
+      "enforcer-graph_internal_validation.Appeal": {
+        "type": "object",
+        "properties": {
+          "at": {
+            "type": "string"
+          },
+          "by": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "previous_judges": {
+            "description": "PreviousJudges are the first vote's judges (and \"jev\" when Jev sat):\nnone of them holds a seat in the re-opened vote.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "previous_tally": {
+            "description": "PreviousTally is the first vote's tally.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/enforcer-graph_internal_validation.Tally"
+              }
+            ]
+          },
+          "rejected_at": {
+            "description": "RejectedAt is when the appealed rejection was decided.",
+            "type": "string"
+          }
+        }
+      },
       "enforcer-graph_internal_validation.Config": {
         "type": "object",
         "required": [
@@ -14182,6 +14667,29 @@
           }
         }
       },
+      "enforcer-graph_internal_validation.Override": {
+        "type": "object",
+        "properties": {
+          "at": {
+            "type": "string"
+          },
+          "by": {
+            "type": "string"
+          },
+          "from": {
+            "description": "From is the quorum's decision the arbitrator overturned.",
+            "type": "string",
+            "enum": [
+              "accepted",
+              "rejected"
+            ],
+            "example": "accepted"
+          },
+          "note": {
+            "type": "string"
+          }
+        }
+      },
       "enforcer-graph_internal_validation.Principals": {
         "type": "object",
         "properties": {
@@ -14220,6 +14728,14 @@
       "enforcer-graph_internal_validation.RunValidation": {
         "type": "object",
         "properties": {
+          "appeal": {
+            "description": "Appeal is set once the run's producer appealed a rejection (§6a): the\nvote was re-opened with fresh seats, excluding PreviousJudges.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/enforcer-graph_internal_validation.Appeal"
+              }
+            ]
+          },
           "assigned": {
             "description": "Assigned are the judges drawn at random for this run: account ids and\n\"group:<slug>\" seats (any member of that group may fill one).",
             "type": "array",
@@ -14277,6 +14793,14 @@
           "opened_at": {
             "type": "string"
           },
+          "override": {
+            "description": "Override is set once an arbitrator overturned the quorum's decision\n(§6a): who, when, the note and the decision overturned. DecidedBy is\nthen arbitrator.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/enforcer-graph_internal_validation.Override"
+              }
+            ]
+          },
           "reason": {
             "description": "Reason is set when escalated: pool_too_small (fewer eligible judges\nthan n when validation opened), deadline, or jev_undecided (Jev's vote\nis undecided and the uncast seats can reach neither m accepts nor\nn − m + 1 rejects).",
             "type": "string",
@@ -14316,6 +14840,75 @@
           "undecided": {
             "type": "integer",
             "example": 0
+          }
+        }
+      },
+      "enforcer-graph_internal_verify.InterimRequest": {
+        "type": "object",
+        "properties": {
+          "evidence": {
+            "description": "Evidence is the evidence so far. Absent: the run's captured evidence.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/internal_runs.Evidence"
+            }
+          },
+          "report": {
+            "description": "Report is the progress claim. Absent: the run's data.report.",
+            "type": "string",
+            "example": "tests written, verify running"
+          }
+        }
+      },
+      "enforcer-graph_internal_verify.InterimResult": {
+        "type": "object",
+        "properties": {
+          "confidence": {
+            "description": "Confidence is the judge's confidence in Score, 0..1.",
+            "type": "number",
+            "example": 0.8
+          },
+          "criteria": {
+            "description": "Criteria carries one P(met) per judged criterion, same order as the\nrun's frozen acceptance (check rows are not evaluated here).",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/enforcer-graph_internal_judgment.CriterionResult"
+            }
+          },
+          "interim": {
+            "type": "boolean",
+            "example": true
+          },
+          "judged_at": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string",
+            "example": "jev-1.13.0"
+          },
+          "reason": {
+            "type": "string",
+            "example": "graph_budget"
+          },
+          "score": {
+            "type": "number",
+            "example": 1.4
+          },
+          "state": {
+            "description": "State is judged (the judge answered), unsupported (no evidence: no call\nwas made), or skipped (see Reason).",
+            "type": "string",
+            "enum": [
+              "judged",
+              "unsupported",
+              "skipped",
+              "unavailable"
+            ],
+            "example": "judged"
+          },
+          "would_verify": {
+            "description": "WouldVerify says whether this evidence would pass the verdict rule now.",
+            "type": "boolean",
+            "example": false
           }
         }
       },
@@ -15341,12 +15934,25 @@
       "internal_agentprofiles.RemoteCredential": {
         "type": "object",
         "properties": {
+          "client_id": {
+            "type": "string"
+          },
+          "client_secret": {
+            "type": "string"
+          },
           "credentials": {
             "type": "string"
           },
           "scheme": {
+            "description": "Scheme \"client_credentials\" makes the bridge mint a token at token_url\n(client_id, client_secret, optional scope) instead of sending credentials.",
             "type": "string",
             "example": "Bearer"
+          },
+          "scope": {
+            "type": "string"
+          },
+          "token_url": {
+            "type": "string"
           }
         }
       },
@@ -16400,6 +17006,21 @@
           "edge_count": {
             "type": "integer",
             "example": 18
+          },
+          "effective_client_policy": {
+            "description": "EffectiveClientPolicy is the policy that applies: the graph's own.\nThe platform never raises a graph to require; set it per graph once the\nplugin ships attestation everywhere.",
+            "type": "string",
+            "enum": [
+              "off",
+              "warn",
+              "require"
+            ],
+            "example": "warn"
+          },
+          "effective_min_client_version": {
+            "description": "EffectiveMinClientVersion is the graph's own min_client_version, else the\nplatform default (env GRAPH_DEFAULT_MIN_CLIENT_VERSION). Set on GET only.",
+            "type": "string",
+            "example": "0.14.0"
           },
           "epoch": {
             "description": "Epoch is the current epoch, 1 until the first reset (contract §2).",
@@ -17769,6 +18390,58 @@
           }
         }
       },
+      "internal_nodes.LintRequest": {
+        "type": "object",
+        "properties": {
+          "acceptance": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "internal_nodes.LintResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": true
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/internal_nodes.LintWarning"
+            }
+          }
+        }
+      },
+      "internal_nodes.LintWarning": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "no_command",
+              "no_quoted_literal",
+              "vague_phrase",
+              "duplicate",
+              "too_long"
+            ],
+            "example": "vague_phrase"
+          },
+          "hint": {
+            "type": "string"
+          },
+          "index": {
+            "type": "integer",
+            "example": 0
+          },
+          "line": {
+            "type": "string"
+          }
+        }
+      },
       "internal_nodes.ModelUsage": {
         "type": "object",
         "properties": {
@@ -18026,6 +18699,13 @@
           "success": {
             "type": "boolean",
             "example": true
+          },
+          "warnings": {
+            "description": "Warnings are advisory acceptance-lint findings (never an error).",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/internal_nodes.LintWarning"
+            }
           }
         }
       },
@@ -18730,6 +19410,10 @@
             "description": "JudgmentPendingSince is set while the run waits for the worker's Jev\ncall (docs/JUDGMENT_CONTRACT.md §12, migration 067): its verdict (the\nplain path, where verification.state is `pending`), Jev's vote (a\nvalidated run) or its typed outputs (validation with no Jev seat).\nAbsent once the worker wrote it, and on every run that owed no call.",
             "type": "string"
           },
+          "landing_reason": {
+            "type": "string",
+            "example": "CI failed: TestFoo"
+          },
           "node": {
             "$ref": "#/components/schemas/internal_query.RunQueryNode"
           },
@@ -18741,12 +19425,23 @@
             "type": "string",
             "example": "0f6b7a52-3c1d-4f0e-8d55-6a9e2b1c4d7f"
           },
+          "outcome": {
+            "description": "Outcome is a server-known outcome beyond status (migration 093): only\n`landing_blocked` today (the work is done, its PR could not land), with\nPRURL and LandingReason. Absent on every ordinary run.",
+            "type": "string",
+            "enum": [
+              "landing_blocked"
+            ]
+          },
           "outputs": {
             "description": "Outputs are the node's declared outputs as the judge decided them in\nthe verification call (docs/OUTPUTS_AND_LINKS_CONTRACT.md §2), keyed by\noutput name. Absent when nothing was declared or no call was made.",
             "type": "object",
             "additionalProperties": {
               "$ref": "#/components/schemas/enforcer-graph_internal_judgment.Output"
             }
+          },
+          "pr_url": {
+            "type": "string",
+            "example": "https://github.com/instruxi-io/enforcer-graph/pull/257"
           },
           "started_at": {
             "type": "string"
@@ -19138,11 +19833,53 @@
           }
         }
       },
+      "internal_review.A2AInputRef": {
+        "type": "object",
+        "properties": {
+          "asked_at": {
+            "type": "string"
+          },
+          "attempt": {
+            "type": "integer",
+            "example": 1
+          },
+          "epoch": {
+            "type": "integer",
+            "example": 1
+          },
+          "profile_id": {
+            "type": "string"
+          },
+          "question": {
+            "description": "Question is the remote agent's status message.",
+            "type": "string"
+          },
+          "run_id": {
+            "type": "string"
+          },
+          "state": {
+            "description": "State is INPUT_REQUIRED or AUTH_REQUIRED.",
+            "type": "string",
+            "enum": [
+              "INPUT_REQUIRED",
+              "AUTH_REQUIRED"
+            ]
+          }
+        }
+      },
       "internal_review.Item": {
         "type": "object",
         "properties": {
           "a": {
             "$ref": "#/components/schemas/internal_review.ObservationRef"
+          },
+          "a2a_input": {
+            "description": "A2AInput is set on an a2a_input_required item (095): the remote agent's\nopen question.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/internal_review.A2AInputRef"
+              }
+            ]
           },
           "b": {
             "$ref": "#/components/schemas/internal_review.ObservationRef"
@@ -19171,7 +19908,17 @@
               "verdict_pending",
               "route_undecided",
               "rejections_exhausted",
-              "low_confidence_rejection"
+              "low_confidence_rejection",
+              "landing_blocked",
+              "a2a_input_required"
+            ]
+          },
+          "landing": {
+            "description": "Landing is set on a landing_blocked item (093): the PR that could not\nland, beside Verdict (the blocked run's, when it has one).",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/internal_review.LandingRef"
+              }
             ]
           },
           "node_id": {
@@ -19226,6 +19973,22 @@
             "example": "jev-1.13.0"
           },
           "request_id": {
+            "type": "string"
+          }
+        }
+      },
+      "internal_review.LandingRef": {
+        "type": "object",
+        "properties": {
+          "pr_url": {
+            "type": "string",
+            "example": "https://github.com/instruxi-io/enforcer-graph/pull/257"
+          },
+          "reason": {
+            "type": "string",
+            "example": "CI failed: TestFoo"
+          },
+          "run_id": {
             "type": "string"
           }
         }
@@ -19390,7 +20153,10 @@
               "dismiss",
               "approve",
               "reject",
-              "retry"
+              "retry",
+              "reply",
+              "fail",
+              "override"
             ]
           },
           "into": {
@@ -19398,13 +20164,17 @@
             "type": "string"
           },
           "note": {
-            "description": "Note is stored on the row written (data._review_note) and returned.",
+            "description": "Note is stored on the row written (data._review_note) and returned.\nRequired for override (the arbitrator's reason, stored on the run's\nvalidation.override).",
             "type": "string"
           },
           "profile_id": {
             "description": "ProfileID is for approve on a route_undecided item: the agent profile\nthe node is routed to (method arbitrator). Required there, ignored\nelsewhere.",
             "type": "string",
             "format": "uuid"
+          },
+          "text": {
+            "description": "Text is for reply on an a2a_input_required item: the message the bridge\nsends on the remote task (required there, at most 8000 characters).",
+            "type": "string"
           }
         }
       },
@@ -19527,6 +20297,12 @@
           "escalated_fallback": {
             "type": "boolean"
           },
+          "failed": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            }
+          },
           "pending_human": {
             "type": "boolean"
           },
@@ -19557,6 +20333,11 @@
               "rejected",
               "unverified"
             ]
+          },
+          "threshold": {
+            "description": "Threshold is the upheld-probability floor a criterion's noul must\nreach (judgment.VerifyNoulMin); Failed lists the indexes into Criteria\nof those under it.",
+            "type": "number",
+            "example": 0.7
           },
           "validation": {
             "description": "Validation is set on an item for a run in validation-v1: the votes\ncast and, on an escalated run, why the vote did not decide\n(pool_too_small, deadline), so the arbitrator sees what they decide.",
@@ -19855,6 +20636,11 @@
       "internal_runs.ClaimNodeRequest": {
         "type": "object",
         "properties": {
+          "route_override_reason": {
+            "description": "RouteOverrideReason: see ClaimRequest.RouteOverrideReason.",
+            "type": "string",
+            "example": "needs the release-manager tools"
+          },
           "runner": {
             "type": "string",
             "example": "svc-schema"
@@ -19902,6 +20688,11 @@
             "example": [
               "go-backend"
             ]
+          },
+          "route_override_reason": {
+            "description": "RouteOverrideReason (at most 500 characters) says why the claimer runs a routed\nnode as something other than its route; recorded on the run as\ndata.route_override_reason, ignored on an unrouted node (ROUTING_CONTRACT §3b).",
+            "type": "string",
+            "example": "needs the release-manager tools"
           },
           "runner": {
             "description": "Runner is free-form provenance recorded on each run's data — a worker id,\na workflow name. It is NOT authorization and nothing reads it to decide\nanything.",
@@ -20296,6 +21087,11 @@
             "type": "object",
             "additionalProperties": {}
           },
+          "route_override_reason": {
+            "description": "RouteOverrideReason (at most 500 characters): why this run departed from its\nroute; recorded as data.route_override_reason on a routed run, ignored otherwise.",
+            "type": "string",
+            "example": "needs the release-manager tools"
+          },
           "status": {
             "type": "string",
             "enum": [
@@ -20423,6 +21219,36 @@
               "declared"
             ],
             "example": "extracted"
+          }
+        }
+      },
+      "internal_runs.InterimResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/enforcer-graph_internal_verify.InterimResult"
+          },
+          "success": {
+            "type": "boolean",
+            "example": true
+          }
+        }
+      },
+      "internal_runs.LandingRequest": {
+        "type": "object",
+        "required": [
+          "pr_url"
+        ],
+        "properties": {
+          "pr_url": {
+            "description": "PRURL is the pull request that could not land (http or https).",
+            "type": "string",
+            "example": "https://github.com/instruxi-io/enforcer-graph/pull/257"
+          },
+          "reason": {
+            "description": "Reason says why it is blocked (up to 2000 characters).",
+            "type": "string",
+            "example": "CI failed: TestFoo"
           }
         }
       },
@@ -20557,6 +21383,10 @@
             "description": "JudgmentPendingSince is set while the run waits for the worker's Jev\ncall (docs/JUDGMENT_CONTRACT.md §12, migration 067): its verdict (the\nplain path, where verification.state is `pending`), Jev's vote (a\nvalidated run) or its typed outputs (validation with no Jev seat).\nAbsent once the worker wrote it, and on every run that owed no call.",
             "type": "string"
           },
+          "landing_reason": {
+            "type": "string",
+            "example": "CI failed: TestFoo"
+          },
           "node_id": {
             "type": "string"
           },
@@ -20565,12 +21395,23 @@
             "type": "string",
             "example": "0f6b7a52-3c1d-4f0e-8d55-6a9e2b1c4d7f"
           },
+          "outcome": {
+            "description": "Outcome is a server-known outcome beyond status (migration 093): only\n`landing_blocked` today (the work is done, its PR could not land), with\nPRURL and LandingReason. Absent on every ordinary run.",
+            "type": "string",
+            "enum": [
+              "landing_blocked"
+            ]
+          },
           "outputs": {
             "description": "Outputs are the node's declared outputs as the judge decided them in\nthe verification call (docs/OUTPUTS_AND_LINKS_CONTRACT.md §2), keyed by\noutput name. Absent when nothing was declared or no call was made.",
             "type": "object",
             "additionalProperties": {
               "$ref": "#/components/schemas/enforcer-graph_internal_judgment.Output"
             }
+          },
+          "pr_url": {
+            "type": "string",
+            "example": "https://github.com/instruxi-io/enforcer-graph/pull/257"
           },
           "started_at": {
             "type": "string"
@@ -20991,6 +21832,11 @@
           "message": {
             "type": "string",
             "example": "no X-Graph-Client header: heartbeats, evidence and usage are not being captured"
+          },
+          "reason": {
+            "description": "Reason is the text after `hooks=off:` when the client gave one.",
+            "type": "string",
+            "example": "sandboxed run"
           }
         }
       },
@@ -22084,6 +22930,48 @@
           }
         }
       },
+      "internal_validation.Appeal": {
+        "type": "object",
+        "properties": {
+          "at": {
+            "type": "string"
+          },
+          "by": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "previous_judges": {
+            "description": "PreviousJudges are the first vote's judges (and \"jev\" when Jev sat):\nnone of them holds a seat in the re-opened vote.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "previous_tally": {
+            "description": "PreviousTally is the first vote's tally.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/internal_validation.Tally"
+              }
+            ]
+          },
+          "rejected_at": {
+            "description": "RejectedAt is when the appealed rejection was decided.",
+            "type": "string"
+          }
+        }
+      },
+      "internal_validation.AppealRequest": {
+        "type": "object",
+        "properties": {
+          "note": {
+            "description": "Note says why the rejection is wrong; stored on the appeal (at most\n4000 characters).",
+            "type": "string"
+          }
+        }
+      },
       "internal_validation.AssignedRun": {
         "type": "object",
         "properties": {
@@ -22275,6 +23163,29 @@
           }
         }
       },
+      "internal_validation.Override": {
+        "type": "object",
+        "properties": {
+          "at": {
+            "type": "string"
+          },
+          "by": {
+            "type": "string"
+          },
+          "from": {
+            "description": "From is the quorum's decision the arbitrator overturned.",
+            "type": "string",
+            "enum": [
+              "accepted",
+              "rejected"
+            ],
+            "example": "accepted"
+          },
+          "note": {
+            "type": "string"
+          }
+        }
+      },
       "internal_validation.Principals": {
         "type": "object",
         "properties": {
@@ -22313,6 +23224,14 @@
       "internal_validation.RunValidation": {
         "type": "object",
         "properties": {
+          "appeal": {
+            "description": "Appeal is set once the run's producer appealed a rejection (§6a): the\nvote was re-opened with fresh seats, excluding PreviousJudges.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/internal_validation.Appeal"
+              }
+            ]
+          },
           "assigned": {
             "description": "Assigned are the judges drawn at random for this run: account ids and\n\"group:<slug>\" seats (any member of that group may fill one).",
             "type": "array",
@@ -22369,6 +23288,14 @@
           },
           "opened_at": {
             "type": "string"
+          },
+          "override": {
+            "description": "Override is set once an arbitrator overturned the quorum's decision\n(§6a): who, when, the note and the decision overturned. DecidedBy is\nthen arbitrator.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/internal_validation.Override"
+              }
+            ]
           },
           "reason": {
             "description": "Reason is set when escalated: pool_too_small (fewer eligible judges\nthan n when validation opened), deadline, or jev_undecided (Jev's vote\nis undecided and the uncast seats can reach neither m accepts nor\nn − m + 1 rejects).",
@@ -22707,6 +23634,14 @@
           "runs_without_usage": {
             "type": "integer",
             "example": 21
+          },
+          "verdicts": {
+            "description": "Verdicts counts judged runs by verification state, this epoch and overall.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/internal_work.Verdicts"
+              }
+            ]
           },
           "wait_seconds_max": {
             "type": "number",
@@ -23118,6 +24053,14 @@
           "validation": {
             "$ref": "#/components/schemas/internal_work.ValidationCounts"
           },
+          "verdicts": {
+            "description": "Verdicts counts judged runs by verification state, this epoch and overall.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/internal_work.Verdicts"
+              }
+            ]
+          },
           "workers": {
             "$ref": "#/components/schemas/internal_work.Workers"
           }
@@ -23138,6 +24081,19 @@
       "internal_work.SummaryUsage": {
         "type": "object",
         "properties": {
+          "by_model": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/enforcer-graph_internal_nodes.ModelUsage"
+            }
+          },
+          "cache_creation_input_tokens": {
+            "type": "integer"
+          },
+          "cache_read_input_tokens": {
+            "description": "CacheReadInputTokens and CacheCreationInputTokens are null when no run\nreported them; ByModel is empty, never null.",
+            "type": "integer"
+          },
           "cost_usd": {
             "type": "number"
           },
@@ -23194,6 +24150,50 @@
           "pending": {
             "type": "integer",
             "example": 1
+          }
+        }
+      },
+      "internal_work.VerdictCounts": {
+        "type": "object",
+        "properties": {
+          "needs_review": {
+            "type": "integer",
+            "example": 0
+          },
+          "pending": {
+            "type": "integer",
+            "example": 0
+          },
+          "rejected": {
+            "type": "integer",
+            "example": 2
+          },
+          "rejections": {
+            "type": "integer",
+            "example": 2
+          },
+          "unsupported": {
+            "type": "integer",
+            "example": 1
+          },
+          "unverified": {
+            "type": "integer",
+            "example": 0
+          },
+          "verified": {
+            "type": "integer",
+            "example": 12
+          }
+        }
+      },
+      "internal_work.Verdicts": {
+        "type": "object",
+        "properties": {
+          "epoch": {
+            "$ref": "#/components/schemas/internal_work.VerdictCounts"
+          },
+          "overall": {
+            "$ref": "#/components/schemas/internal_work.VerdictCounts"
           }
         }
       },
