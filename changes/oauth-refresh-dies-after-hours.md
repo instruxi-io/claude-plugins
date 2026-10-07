@@ -1,1 +1,0 @@
-A refused OAuth refresh is retried once, a refresh lock held by a dead pid is reclaimed, `login status` names the sign-in age and when it stops refreshing, and SessionStart and dispatch preflight say "sign in again" instead of blocking silently.

@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+## 1.2.0
+
+Dispatched workers can run on their own agent credential instead of your browser sign-in, run the code under test rather than the installed release, and report evidence that survives the hook's time limit. The report hook no longer loses evidence to NUL bytes or timeouts, long commands keep their lease, and the nightly smoke now actually runs.
+
+- `enforcer dispatch --agent <name>` runs workers on a Tier 2 agent credential (key from the OS keychain or ENFORCER_AGENT_KEY); preflight prints the identity and refuses a browser sign-in for a plan over 2 hours without --allow-browser-signin (dispatch-agent-credential).
+- `enforcer dispatch` launches each worker with `--plugin-dir` for its own checkout and a per-launch `--settings` that disables `enforcer@instruxi` for that child; preflight reports the plugin root and version workers will run; DISPATCHER.md documents the channel (worker-plugin-dir-override).
+- Decision (2026-10-07): option B. Workers run the code under test, the dispatcher's checkout, not the installed release. Rejected: A (a prerelease marketplace channel: a second release train to maintain) and C (a patch release per governor change: tried this week, still lagged by the install step).
+- `enforcer dispatch prune [--yes]` returns: removes worktrees whose PR merged and no live worker holds (dry run without --yes), also when the remote branch is already deleted (dispatch-prune-command).
+- The dispatcher re-reads the node's current status and the latest run's verdict (polling while pending) after a worker exits, so a verified attempt is never logged FAILED and a done node is never left for a person (dispatcher-verdict-misreport).
+- A succeeded graph_report now runs the node's acceptance commands (read-only allow-list, 120 s each, isolated env) and prepends their output to the evidence, failing first, so a true criterion is not rejected for a missing `ls` (report-attaches-acceptance-evidence).
+- The report hook runs a node's acceptance lines within a 15 s budget (8 s per line, cheap read-only lines first) so it never overruns the PreToolUse timeout and drops the evidence it was attaching.
+- An acceptance line the report hook's budget cuts short is attached as a note, not as a failed command record, so the judge reads the worker's own run of it instead.
+- The report hook strips NUL bytes from the report and evidence, which the server cannot store and which made it refuse whole reports with 500.
+- Long tool calls no longer lose the lease: PreToolUse on Bash starts a detached ticker that heartbeats every lease/3 until the call ends, the session ends, or a heartbeat answers anything but ok.
+- A refused OAuth refresh is retried once, a refresh lock held by a dead pid is reclaimed, `login status` names the sign-in age and when it stops refreshing, and SessionStart and dispatch preflight say "sign in again" instead of blocking silently.
+- A fresh install now creates the state dir 0700 regardless of umask, so `enforcer doctor` passes its own state-dir check.
+- The last two hand-written API calls (MCP health in the version check, acceptance lint in plan check) go through the shared API client; the spec lock is refreshed so the lint endpoint is in graph.d.ts.
+- The nightly smoke runs on a GitHub-hosted runner against the latest Claude Code CLI, with no credentials, instead of a self-hosted runner that never existed.
+- Windows suites pass: tar gets --force-local for drive paths, Grok hook JSON is serialised not templated, tests use fileURLToPath and path-agnostic comparisons, and the win32 quarantine entries are gone (windows-suite-portability).
+- test: heartbeat ticker tests no longer race the spawned ticker over the run file (macOS flake)
+
 ## 1.1.0
 
 One runtime (the Python graph code is gone), generated API clients, a contract test against the server spec, and operations tooling.
