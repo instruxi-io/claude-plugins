@@ -75,7 +75,7 @@ export function prepareLine(line, { cwd, graph, nodeKey, nodeId, testDb, runners
     if (w === 'cd') continue;
     if (!runners.includes(w)) return { skip: `not a runnable command: ${w}` };
   }
-  if (/(^|\s)(rm|mv|curl)\s/.test(cmd)) return { skip: 'not read-only' };
+  if (/(^|[\s;&|(])(rm|mv|curl|tee)\s|\bsed\s+-[a-zA-Z]*i|(^|\s)>{1,2}\s*(?!\/dev\/null|&)\S/.test(cmd)) return { skip: 'not read-only' };
   return { cmd: goTestFlags(cmd, p.literals), cwd: dir, literals: p.literals, exit: p.exit };
 }
 

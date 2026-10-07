@@ -14,6 +14,7 @@ import { redact } from '../redact.mjs';
 import { OUTPUT_CLIP } from '../clip.mjs';
 import { apiFetch } from '../../../lib/api/client.mjs';
 import { authHeaders } from '../../credentials.mjs';
+import { runEvidence } from '../../evidence-run.mjs';
 import { findConfig, isGraphTool, isObj, actorTranscript, transcriptUsage, typedUsage } from './common.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -94,6 +95,26 @@ export function evidenceGaps(hints, evidence) {
     else if ((h.kind === 'check' || h.kind === 'prose') && !cmds.length) gaps.push([n, crit, 'wants a command whose verbatim output shows it; run the deciding command and attach it']);
   });
   return gaps;
+}
+
+const ACCEPT_RUNNERS = ['node', 'python3', 'bash', 'sh', 'grep', 'ls', 'npm', 'cat', 'test', 'wc', 'head', 'tail', 'gh'];
+const ACCEPT_TIMEOUT_MS = 120_000;
+const NOTE_REASONS = /not read-only|not a runnable command/;
+
+/** Run the claimed node's acceptance lines in the worktree: command records plus a note per refused write. Never throws. */
+export function acceptanceRecords(inp, run, deps = {}) {
+  try {
+    const lines = Array.isArray(run && run.acceptance) ? run.acceptance.filter((l) => typeof l === 'string') : [];
+    if (!lines.length || !inp.cwd || !existsSync(inp.cwd)) return [];
+    let cwd = inp.cwd;
+    try { const g = spawnSync('git', ['rev-parse', '--show-toplevel'], { cwd, encoding: 'utf8', timeout: 5000 }); if (g.status === 0 && g.stdout.trim()) cwd = g.stdout.trim(); } catch {}
+    const r = runEvidence({ key: run.key, node_id: run.node_id, data: { acceptance: lines } },
+      { cwd, graph: run.graph_id || '', runners: ACCEPT_RUNNERS, timeoutMs: deps.acceptanceTimeoutMs ?? ACCEPT_TIMEOUT_MS, retryDelayMs: 0, run: deps.acceptanceRun });
+    const items = r.items.map(({ line_index, ...rec }) => rec);
+    const notes = r.skipped.filter((s) => NOTE_REASONS.test(s.reason))
+      .map((s) => ({ kind: 'note', text: `acceptance line ${s.line_index + 1} was not run (${s.reason}): ${lines[s.line_index].slice(0, 200)}` }));
+    return [...items, ...notes];
+  } catch { return []; }
 }
 
 const deny = (why) => ({ hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: 'enforcer-graph: ' + why });
@@ -181,10 +202,11 @@ export async function decide(inp, deps = {}) {
     return usage && mode() !== 'context' ? { hookEventName: 'PreToolUse', updatedInput: withUsage(inp.tool_input, usage, false) } : null;
   }
   if (isReport) usage = transcriptUsage(actorTranscript(inp), run.claimed_at);
-  if (!records.length) return usage && mode() !== 'context' ? { hookEventName: 'PreToolUse', updatedInput: withUsage(inp.tool_input, usage) } : null;
+  const acc = isReport && (inp.tool_input || {}).status === 'succeeded' ? acceptanceRecords(inp, run, deps) : [];
+  if (!records.length && !acc.length) return usage && mode() !== 'context' ? { hookEventName: 'PreToolUse', updatedInput: withUsage(inp.tool_input, usage) } : null;
   let evidence = isRemember
     ? selectEvidence(records.slice(-REMEMBER_RECENT).map(stripInternal), REMEMBER_RECENT)
-    : selectEvidence(records.map(stripInternal));
+    : selectEvidence([...acc, ...records.map(stripInternal)]);
   // A claimed PR is the one externally checkable claim: resolve it with gh, never trust the URL.
   const pr = isReport ? (inp.tool_input || {}).pr : null;
   const checked = typeof pr === 'string' && pr.trim() ? checkPr(pr, deps.gh) : null;
