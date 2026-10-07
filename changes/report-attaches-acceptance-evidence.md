@@ -1,0 +1,1 @@
+A succeeded graph_report now runs the node's acceptance commands (read-only allow-list, 120 s each, isolated env) and prepends their output to the evidence, failing first, so a true criterion is not rejected for a missing `ls` (report-attaches-acceptance-evidence).

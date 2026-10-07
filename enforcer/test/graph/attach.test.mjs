@@ -1,7 +1,7 @@
 import { realpathSync } from 'node:fs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { attachEvidence, attachFiles, checkPr, overrideEntries, clientFor } from '../../src/graph/hooks/attach.mjs';
@@ -122,4 +122,48 @@ test('garbage input is silent; context mode hands evidence over', async () => {
     assert.match(out.hookSpecificOutput.additionalContext, /VERBATIM/);
     assert.equal(out.hookSpecificOutput.updatedInput, undefined);
   } finally { delete process.env.GRAPH_EVIDENCE_MODE; }
+});
+
+function freshAcc(acceptance) {
+  const { root, sid } = fresh([]);
+  saveRun(sid, { run_id: 'r1', node_id: 'n1', graph_id: 'g1', key: 'k', claimed_at: '2026-01-01T00:00:00Z', acceptance_evidence: [], acceptance });
+  const cwd = join(root, 'wt'); mkdirSync(cwd); writeFileSync(join(cwd, 'f.txt'), 'hello\n');
+  return { sid, cwd };
+}
+
+test('report attaches the output of each acceptance command', async () => {
+  const { sid, cwd } = freshAcc(['ls f.txt prints the file', 'cat f.txt prints "hello"', 'ls missing.txt prints the file']);
+  appendEvidence(sid, { kind: 'command', cmd: 'echo hi', exit: 0, output: 'hi', _run: 'r1' });
+  const out = await attachEvidence({ ...rep(sid), cwd }, {});
+  const ev = ui(out).evidence;
+  assert.equal(ev[0].exit !== 0, true); // failing first
+  const ls = ev.find((e) => e.cmd === 'ls f.txt');
+  assert.match(ls.output, /f\.txt/);
+  assert.equal(ls.exit, 0);
+  assert.match(ev.find((e) => e.cmd === 'cat f.txt').output, /hello/);
+  assert.ok(ev.some((e) => e.cmd === 'echo hi'));
+  assert.ok(ev.length <= 20);
+});
+
+test('a timed-out acceptance command is a record with exit 124', async () => {
+  const { sid, cwd } = freshAcc(['node -e "setTimeout(()=>{},5000)" prints nothing']);
+  const out = await attachEvidence({ ...rep(sid), cwd }, { acceptanceTimeoutMs: 300 });
+  const rec = ui(out).evidence.find((e) => (e.cmd || '').startsWith('node -e'));
+  assert.equal(rec.exit, 124);
+});
+
+test('a write command in an acceptance line is skipped with a note', async () => {
+  const { sid, cwd } = freshAcc(['rm f.txt prints nothing', 'echo x > g.txt prints nothing', 'git push prints done']);
+  const out = await attachEvidence({ ...rep(sid), cwd }, {});
+  const ev = ui(out).evidence;
+  assert.equal(ev.filter((e) => e.kind === 'note').length, 2);
+  assert.match(ev.find((e) => e.kind === 'note').text, /was not run/);
+  assert.ok(!ev.some((e) => e.kind === 'command'));
+  assert.equal(existsSync(join(cwd, 'f.txt')), true);
+  assert.equal(existsSync(join(cwd, 'g.txt')), false);
+});
+
+test('no acceptance or no worktree attaches nothing extra', async () => {
+  const { sid } = freshAcc([]);
+  assert.equal(ui(await attachEvidence({ ...rep(sid), cwd: '/nonexistent-x' }, {})).evidence, undefined);
 });
