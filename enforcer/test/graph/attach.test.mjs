@@ -145,11 +145,12 @@ test('report attaches the output of each acceptance command', async () => {
   assert.ok(ev.length <= 20);
 });
 
-test('a timed-out acceptance command is a record with exit 124', async () => {
+test('a timed-out acceptance command becomes a note, not a failed command record', async () => {
   const { sid, cwd } = freshAcc(['node -e "setTimeout(()=>{},5000)" prints nothing']);
   const out = await attachEvidence({ ...rep(sid), cwd }, { acceptanceTimeoutMs: 300 });
-  const rec = ui(out).evidence.find((e) => (e.cmd || '').startsWith('node -e'));
-  assert.equal(rec.exit, 124);
+  const ev = ui(out).evidence;
+  assert.ok(!ev.some((e) => (e.cmd || '').startsWith('node -e')), 'no exit-124 command record');
+  assert.match(ev.find((e) => e.kind === 'note').text, /did not finish within the report hook/);
 });
 
 test('acceptance lines past the time budget are noted, not run; cheap lines run first', async () => {
@@ -158,8 +159,8 @@ test('acceptance lines past the time budget are noted, not run; cheap lines run 
   const out = await attachEvidence({ ...rep(sid), cwd }, { acceptanceTimeoutMs: 300, acceptanceBudgetMs: 700 });
   const ev = ui(out).evidence;
   assert.ok(ev.some((e) => e.cmd === 'ls f.txt' && e.exit === 0), 'the cheap ls ran first');
-  assert.equal(ev.filter((e) => (e.cmd || '').startsWith('node -e') && e.exit === 124).length, 1, 'one slow line ran and timed out');
-  assert.equal(ev.filter((e) => e.kind === 'note' && /time budget/.test(e.text)).length, 1, 'the other slow line was noted');
+  assert.equal(ev.filter((e) => e.kind === 'note' && /did not finish/.test(e.text)).length, 1, 'one slow line ran, timed out, and was noted');
+  assert.equal(ev.filter((e) => e.kind === 'note' && /time budget/.test(e.text)).length, 1, 'the other slow line was noted as unreached');
 });
 
 test('a write command in an acceptance line is skipped with a note', async () => {

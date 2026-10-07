@@ -126,7 +126,12 @@ export function acceptanceRecords(inp, run, deps = {}) {
       const left = deadline - Date.now();
       if (left < ACCEPT_MIN_MS) { notes.push({ kind: 'note', text: `acceptance line ${i + 1} was not run (time budget of the report hook): ${lines[i].slice(0, 200)}` }); continue; }
       const r = runEvidence(node, { cwd, graph: run.graph_id || '', only: i, runners: ACCEPT_RUNNERS, timeoutMs: Math.min(lineMs, left), retryDelayMs: 0, run: deps.acceptanceRun });
-      for (const { line_index, ...rec } of r.items) items.push(rec);
+      for (const { line_index, ...rec } of r.items) {
+        // A line the budget cut short is NOT a failed command: the judge reads exit 124 with no summary as a failure, while the
+        // worker's own run of the same command is already among the captured records. Say what happened instead.
+        if (rec.exit === 124) notes.push({ kind: 'note', text: `acceptance line ${line_index + 1} did not finish within the report hook's ${Math.round(Math.min(lineMs, left) / 1000)} s; judge it from the worker's own captured run: ${lines[line_index].slice(0, 200)}` });
+        else items.push(rec);
+      }
       for (const s of r.skipped) if (NOTE_REASONS.test(s.reason)) notes.push({ kind: 'note', text: `acceptance line ${s.line_index + 1} was not run (${s.reason}): ${lines[s.line_index].slice(0, 200)}` });
     }
     return [...items, ...notes];
