@@ -7,7 +7,7 @@ import { actorKey, stateBase, tightenState, privateDir, privateWrite } from '../
 import { loadRun } from '../run.mjs';
 import { sweepSessions, prFooter } from '../evidence.mjs';
 import { http } from '../http.mjs';
-import { readCredentials } from '../../credentials.mjs';
+import { readCredentials, signInProblem } from '../../credentials.mjs';
 import { configDir } from '../../../hooks/claude/paths.mjs';
 import { findConfig, markAttested, isObj } from './common.mjs';
 import { pluginVersion } from './attach.mjs';
@@ -83,6 +83,7 @@ export async function sessionStart(inp, opts = {}) {
     let w = null;
     try { w = workspaceLine(readCredentials()); } catch {}
     if (w) lines.unshift(w);
+    try { const sp = signInProblem(); if (sp) { said.push(sp); } } catch {}
     if (said.length) return { systemMessage: said.join('\n'), hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: [...said, ...lines].join('\n') } };
     if (lines.length) return { hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: lines.join('\n') } };
     return null;

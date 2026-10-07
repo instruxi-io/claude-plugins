@@ -446,10 +446,10 @@ test('oauth: the rotated pair is written back', async () => {
 });
 test('oauth: the file stays 0600', async () => assert.equal((statSync(SIGNIN).mode & 0o777).toString(8), '600'));
 test('oauth: the refresh used the refresh_token grant', async () => assert.ok(stub.log.some((r) => r.path === '/token' && r.body.grant_type === 'refresh_token')));
-test('oauth: a refused refresh fails open (silent)', async () => {
+test('oauth: a refused refresh says to sign in again, and does not block', async () => {
   creds('expired-token', '2000-01-01T00:00:00.000Z');
   const d = JSON.parse(readFileSync(SIGNIN, 'utf8')); d.enforcer.oauth.refresh_token = 'revoked'; writeFileSync(SIGNIN, JSON.stringify(d));
-  assert.equal(await ohook(start), '');
+  assert.match(await ohook(start), /run \/enforcer:login/);
 });
 test('oauth: signed out and no key is silent', async () => {
   rmSync(SIGNIN, { force: true });
