@@ -216,3 +216,27 @@ test('launch command: claude args, one plugin per name, grok needs --experimenta
   assert.match(harnessRefusal('codex', true), /not supported/);
   assert.equal(harnessRefusal('claude', false), null);
 });
+
+test('a verdict that lands after exit is read before the attempt is judged failed', async () => {
+  const state = tmp();
+  const ev = [
+    { type: 'assistant', message: { content: [{ type: 'tool_use', id: 't1', name: 'mcp__x__graph_report', input: { node_id: 'id-a', status: 'succeeded' } }] } },
+    { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 't1', content: JSON.stringify({ verification: { state: 'rejected', reason: 'no evidence' } }) }] } },
+    { type: 'result', subtype: 'success', is_error: false, num_turns: 2, result: 'done' },
+  ].map((e) => JSON.stringify(e)).join('\n');
+  writeFileSync(join(state, 'events.jsonl'), ev + '\n');
+  const claude = script(state, 'claude', `cat '${join(state, 'events.jsonl')}'`);
+  const api = new FakeAPI([node('a')]);
+  let polls = 0;
+  api.runs = async () => [{ run_id: 'run-id-a', verification: { state: ++polls < 3 ? 'pending' : 'verified' } }];
+  api.node = async () => ({ status: 'verifying' });
+  const { lines, out } = quiet();
+  const d = new Dispatcher(api, mkArgs(state, { agentBin: claude, verdictPollMs: 10 }), out);
+  const done = d.run();
+  await wait(() => lines.some((l) => /done a /.test(l)) && d.workers.size === 0);
+  await new Promise((r) => setTimeout(r, 100));
+  d.requestTerminate('SIGINT');
+  await done;
+  assert.ok(polls >= 3, 'polled until the verdict landed');
+  assert.ok(!lines.some((l) => /FAILED a/.test(l)), lines.join('\n'));
+});
