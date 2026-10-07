@@ -267,6 +267,17 @@ export function reclaimedNotice(inp) {
     ? `enforcer-graph: the lease on node ${run.key || run.node_id} was reclaimed (the heartbeat got 404/409). Stop; a report from this run will be refused. graph_remember any progress worth keeping, then graph_next_work.` : null;
 }
 
+// Postgres jsonb cannot hold U+0000, so one NUL byte anywhere in a report (often from captured
+// command output) makes the server refuse the whole report with 500 and the evidence is lost
+// (2026-10-07: four refused reports on a merged node). Strip it from every string we send.
+const NUL = /\u0000/g;
+export function stripNul(v) {
+  if (typeof v === 'string') return v.includes('\u0000') ? v.replace(NUL, '') : v;
+  if (Array.isArray(v)) return v.map(stripNul);
+  if (v && typeof v === 'object') { const o = {}; for (const [k, x] of Object.entries(v)) o[k] = stripNul(x); return o; }
+  return v;
+}
+
 /** The PreToolUse answer ({hookSpecificOutput, systemMessage?}) or null. Never throws. */
 export async function attachEvidence(inp, deps) {
   try {
@@ -281,6 +292,7 @@ export async function attachEvidence(inp, deps) {
     const notice = isGraphTool(tool) ? reclaimedNotice(inp) : null;
     if (notice) { out = out || { hookEventName: 'PreToolUse' }; out.additionalContext = ((out.additionalContext || '') + '\n' + notice).trim(); }
     if (!out) return null;
+    if (out.updatedInput !== undefined) out.updatedInput = stripNul(out.updatedInput);
     return notice ? { hookSpecificOutput: out, systemMessage: notice } : { hookSpecificOutput: out };
   } catch { return null; }
 }
