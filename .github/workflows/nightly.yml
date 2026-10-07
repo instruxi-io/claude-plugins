@@ -1,22 +1,28 @@
 name: nightly
-# Real-harness smoke on a self-hosted runner: the clean install, a real `claude -p` worker on a fixture graph,
-# and the Grok smoke. The result is the run's check.
+# The plugin against the LATEST Claude Code CLI, every night, on a clean hosted runner: a Claude Code release
+# that breaks the install, the hooks or the manifests shows up here the day it ships, not on the next PR.
+# No credentials: the clean install needs the `claude` CLI but no sign-in or model session, and the worker
+# and Grok tests run against stub servers. (It was a self-hosted job that never ran: the org has no runner.)
 on:
   schedule:
     - cron: '43 5 * * *'
   workflow_dispatch:
-
 jobs:
   smoke:
-    runs-on: [self-hosted, linux]
-    timeout-minutes: 45
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 20
+      - name: install the latest Claude Code CLI
+        run: npm install -g @anthropic-ai/claude-code@latest && claude --version
       - name: clean install from nothing
         run: bash test/clean-install.sh
-      - name: a real claude -p worker on a fixture graph
-        run: node --test enforcer/test/graph/run.test.mjs
-        env:
-          ENFORCER_REAL_CLAUDE: '1'
-      - name: Grok smoke
-        run: node --test enforcer/test/grok-install.test.mjs enforcer/test/grok-shim.test.mjs
+      - name: graph worker hooks against a stub graph server
+        working-directory: enforcer
+        run: node --test test/graph/run.test.mjs
+      - name: Grok install and shim
+        working-directory: enforcer
+        run: node --test test/grok-install.test.mjs test/grok-shim.test.mjs
