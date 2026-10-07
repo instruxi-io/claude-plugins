@@ -1,6 +1,6 @@
 // `enforcer doctor`: one line per check, `ok`/`fail`, exit non-zero on any fail.
 import { defaultFetch } from '../lib/api/client.mjs';
-import { existsSync, readFileSync, statSync, mkdirSync, accessSync, constants } from 'node:fs';
+import { existsSync, readFileSync, statSync, mkdirSync, chmodSync, accessSync, constants } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import { stateBase } from './state.mjs';
@@ -31,7 +31,7 @@ export async function runChecks({ fetchImpl = defaultFetch, network = true, plat
   if (platform === 'win32') add('windows support', { ok: true, detail: WINDOWS_STATEMENT });
   add('dispatch platform', { ok: true, detail: platform === 'win32' ? 'enforcer dispatch is not supported on Windows (process groups and POSIX signals): use WSL' : `${process.platform}: enforcer dispatch supported` });
   try {
-    const d = stateBase(); mkdirSync(d, { recursive: true }); accessSync(d, constants.W_OK);
+    const d = stateBase(); const fresh = !existsSync(d); mkdirSync(d, { recursive: true, mode: 0o700 }); if (fresh) chmodSync(d, 0o700); accessSync(d, constants.W_OK);
     const mode = statSync(d).mode & 0o777;
     add('state dir writable, 0700', { ok: process.platform === 'win32' || mode === 0o700, detail: `${d} mode ${mode.toString(8)}` });
   } catch (e) { add('state dir writable, 0700', { ok: false, detail: e.message }); }

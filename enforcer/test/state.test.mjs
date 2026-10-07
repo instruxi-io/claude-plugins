@@ -23,4 +23,18 @@ ok('legacy runs migrate when CLAUDE_PLUGIN_DATA is set');
 process.env.CLAUDE_CONFIG_DIR = join(root, 'cc');
 assert.equal(legacyStateDir(), join(root, 'cc', 'enforcer-graph'));
 ok('legacy state dir honours CLAUDE_CONFIG_DIR');
+import { statSync } from 'node:fs';
+{
+  const old = process.umask(0o002);
+  try {
+    process.env.ENFORCER_STATE_DIR = join(root, 'fresh', 'state');
+    delete process.env.CLAUDE_PLUGIN_DATA;
+    const { runChecks } = await import('../src/doctor.mjs');
+    const rows = await runChecks({ network: false });
+    const row = rows.find((r) => r.name === 'state dir writable, 0700');
+    if (process.platform !== 'win32') assert.equal(statSync(process.env.ENFORCER_STATE_DIR).mode & 0o777, 0o700);
+    assert.ok(row.ok, row.detail);
+  } finally { process.umask(old); }
+  ok('state dir is created 0700 under a permissive umask');
+}
 console.log(`${n} passed, 0 failed`);
