@@ -272,6 +272,31 @@ export class Dispatcher {
     try { await this.api.complete(this.g, w.node.id, s.run_id, body); this.say(`failed orphan run ${s.run_id} of ${w.key}`); } catch (e) { this.say(`could not fail orphan run of ${w.key}: ${e.message}`); }
   }
 
+  /**
+   * A worker's transcript only holds the verdict the report call returned, which can be an earlier or a still-pending
+   * one. Re-read the node's CURRENT status and the LATEST run's verdict (polling while it is pending, bounded) and
+   * return the outcome to count: null when the node is done or the latest verdict is verified.
+   */
+  async settleOutcome(w, s, outcome) {
+    if (!outcome || !s.reported || s.report_status !== 'succeeded' || !s.rejection) return outcome;
+    const tries = this.args.verdictPolls ?? 10;
+    for (let i = 0; i <= tries; i++) {
+      try {
+        const n = typeof this.api.node === 'function' ? await this.api.node(this.g, w.node.id) : null;
+        if (n?.status === 'done') return null;
+        const runs = typeof this.api.runs === 'function' ? await this.api.runs(this.g, w.node.id) : [];
+        const mine = runs.find((r) => (r.run_id ?? r.id) === s.run_id) || runs[runs.length - 1];
+        const v = mine?.verification ?? mine?.data?.verification ?? mine?.verdict;
+        const state = typeof v === 'string' ? v : v?.state;
+        if (state === 'verified') return null;
+        if (state && state !== 'pending') return outcome;
+        if (!mine) return outcome;
+      } catch { return outcome; }
+      if (i < tries) await sleepMs((this.args.verdictPollMs ?? 1000));
+    }
+    return outcome;
+  }
+
   async reap() {
     const harness = this.args.harness || 'claude';
     for (const [key, w] of [...this.workers]) {
@@ -297,7 +322,7 @@ export class Dispatcher {
       const u = s.usage || {};
       this.say(`done ${key} exit=${w.proc.returncode} turns=${s.turns} result=${s.result} denials=${s.denials} run=${s.run_id || '-'} reported=${s.reported} cost=${s.cost} session=${w.session} cold cache_read=${u.cache_read_input_tokens ?? '-'} cache_creation=${u.cache_creation_input_tokens ?? '-'} output=${u.output_tokens ?? '-'}`);
       for (const ln of judgeLines(key, s.verification)) this.say(ln);
-      let outcome = failedOutcome(s, w.proc.returncode);
+      let outcome = await this.settleOutcome(w, s, failedOutcome(s, w.proc.returncode));
       if (s.run_id && !s.reported) await this.failOrphan(w, s);
       const down = Object.entries(s.mcp).filter(([k, v]) => k.startsWith('plugin:enforcer') && v !== 'connected');
       if (down.length && !s.run_id) {
