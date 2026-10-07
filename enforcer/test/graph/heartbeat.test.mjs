@@ -2,7 +2,7 @@
 import { realpathSync } from 'node:fs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, existsSync, readdirSync } from 'node:fs';
+import { mkdtempSync, existsSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { createServer } from 'node:http';
 import { join } from 'node:path';
@@ -22,11 +22,18 @@ const live = () => {
 };
 const pre = (sid, id) => ({ hook_event_name: 'PreToolUse', session_id: sid, tool_name: 'Bash', tool_use_id: id, cwd: root });
 const markers = (sid) => readdirSync(join(root, 's', 'runs')).filter((f) => f.startsWith(`${sid}.tick-`));
+// Arm a call's marker without spawning the detached ticker: that process rewrites the shared run file (saveRun
+// truncates before it writes), so an in-process loop could read it empty and return 'no-run'.
+const arm = (sid, id) => writeFileSync(join(root, 's', 'runs', `${sid}.tick-${id}`), String(Date.now()));
 const answer = (state, calls) => async (cfg, method, path) => { calls.push(path); return [200, { data: { state, lease_expires_at: new Date(Date.now() + 300000).toISOString() } }, null]; };
 
 test('a Bash call longer than lease/3 heartbeats while it runs', async () => {
   const sid = live(), calls = [];
-  await startTicker(pre(sid, 'u1')).then(() => { assert.equal(markers(sid).length, 1, 'a marker for the call'); });
+  const other = live();
+  await startTicker(pre(other, 'u0'));
+  assert.equal(markers(other).length, 1, 'startTicker leaves a marker for the call');
+  await stopTicker({ hook_event_name: 'SessionEnd', session_id: other });
+  arm(sid, 'u1');
   // the spawned ticker has no stub server to talk to, so drive the same loop in process
   const loop = tickLoop(pre(sid, 'u1'), answer('ok', calls));
   await sleep(400);
@@ -38,7 +45,7 @@ test('a Bash call longer than lease/3 heartbeats while it runs', async () => {
 
 test('the ticker stops on PostToolUse', async () => {
   const sid = live(), calls = [];
-  await startTicker(pre(sid, 'u2'));
+  arm(sid, 'u2');
   const loop = tickLoop(pre(sid, 'u2'), answer('ok', calls));
   await sleep(200);
   // another call's PostToolUse leaves this one ticking
@@ -50,14 +57,14 @@ test('the ticker stops on PostToolUse', async () => {
   await sleep(250);
   assert.equal(calls.length, after, 'no heartbeat after the call ended');
   // Stop and SessionEnd stop every ticker of the actor
-  await startTicker(pre(sid, 'u3'));
+  arm(sid, 'u3');
   await stopTicker({ hook_event_name: 'SessionEnd', session_id: sid });
   assert.deepEqual(markers(sid), []);
 });
 
 test('the ticker stops on a reclaimed heartbeat', async () => {
   const sid = live(), calls = [];
-  await startTicker(pre(sid, 'u4'));
+  arm(sid, 'u4');
   const loop = tickLoop(pre(sid, 'u4'), answer('reclaimed', calls));
   assert.equal(await loop, 'reclaimed');
   assert.equal(calls.length, 1, 'one heartbeat, then the ticker stops');
