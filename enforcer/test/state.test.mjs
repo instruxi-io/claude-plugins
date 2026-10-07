@@ -32,7 +32,7 @@ import { statSync } from 'node:fs';
     const { runChecks } = await import('../src/doctor.mjs');
     const rows = await runChecks({ network: false });
     const row = rows.find((r) => r.name === 'state dir writable, 0700');
-    assert.equal(statSync(process.env.ENFORCER_STATE_DIR).mode & 0o777, 0o700);
+    if (process.platform !== 'win32') assert.equal(statSync(process.env.ENFORCER_STATE_DIR).mode & 0o777, 0o700);
     assert.ok(row.ok, row.detail);
   } finally { process.umask(old); }
   ok('state dir is created 0700 under a permissive umask');
