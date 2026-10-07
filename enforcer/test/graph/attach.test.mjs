@@ -152,6 +152,16 @@ test('a timed-out acceptance command is a record with exit 124', async () => {
   assert.equal(rec.exit, 124);
 });
 
+test('acceptance lines past the time budget are noted, not run; cheap lines run first', async () => {
+  const slow = 'node -e "setTimeout(()=>{},5000)" prints nothing';
+  const { sid, cwd } = freshAcc([slow, slow, 'ls f.txt prints the file']);
+  const out = await attachEvidence({ ...rep(sid), cwd }, { acceptanceTimeoutMs: 300, acceptanceBudgetMs: 700 });
+  const ev = ui(out).evidence;
+  assert.ok(ev.some((e) => e.cmd === 'ls f.txt' && e.exit === 0), 'the cheap ls ran first');
+  assert.equal(ev.filter((e) => (e.cmd || '').startsWith('node -e') && e.exit === 124).length, 1, 'one slow line ran and timed out');
+  assert.equal(ev.filter((e) => e.kind === 'note' && /time budget/.test(e.text)).length, 1, 'the other slow line was noted');
+});
+
 test('a write command in an acceptance line is skipped with a note', async () => {
   const { sid, cwd } = freshAcc(['rm f.txt prints nothing', 'echo x > g.txt prints nothing', 'git push prints done']);
   const out = await attachEvidence({ ...rep(sid), cwd }, {});
