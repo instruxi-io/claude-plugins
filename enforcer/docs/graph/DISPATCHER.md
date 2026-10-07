@@ -147,3 +147,7 @@ A fresh worktree has no `.env` and no `node_modules`. When the dispatcher create
 - `.worktreeshare`: directories to SYMLINK from the main checkout, e.g. `node_modules`, `.cache`, or a sibling such as `../protos`. A sibling (`../x`) is linked only when the worktree sits beside the checkout.
 
 An entry already present in the worktree is left alone, so a re-claimed node is not touched twice. `--dry-run` logs the counts without copying or linking.
+
+## Which plugin workers run
+
+Workers run the dispatcher's checkout; humans run the installed release. Each worker launch passes `--plugin-dir <this checkout>` and a per-launch `--settings '{"enabledPlugins":{"enforcer@instruxi":false}}'`, so the user-scope install is off for that child process only and exactly one copy of the hooks and MCP server runs. A governor fix merged to main reaches workers at the next dispatch, with no release. `enforcer dispatch` preflight prints a `worker-plugin` line with the root and version workers will run. The governor hooks are never disabled: the checkout supplies them. If a Claude Code version ignores the settings override for plugins, the child loads both copies; `CLAUDE_PLUGIN_ROOT` still points at the checkout.
