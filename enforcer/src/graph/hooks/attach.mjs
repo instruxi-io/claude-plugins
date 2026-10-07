@@ -98,21 +98,37 @@ export function evidenceGaps(hints, evidence) {
 }
 
 const ACCEPT_RUNNERS = ['node', 'python3', 'bash', 'sh', 'grep', 'ls', 'npm', 'cat', 'test', 'wc', 'head', 'tail', 'gh'];
-const ACCEPT_TIMEOUT_MS = 120_000;
+// The whole acceptance pass must fit inside hooks.json's PreToolUse timeout (30 s) with room for the
+// PR check and uploads after it: Claude Code kills a hook that overruns and the report then goes out
+// WITHOUT the evidence this hook was about to attach (2026-10-07: three zero-evidence reports, each
+// judged no_evidence, while `cd enforcer && npm test` ran for minutes inside the hook).
+const ACCEPT_LINE_MS = 8_000;
+const ACCEPT_BUDGET_MS = 15_000;
+const ACCEPT_MIN_MS = 500;
+// Cheap read-only commands run first so a slow suite never starves the one-second `ls` the judge asks for.
+const FAST = /^\s*(ls|cat|grep|wc|head|tail|test|stat|git\s+(log|status|rev-parse|tag|diff)|gh\s+(pr|run)\s+(view|list|checks))\b/;
 const NOTE_REASONS = /not read-only|not a runnable command/;
 
-/** Run the claimed node's acceptance lines in the worktree: command records plus a note per refused write. Never throws. */
+/** Run the claimed node's acceptance lines in the worktree within a time budget: command records, a note per
+ *  refused write, and a note per line the budget did not reach. Never throws. */
 export function acceptanceRecords(inp, run, deps = {}) {
   try {
     const lines = Array.isArray(run && run.acceptance) ? run.acceptance.filter((l) => typeof l === 'string') : [];
     if (!lines.length || !inp.cwd || !existsSync(inp.cwd)) return [];
     let cwd = inp.cwd;
     try { const g = spawnSync('git', ['rev-parse', '--show-toplevel'], { cwd, encoding: 'utf8', timeout: 5000 }); if (g.status === 0 && g.stdout.trim()) cwd = g.stdout.trim(); } catch {}
-    const r = runEvidence({ key: run.key, node_id: run.node_id, data: { acceptance: lines } },
-      { cwd, graph: run.graph_id || '', runners: ACCEPT_RUNNERS, timeoutMs: deps.acceptanceTimeoutMs ?? ACCEPT_TIMEOUT_MS, retryDelayMs: 0, run: deps.acceptanceRun });
-    const items = r.items.map(({ line_index, ...rec }) => rec);
-    const notes = r.skipped.filter((s) => NOTE_REASONS.test(s.reason))
-      .map((s) => ({ kind: 'note', text: `acceptance line ${s.line_index + 1} was not run (${s.reason}): ${lines[s.line_index].slice(0, 200)}` }));
+    const lineMs = deps.acceptanceTimeoutMs ?? ACCEPT_LINE_MS;
+    const deadline = Date.now() + (deps.acceptanceBudgetMs ?? ACCEPT_BUDGET_MS);
+    const order = lines.map((l, i) => i).sort((a, b) => (FAST.test(lines[b]) ? 1 : 0) - (FAST.test(lines[a]) ? 1 : 0));
+    const node = { key: run.key, node_id: run.node_id, data: { acceptance: lines } };
+    const items = [], notes = [];
+    for (const i of order) {
+      const left = deadline - Date.now();
+      if (left < ACCEPT_MIN_MS) { notes.push({ kind: 'note', text: `acceptance line ${i + 1} was not run (time budget of the report hook): ${lines[i].slice(0, 200)}` }); continue; }
+      const r = runEvidence(node, { cwd, graph: run.graph_id || '', only: i, runners: ACCEPT_RUNNERS, timeoutMs: Math.min(lineMs, left), retryDelayMs: 0, run: deps.acceptanceRun });
+      for (const { line_index, ...rec } of r.items) items.push(rec);
+      for (const s of r.skipped) if (NOTE_REASONS.test(s.reason)) notes.push({ kind: 'note', text: `acceptance line ${s.line_index + 1} was not run (${s.reason}): ${lines[s.line_index].slice(0, 200)}` });
+    }
     return [...items, ...notes];
   } catch { return []; }
 }
