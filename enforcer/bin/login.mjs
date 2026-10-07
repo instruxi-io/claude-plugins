@@ -188,6 +188,9 @@ export async function browserSignIn({ base, resource, resources, scope, preset, 
     return {
       access_token: tok.access_token, refresh_token: tok.refresh_token || null,
       expires_at: new Date(Date.now() + (Number(tok.expires_in) || 900) * 1000).toISOString(),
+      signed_in_at: new Date().toISOString(),
+      ...(Number(tok.refresh_token_expires_in || tok.refresh_expires_in) > 0
+        ? { refresh_expires_at: new Date(Date.now() + Number(tok.refresh_token_expires_in || tok.refresh_expires_in) * 1000).toISOString() } : {}),
       scope: tok.scope || scope, preset: scopeWasNamed ? 'custom' : (preset || DEFAULT_PRESET), resources: wanted,
       client_id: client.client_id, token_endpoint: meta.token_endpoint, issuer: meta.issuer,
     };
@@ -210,6 +213,20 @@ export async function resourcesFor(base, fetchImpl = defaultFetch) {
     if (m?.resource) out.push(String(m.resource));
   } catch { /* the API alone still signs the governor in */ }
   return [...new Set(out)];
+}
+
+const ago = (ms) => { const m = Math.max(0, Math.round(ms / 60000)); return m < 90 ? `${m} min` : `${Math.round(m / 6) / 10} h`; };
+/** The sign-in's age and when it will stop refreshing, from what the credential file records. */
+export function signInLifeLine(o, nowMs) {
+  if (!o?.access_token || o.api_key) return null;
+  const at = o.signed_in_at ? Date.parse(o.signed_in_at) : NaN;
+  const age = Number.isFinite(at) ? `Browser sign-in is ${ago(nowMs - at)} old (${o.signed_in_at}).` : 'Browser sign-in age is unknown (signed in before it was recorded).';
+  const end = o.refresh_expires_at ? Date.parse(o.refresh_expires_at) : NaN;
+  const stop = Number.isFinite(end)
+    ? (end > nowMs ? `It stops refreshing at ${o.refresh_expires_at} (in ${ago(end - nowMs)}).` : `It stopped refreshing at ${o.refresh_expires_at}: sign in again.`)
+    : 'The server did not state when the refresh token expires; use an agent API key for unattended runs longer than a few hours.';
+  const err = o.last_refresh_error?.reason?.startsWith('signed out') ? ` Last refresh failed at ${o.last_refresh_error.at}: ${o.last_refresh_error.reason}. Sign in again.` : '';
+  return `${age} ${stop}${err}`;
 }
 
 const who = (me) => me.person?.primary_email || me.person?.name || me.account_id || 'unknown account';
@@ -247,8 +264,10 @@ async function main(rawArgv) {
     if (!doc) { out('Not signed in to Enforcer. Run /enforcer:login.'); return; }
     const how = process.env.ENFORCER_API_KEY ? 'the ENFORCER_API_KEY environment variable' : enforcerKey() ? 'an API key' : 'a browser sign-in';
     const me = await whoAmI(base).catch(() => ({ error: 'unreachable' }));
-    if (!me || me.error) { out(`Signed in with ${how}, but Enforcer did not accept it (${me?.error || 'no credential'}). Run /enforcer:login again.`); return; }
+    const life = signInLifeLine(doc.enforcer?.oauth, Date.now());
+    if (!me || me.error) { out(`Signed in with ${how}, but Enforcer did not accept it (${me?.error || 'no credential'}). Run /enforcer:login again.`); if (life) out(life); return; }
     out(`Signed in to ${base} with ${how} as ${who(me)} (${me.role?.slug || 'unknown role'}, tenant ${me.tenant?.name || me.tenant?.id || '?'}).`);
+    if (life) out(life);
     out(`Shared by every Enforcer plugin on this machine: ${SHARED_FILE()}`);
     return;
   }

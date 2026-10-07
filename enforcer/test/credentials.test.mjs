@@ -119,11 +119,11 @@ await okAsync('5xx keeps the old token and retries once', async () => {
   assert.equal(readCredentials().enforcer.oauth.refresh_token, 'r1');
 });
 
-await okAsync('invalid_grant signs out', async () => {
+await okAsync('invalid_grant signs out (after one retry)', async () => {
   seedSoon();
   let calls = 0;
   const h = await authHeaders({ fetchImpl: async () => { calls++; return resp(400, { error: 'invalid_grant' }); }, backoffMs: 1 });
-  assert.equal(calls, 1); assert.deepEqual(h, {});
+  assert.equal(calls, 2); assert.deepEqual(h, {});
   assert.match(readCredentials().enforcer.oauth.last_refresh_error.reason, /signed out: HTTP 400 invalid_grant/);
 });
 

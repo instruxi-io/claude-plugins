@@ -6,7 +6,7 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { authHeaders } from './credentials.mjs';
+import { authHeaders, signInProblem } from './credentials.mjs';
 import { DOT } from '../hooks/claude/paths.mjs';
 
 const OWN_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -74,11 +74,11 @@ export async function preflight({ graph, repoRoot = join(homedir(), 'apps'), typ
   let h = {}, authed = false;
   try {
     h = await headers(env);
-    if (!Object.keys(h).length) add('credential', false, FIX);
+    if (!Object.keys(h).length) add('credential', false, signInProblem() || FIX);
     else {
       const r = await get(base, `/graphs/${graph}`, h);
       authed = r.status === 200;
-      add('credential', authed, authed ? 'ok' : r.status === 401 || r.status === 403 ? `${FIX} (HTTP ${r.status})` : `GET /graphs/${graph} returned HTTP ${r.status}`);
+      add('credential', authed, authed ? 'ok' : r.status === 401 || r.status === 403 ? `${signInProblem() || FIX} (HTTP ${r.status})` : `GET /graphs/${graph} returned HTTP ${r.status}`);
     }
   } catch (e) { add('credential', false, `cannot reach ${base}: ${e.message}`); }
 

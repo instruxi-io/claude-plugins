@@ -3,7 +3,7 @@
 // Kept byte-compatible with enforcer-governor's copy of this module, because
 // both plugins read and write the same file: sign in with either and both are
 // signed in. Change the file format in one and the other breaks.
-import { readFileSync, mkdirSync, renameSync, chmodSync, openSync, writeSync, fsyncSync, closeSync, rmdirSync, statSync } from 'node:fs';
+import { readFileSync, mkdirSync, renameSync, chmodSync, openSync, writeSync, fsyncSync, closeSync, rmdirSync, statSync, writeFileSync, rmSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
@@ -103,6 +103,13 @@ const LOCK_STALE_MS = 15_000;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 export const refreshLockPath = () => join(SHARED_DIR(), '.refresh.lock');
 
+/** True when the lock records a pid on this machine that no longer exists. */
+function lockHolderDead(lock) {
+  let pid; try { pid = Number(readFileSync(join(lock, 'pid'), 'utf8')); } catch { return false; }
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try { process.kill(pid, 0); return false; } catch (e) { return e.code === 'ESRCH'; }
+}
+
 /** Acquire the shared refresh lock; returns a release function, or null on timeout. */
 export async function acquireRefreshLock(timeoutMs = LOCK_TIMEOUT_MS) {
   const dir = SHARED_DIR();
@@ -111,10 +118,16 @@ export async function acquireRefreshLock(timeoutMs = LOCK_TIMEOUT_MS) {
   const lock = refreshLockPath();
   const deadline = Date.now() + timeoutMs;
   for (;;) {
-    try { mkdirSync(lock, { mode: 0o700 }); return () => { try { rmdirSync(lock); } catch { /* gone */ } }; }
-    catch (e) {
+    try {
+      mkdirSync(lock, { mode: 0o700 });
+      try { writeFileSync(join(lock, 'pid'), String(process.pid)); } catch { /* the mtime rule still applies */ }
+      return () => { try { rmSync(lock, { recursive: true, force: true }); } catch { /* gone */ } };
+    } catch (e) {
       if (e.code !== 'EEXIST') return null;
-      try { if (Date.now() - statSync(lock).mtimeMs > LOCK_STALE_MS) { rmdirSync(lock); continue; } } catch { /* raced */ }
+      try {
+        // A holder that died (pid gone) or sat past STALE_MS never releases: break its lock.
+        if (lockHolderDead(lock) || Date.now() - statSync(lock).mtimeMs > LOCK_STALE_MS) { rmSync(lock, { recursive: true, force: true }); continue; }
+      } catch { /* raced */ }
     }
     if (Date.now() >= deadline) return null;
     await sleep(25);
@@ -208,6 +221,26 @@ export async function authHeaders({ fetchImpl = globalThis.fetch, now = Date.now
       break;
     }
     if (!res) { record(reason); return usable; }
+    if (!res.ok && res.status >= 400 && res.status < 500) {
+      // A refused refresh is retried once: another process may have rotated the pair, or the
+      // refusal may be momentary. Re-read the file, and replay with whatever pair is current.
+      await sleep(backoffMs);
+      const again = readCredentials()?.enforcer?.oauth;
+      if (again?.access_token && again.expires_at && Date.parse(again.expires_at) - now() > REFRESH_SKEW_MS) {
+        return { Authorization: `Bearer ${again.access_token}` };
+      }
+      const rt = again?.refresh_token || o2.refresh_token;
+      try {
+        const r2 = await fetchImpl(o2.token_endpoint, {
+          method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: rt, client_id: o2.client_id || o.client_id }),
+          signal: AbortSignal.timeout(1800),
+        });
+        if (r2.ok || r2.status >= 500) res = r2.status >= 500 ? null : r2;
+        else res = r2;
+      } catch { res = null; reason = 'transient: retry failed'; }
+      if (!res) { record(reason || 'transient: retry HTTP 5xx'); return usable; }
+    }
     if (!res.ok) {
       // Only a definite rejection (invalid_grant / 400 / 401 / other 4xx) signs the machine out.
       let code = ''; try { code = (await res.json())?.error || ''; } catch { /* no body */ }
@@ -223,10 +256,23 @@ export async function authHeaders({ fetchImpl = globalThis.fetch, now = Date.now
       refresh_token: t.refresh_token || o2.refresh_token,
       expires_at: new Date(now() + (Number(t.expires_in) || 900) * 1000).toISOString(),
       scope: t.scope || o2.scope,
+      ...(Number(t.refresh_token_expires_in || t.refresh_expires_in) > 0
+        ? { refresh_expires_at: new Date(now() + Number(t.refresh_token_expires_in || t.refresh_expires_in) * 1000).toISOString() } : {}),
     };
     saveCredentials({ ...doc2, enforcer: { ...doc2.enforcer, oauth: next } });
     return { Authorization: `Bearer ${next.access_token}` };
   } catch { return stale; } finally { release(); }
+}
+
+/** A plain 'sign in again' sentence when the browser sign-in can no longer refresh, else null. */
+export function signInProblem(doc = readCredentials(), nowMs = Date.now()) {
+  const o = doc?.enforcer?.oauth;
+  if (!o?.access_token || doc.enforcer.api_key) return null;
+  const end = Date.parse(o.refresh_expires_at || '');
+  if (Number.isFinite(end) && end <= nowMs) return `Enforcer sign-in expired at ${o.refresh_expires_at} and can no longer refresh: run /enforcer:login.`;
+  const r = o.last_refresh_error;
+  if (r?.reason?.startsWith('signed out')) return `Enforcer refused to refresh your sign-in at ${r.at} (${r.reason}): run /enforcer:login.`;
+  return null;
 }
 
 /**

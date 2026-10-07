@@ -242,5 +242,45 @@ await ok('ENFORCER_BASE_URL overrides saved base_url', async () => {
   assert.match(r.stdout, new RegExp(base.replace(/\./g, '\\.')));
 });
 
+await ok('a refused refresh is retried once', async () => {
+  const { saveCredentials, readCredentials, authHeaders } = await import('../src/credentials.mjs');
+  saveCredentials({ enforcer: { base_url: base, oauth: { access_token: 'old', refresh_token: 'rt-old', client_id: 'c', token_endpoint: base + '/token', expires_at: new Date(Date.now() - 1000).toISOString() } } });
+  process.env.ENFORCER_BASE_URL = base; delete process.env.ENFORCER_API_KEY;
+  let calls = 0;
+  const fake = async () => { calls++; return calls === 1 ? new Response(JSON.stringify({ error: 'invalid_grant' }), { status: 400 })
+    : new Response(JSON.stringify({ access_token: 'new', refresh_token: 'rt-new', expires_in: 3600 }), { status: 200 }); };
+  const h = await authHeaders({ fetchImpl: fake, backoffMs: 1 });
+  assert.equal(calls, 2);
+  assert.equal(h.Authorization, 'Bearer new');
+  assert.equal(readCredentials().enforcer.oauth.refresh_token, 'rt-new');
+  // a refusal that persists signs out, after exactly one retry
+  saveCredentials({ enforcer: { base_url: base, oauth: { access_token: 'old', refresh_token: 'rt-old', client_id: 'c', token_endpoint: base + '/token', expires_at: new Date(Date.now() - 1000).toISOString() } } });
+  calls = 0;
+  const h2 = await authHeaders({ fetchImpl: async () => { calls++; return new Response('{"error":"invalid_grant"}', { status: 400 }); }, backoffMs: 1 });
+  assert.equal(calls, 2); assert.deepEqual(h2, {});
+  const { signInProblem } = await import('../src/credentials.mjs');
+  assert.match(signInProblem(), /run \/enforcer:login/);
+});
+
+await ok('a dead refresh lock is reclaimed', async () => {
+  const { acquireRefreshLock, refreshLockPath } = await import('../src/credentials.mjs');
+  const { mkdirSync, writeFileSync: wf } = await import('node:fs');
+  mkdirSync(refreshLockPath(), { recursive: true });
+  wf(join(refreshLockPath(), 'pid'), '2147483646'); // fresh mtime, but no such process
+  const t0 = Date.now();
+  const release = await acquireRefreshLock(500);
+  assert.ok(release, 'lock taken from a dead pid');
+  assert.ok(Date.now() - t0 < 400, 'without waiting out the stale window');
+  release();
+});
+
+await ok('status names the sign-in age and when it will stop refreshing', async () => {
+  const { signInLifeLine } = await import('../bin/login.mjs');
+  const now = Date.parse('2026-10-08T00:00:00Z');
+  const line = signInLifeLine({ access_token: 'a', signed_in_at: '2026-10-07T18:00:00Z', refresh_expires_at: '2026-10-08T06:00:00Z' }, now);
+  assert.match(line, /6 h old/); assert.match(line, /stops refreshing at 2026-10-08T06:00:00Z \(in 6 h\)/);
+  assert.match(signInLifeLine({ access_token: 'a', signed_in_at: '2026-10-07T18:00:00Z' }, now), /did not state when the refresh token expires/);
+});
+
 as.close();
 console.log(`\n  ${pass} passed`);
