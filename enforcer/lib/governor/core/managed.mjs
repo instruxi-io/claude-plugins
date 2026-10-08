@@ -187,3 +187,24 @@ export async function refresh(cfg = {}, { fetchImpl = hookFetch, now = Date.now,
     return { ok: false, detail };
   }
 }
+
+// ── decisioning mode ────────────────────────────────────────────────────────
+const CHECK_NAMES = Object.freeze({ rulesOn: 'rules', budgetOn: 'budget', policyOn: 'policy' });
+
+/**
+ * The one line that says whether the governor is deciding anything. Checks
+ * that are on are named; one forced on by an organisation floor is marked
+ * "(organisation)", one set by this process's environment "(environment)".
+ * The organisation wins when both apply, since it is the floor.
+ */
+export function decisioningLine(cfg = {}, { managed = readManaged(), env = process.env } = {}) {
+  const fromEnv = envOverrides(env);
+  const applied = merge(withEnv(cfg, env), managed);
+  const on = Object.keys(CHECK_NAMES).filter(k => applied[k] === true).map(k => {
+    const mark = managed[k] === true ? ' (organisation)' : k in fromEnv ? ' (environment)' : '';
+    return CHECK_NAMES[k] + mark;
+  });
+  return on.length
+    ? `Decisioning: ON (${on.join(', ')})`
+    : 'Decisioning: OFF (report only). Turn on: enforcer governor enable rules';
+}

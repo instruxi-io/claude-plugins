@@ -175,7 +175,9 @@ await ok('SessionStart hook: sends the session\'s attribution once and answers a
   setConfig({ clients: { '/w/acme-api': 'acme' } });
   const r = await runHook({ hook_event_name: 'SessionStart', session_id: '0f3c9a1b-2222-4333-8444-555566667777', cwd: '/w/acme-api' });
   assert.equal(r.code, 0);
-  assert.deepEqual(JSON.parse(r.out), { hookSpecificOutput: { hookEventName: 'SessionStart', env: { ENFORCER_GOVERNOR: '1' } } });
+  const { systemMessage, ...answer } = JSON.parse(r.out);
+  assert.deepEqual(answer, { hookSpecificOutput: { hookEventName: 'SessionStart', env: { ENFORCER_GOVERNOR: '1' } } });
+  assert.match(systemMessage, /^Decisioning: (ON|OFF)/);
   assert.deepEqual(posts.map((p) => p.body), [{ agent: 'claude:0f3c9a1b', client: 'acme' }]);
   setConfig({});
 });
