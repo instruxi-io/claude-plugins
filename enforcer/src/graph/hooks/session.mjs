@@ -8,6 +8,7 @@ import { loadRun } from '../run.mjs';
 import { sweepSessions, prFooter } from '../evidence.mjs';
 import { http } from '../http.mjs';
 import { readCredentials, signInProblem } from '../../credentials.mjs';
+import { envBaseUrl } from '../../config.mjs';
 import { configDir } from '../../../hooks/claude/paths.mjs';
 import { findConfig, markAttested, isObj } from './common.mjs';
 import { pluginVersion } from './attach.mjs';
@@ -22,7 +23,7 @@ export function marketplaceName() {
   return parts.length >= 4 && parts[parts.length - 4] === 'cache' ? parts[parts.length - 3] : 'instruxi';
 }
 
-export const baseUrl = () => String(process.env.ENFORCER_BASE_URL || (readCredentials()?.enforcer || {}).base_url || DEFAULT_BASE);
+export const baseUrl = () => String(envBaseUrl() || (readCredentials()?.enforcer || {}).base_url || DEFAULT_BASE);
 
 export async function notices(health) {
   const cfgdir = configDir(), mkt = marketplaceName();

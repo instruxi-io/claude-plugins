@@ -10,9 +10,10 @@
 // GRAPH_BASE_URL is a narrower override of the graph API URL only.
 import { join } from 'node:path';
 import { homedir } from 'node:os';
-import { readCredentials, DEFAULT_BASE_URL } from './credentials.mjs';
+import { readCredentials } from './credentials.mjs';
 
-export { DEFAULT_BASE_URL };
+/** Production origin. credentials.mjs re-exports it. */
+export const DEFAULT_BASE_URL = 'https://api.instruxi.dev';
 
 export class ConfigError extends Error {
   constructor(variable, message) { super(`${variable}: ${message}`); this.name = 'ConfigError'; this.variable = variable; }
@@ -67,6 +68,11 @@ export function validateEnv(env = process.env) {
   return errors;
 }
 
+/** Name of the base URL variable, for messages and source labels. */
+export const BASE_URL_VAR = 'ENFORCER_BASE_URL';
+/** The base URL set in the environment, or '' when unset. The only direct read of that variable. */
+export const envBaseUrl = (env = process.env) => env[BASE_URL_VAR] || '';
+
 const trim = (s) => String(s).replace(/\/+$/, '');
 
 /** The URLs one base implies. */
@@ -93,7 +99,7 @@ export function resolveConfig({ flag: flagBase, env = process.env, saved } = {})
   const savedBase = doc?.enforcer?.base_url;
   let base, source;
   if (flagBase) { base = flagBase; source = 'flag'; }
-  else if (env.ENFORCER_BASE_URL) { base = env.ENFORCER_BASE_URL; source = 'ENFORCER_BASE_URL'; }
+  else if (envBaseUrl(env)) { base = envBaseUrl(env); source = 'ENFORCER_BASE_URL'; }
   else if (savedBase) { base = savedBase; source = 'saved credentials'; }
   else { base = DEFAULT_BASE_URL; source = 'default'; }
   base = trim(base);

@@ -1,0 +1,1 @@
+- Every read of the API base URL now goes through src/config.mjs, and a test keeps it so.
