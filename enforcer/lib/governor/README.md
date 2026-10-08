@@ -118,6 +118,8 @@ To switch the governor off without uninstalling it, set any of these in `~/.conf
 
 `budgetOn` covers the spend and rate checks, `rulesOn` the capability rules. The two are independent: turning spend tracking off leaves `curl | sh` and `rm -rf` still guarded. Loop detection belongs to `jev-hooks`; the old loop settings are retired. Both off is fully inert, **unless your organisation publishes a floor**, below. Do not delete `state.json` to unstick something: it holds the head of the receipt chain, so the next receipt hashes against nothing and `verify` correctly reports the record as broken.
 
+Shadow mode: with `rulesOn` off and `shadow` on (the default), the capability rules are still evaluated locally and each receipt records what they would have decided as `would: {decision, code, rule}`, while the hook answers allow with `checks_off`. Shadow mode never asks the tenant policy, never reads spend, does not run the graph-worker rules, and an error in it only drops `would`. With `rulesOn` on there is no `would`: the real decision is the receipt. Set `"shadow": false` to stop recording it.
+
 ### Settings your organisation sets
 
 An Enforcer tenant can publish a set of these settings for every install it signs in (`GET /api/v1/governance/settings`, written by a tenant admin). They are a **floor, not an override**: for each setting the governor applies whichever of the two is stricter, so a managed $150 beats your $400 and your $40 beats both, and a check the organisation turns on cannot be turned off locally. `node bin/enforcer governor config` marks them with `!` and shows your own value beside them.

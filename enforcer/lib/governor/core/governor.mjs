@@ -27,6 +27,7 @@ import { brief as briefFor, markTold } from './brief.mjs';
 import { costUsd } from './cost.mjs';
 import { signedInOperator, refreshIdentity, identityStale } from './identity.mjs';
 import { attributeSession } from './attribution.mjs';
+import { shadow } from './shadow.mjs';
 
 // The tool a receipt names: the harness's own name when the adapter gave one,
 // so the record and the console read as they always have ('Bash', not
@@ -101,6 +102,11 @@ export function createGovernor({ harness = 'unknown', adapterVersion = '', cost 
     const wv = cfg.rulesOn !== false ? workerEvaluate(event) : null;
     const workerCentral = wv?.ruleId && wv.ruleId !== matched?.id ? await consult({ id: wv.ruleId, name: wv.rule }, cfg) : central;
 
+    // Shadow mode (shadow.mjs): with the capability rules off, what they WOULD
+    // have said, for the receipt only. Pure, local, never throws.
+    const would = shadow(event, cfg);
+    const withWould = (entry) => (would ? { ...entry, would } : entry);
+
     const spend = { model: cfg.model, tokens: 0, budget: 0 };
     // Who the agent acted for, and for which project, from config and the
     // working directory: a rule decides before economics stamps these on the
@@ -129,14 +135,14 @@ export function createGovernor({ harness = 'unknown', adapterVersion = '', cost 
       });
 
       spend.model = a.model; spend.tokens = a.tokens; spend.budget = a.budget;
-      const entry = v.entry({ agent: event.agent, tool: recorded(event), model: a.model || '',
+      const entry = withWould(v.entry({ agent: event.agent, tool: recorded(event), model: a.model || '',
         tokens: Math.round(a.tokens), ...acting(a),
         meter: reading.source, ...st,
         // What the agent had spent when this was decided, in dollars, so a
         // receipt can be read without the price table. Omitted when the
         // harness reports no spend at all (a zero there would be invented).
         spentUsd: reading.source === 'none' ? undefined
-          : costUsd(dollarsForTokens(a.tokens, priceOf(a.model, cfg.model).in)) });
+          : costUsd(dollarsForTokens(a.tokens, priceOf(a.model, cfg.model).in)) }));
       const hash = sha256(state.prevHash + JSON.stringify(entry));
       commit(state, entry, hash);
       return v;
@@ -146,7 +152,7 @@ export function createGovernor({ harness = 'unknown', adapterVersion = '', cost 
     // and the refusal is recorded without a hash rather than hidden or forged.
     const verdict = held.ok && held.value ? held.value : gate(event, cfg, { central });
     if (!held.ok || !held.value) {
-      writeReceipt(verdict.entry({ agent: event.agent, tool: recorded(event), ...acting(), chained: false, ...st }), undefined);
+      writeReceipt(withWould(verdict.entry({ agent: event.agent, tool: recorded(event), ...acting(), chained: false, ...st })), undefined);
     }
     return { verdict, spend, config: cfg };
   }
