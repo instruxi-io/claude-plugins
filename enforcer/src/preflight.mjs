@@ -7,6 +7,7 @@ import { join, dirname } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { authHeaders, signInProblem } from './credentials.mjs';
+import { DEFAULT_WORKER_RULES, workerRulesLine } from './dispatch/launch.mjs';
 import { identityCheck, readAgentKey } from './dispatch/agent.mjs';
 import { DOT } from '../hooks/claude/paths.mjs';
 
@@ -65,7 +66,7 @@ export async function allNodes(base, graph, h) {
 }
 
 /** Returns [{name, ok, line}] */
-export async function preflight({ graph, repoRoot = join(homedir(), 'apps'), types = DISPATCH_TYPES, env = process.env, pluginRoot, agent = null, workers = 3, allowBrowserSignin = false } = {}) {
+export async function preflight({ graph, repoRoot = join(homedir(), 'apps'), types = DISPATCH_TYPES, env = process.env, pluginRoot, agent = null, workers = 3, allowBrowserSignin = false, workerRules = DEFAULT_WORKER_RULES } = {}) {
   const res = [];
   const add = (name, ok, line) => res.push({ name, ok, line });
   const base = resolveConfig({ env }).graphUrl;
@@ -121,6 +122,8 @@ export async function preflight({ graph, repoRoot = join(homedir(), 'apps'), typ
     add('governor-lander', !denied.length, denied.length ? `the installed enforcer ${ver} denies the lander (${denied.join(', ')}); update the plugin` : `ok (enforcer ${ver})`);
   } catch (e) { add('governor-lander', false, `the installed enforcer ${ver} cannot be evaluated (${e.message}); update the plugin`); }
 
+  add('worker-rules', true, workerRulesLine(workerRules));
+
   // 5a identity workers will use
   {
     const agentKey = agent ? readAgentKey(agent, env) : null;
@@ -150,6 +153,7 @@ export async function main(args, out = process.stdout) {
     else if (args[i] === '--types') { const t = args[++i]; o.types = t === 'all' ? null : t.split(','); }
     else if (args[i] === '--agent') o.agent = args[++i];
     else if (args[i] === '--allow-browser-signin') o.allowBrowserSignin = true;
+    else if (args[i] === '--worker-rules') o.workerRules = args[++i];
     else if (args[i] === '--workers') o.workers = Number(args[++i]);
     else if (args[i] === '--graph') o.graph = args[++i];
     else if (args[i] && !args[i].startsWith('-') && !o.graph) o.graph = args[i];
