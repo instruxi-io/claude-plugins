@@ -1,0 +1,1 @@
+The governor records what its capability rules would have decided (`would` on each receipt) while decisioning is off, under the new `shadow` setting (on by default); it never blocks, asks the tenant policy or reads spend.
