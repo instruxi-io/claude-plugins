@@ -315,6 +315,9 @@ export const DEFAULTS = {
   // managed `on` still wins over these (managed.mjs onWins).
   budgetOn: false,
   rulesOn: false,     // capability rules: what it may DO
+  // With rulesOn false, still evaluate the capability rules and record what
+  // they would have decided on the receipt as `would` (shadow.mjs). Never blocks.
+  shadow: true,
   // Ask the tenant's Enforcer policy about actions a rule matched (central.mjs).
   // Inert when signed out; the local rule stands whenever it cannot answer.
   policyOn: false,
