@@ -58,7 +58,7 @@ export const CODES = Object.freeze({
   // ── no objection ─────────────────────────────────────────────────────────
   no_rule_matched: 'no rule objected and spend is within limits',
   spend_unchecked: 'no rule objected; the governor could not read its state, so spend was not checked',
-  checks_off: 'no rule objected; spend and loop checks are switched off',
+  checks_off: 'no rule objected and the spend checks are switched off (the default); still recorded',
 });
 
 export const DECISIONS = Object.freeze(['allow', 'deny', 'ask']);

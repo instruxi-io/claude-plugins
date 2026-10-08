@@ -74,15 +74,17 @@ const must = (cond, promise, detail = '') => {
 // running the suite.
 function place(tmp, label, { config = {}, blind = false } = {}) {
   const root = mkdtempSync(join(tmp, `contract-${label}-`));
-  let home = join(root, 'governor');
+  const home = join(root, 'governor');
+  mkdirSync(home, { recursive: true });
+  // Decisioning is off by default; the contract tests the checks, so it turns
+  // them on explicitly.
+  writeFileSync(join(home, 'config.json'), JSON.stringify({ shipOn: false, budgetOn: true, rulesOn: true, policyOn: true, ...config }));
   if (blind) {
-    // A FILE where the directory's parent should be: nothing under it can ever
-    // be read or created, which is the state directory being unreachable.
-    writeFileSync(join(root, 'blocker'), '');
-    home = join(root, 'blocker', 'governor');
-  } else {
-    mkdirSync(home, { recursive: true });
-    writeFileSync(join(home, 'config.json'), JSON.stringify({ shipOn: false, ...config }));
+    // DIRECTORIES where the lock and the state file should be: neither can ever
+    // be taken or read, which is the state being unreachable. The config stays
+    // readable, since with no config the checks are off by default.
+    mkdirSync(join(home, '.lock'));
+    mkdirSync(join(home, 'state.json'));
   }
   const env = { ...process.env, HOME: root, USERPROFILE: root, GOVERNOR_HOME: home, ENFORCER_HOME: join(root, 'enforcer') };
   delete env.ENFORCER_API_KEY;

@@ -12,11 +12,13 @@ const root = new URL('../', import.meta.url).pathname;
 const fx = join(root, 'test/fixtures/decide');
 import * as econ from '../src/economics.mjs';
 import * as pol from '../src/policy.mjs';
+import { writeChecksOn, CHECKS_ON } from './fixtures/checks-on.mjs';
 let pass = 0;
 const ok = (l, fn) => { fn(); pass++; console.log('  ok  ' + l); };
 
 function run(script, args, ev) {
   const home = mkdtempSync(join(tmpdir(), 'dec-'));
+  writeChecksOn(join(home, 'gov'));
   const env = { ...process.env, HOME: home, GOVERNOR_HOME: join(home, 'gov'), ENFORCER_HOME: join(home, 'e') };
   for (const k of ['JEV_HOOKS_HEADLESS', 'ENFORCER_HEADLESS', 'CLAUDE_CODE_ENTRYPOINT', 'ENFORCER_API_KEY', 'ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'ENFORCER_GRAPH_RUN_ID']) delete env[k];
   return spawnSync(process.execPath, [join(root, script), ...args], { env, encoding: 'utf8', input: JSON.stringify({ ...ev, cwd: home }) });
@@ -57,7 +59,7 @@ ok('hooks/pre-tool-use.mjs is a shim under 60 lines', () => {
 function runRaw(script, cfg, stdin, extraEnv = {}) {
   const home = mkdtempSync(join(tmpdir(), 'dec-'));
   const gh = join(home, 'gov');
-  if (cfg !== undefined) { mkdirSync(gh, { recursive: true }); writeFileSync(join(gh, 'config.json'), JSON.stringify(cfg)); }
+  if (cfg !== undefined) { mkdirSync(gh, { recursive: true }); writeFileSync(join(gh, 'config.json'), JSON.stringify({ ...CHECKS_ON, ...cfg })); }
   const env = { ...process.env, HOME: home, GOVERNOR_HOME: gh, ENFORCER_HOME: join(home, 'e'), ...extraEnv };
   for (const k of ['JEV_HOOKS_HEADLESS', 'ENFORCER_HEADLESS', 'CLAUDE_CODE_ENTRYPOINT', 'ENFORCER_API_KEY', 'ENFORCER_GRAPH_RUN_ID']) if (!(k in extraEnv)) delete env[k];
   return spawnSync(process.execPath, [join(root, script)], { env, encoding: 'utf8', input: stdin });
