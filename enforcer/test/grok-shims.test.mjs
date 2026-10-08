@@ -10,10 +10,13 @@ import { readFileSync, mkdtempSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { normalize } from '../hooks/grok/shim.mjs';
+import { writeChecksOn } from '../lib/governor/test/fixtures/checks-on.mjs';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const fx = (n) => readFileSync(join(root, 'test/fixtures/grok', n), 'utf8');
 const home = mkdtempSync(join(tmpdir(), 'grok-shim-'));
+// Decisioning is off by default; the shims are tested against the checks, so turn them on.
+writeChecksOn(join(home, 'g'));
 const env = { ...process.env, HOME: home, ENFORCER_HOME: home, GOVERNOR_HOME: join(home, 'g') };
 const run = (args, input) => spawnSync(process.execPath, [join(root, 'hooks/grok/shim.mjs'), ...args],
   { input, encoding: 'utf8', env });

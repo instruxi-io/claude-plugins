@@ -60,7 +60,8 @@ const signIn = () => writeFileSync(join(process.env.ENFORCER_HOME, 'credentials.
   enforcer: { base_url: base, oauth: { client_id: 'client-1', access_token: 'at-1', expires_at: '2999-01-01T00:00:00Z' } },
 }));
 const signOut = () => writeFileSync(join(process.env.ENFORCER_HOME, 'credentials.json'), JSON.stringify({ enforcer: {} }));
-const setConfig = (c) => writeFileSync(join(process.env.GOVERNOR_HOME, 'config.json'), JSON.stringify(c));
+// Decisioning is off by default; the rule cases here need it on.
+const setConfig = (c) => writeFileSync(join(process.env.GOVERNOR_HOME, 'config.json'), JSON.stringify({ budgetOn: true, rulesOn: true, policyOn: true, ...c }));
 const files = () => readdirSync(process.env.GOVERNOR_HOME).sort();
 
 const { createGovernor } = await import('../core/index.mjs');

@@ -13,6 +13,7 @@ import { DEFAULT_RULES } from '../core/capability.mjs';
 import { CODES, DECISIONS, decisionRecord, decisionLine, DECISION_PREFIX, isCode, codeOf } from '../core/codes.mjs';
 import { evaluate as worker, headlessFrom, WORKER_RULES } from '../core/worker.mjs';
 import { DOT } from '../../../hooks/claude/paths.mjs';
+import { writeChecksOn } from './fixtures/checks-on.mjs';
 
 let pass = 0;
 const ok = (label, fn) => { fn(); pass++; console.log('  ok  ' + label); };
@@ -220,6 +221,8 @@ const root = mkdtempSync(join(tmpdir(), 'gov-decisions-'));
 const wt = join(root, 'wt');
 mkdirSync(join(wt, '.git'), { recursive: true });
 writeFileSync(join(wt, '.git', 'HEAD'), 'ref: refs/heads/graph/demo\n');
+// The checks are off by default; the hook cases below test them, so turn them on.
+writeChecksOn(join(root, 'gov'));
 function hook(command, extra) {
   const env = { ...process.env, HOME: root, USERPROFILE: root, GOVERNOR_HOME: join(root, 'gov'), ENFORCER_HOME: join(root, 'enforcer'),
     ENFORCER_GRAPH_RUN_ID: 'run-123' };

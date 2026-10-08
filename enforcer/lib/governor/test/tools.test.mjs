@@ -14,6 +14,9 @@ import { tmpdir } from 'node:os';
 const home = mkdtempSync(join(tmpdir(), 'gov-tools-'));
 process.env.GOVERNOR_HOME = home; process.env.ENFORCER_HOME = join(home, 'e');
 delete process.env.ENFORCER_API_KEY;
+// Decisioning is off by default; this suite drives the checks, so it turns them on.
+const { writeChecksOn } = await import('./fixtures/checks-on.mjs');
+writeChecksOn(home);
 
 const { DEFAULT_RULES, evaluate, matchRule } = await import('../core/capability.mjs');
 const { TOOLS, kindOf, toolMatches } = await import('../core/tools.mjs');

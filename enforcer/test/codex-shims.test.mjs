@@ -7,10 +7,13 @@ import { spawnSync } from 'node:child_process';
 import { readFileSync, readdirSync, existsSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { writeChecksOn } from '../lib/governor/test/fixtures/checks-on.mjs';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const fx = (n) => readFileSync(join(root, 'test/fixtures/codex', n), 'utf8');
 const home = mkdtempSync(join(tmpdir(), 'codex-shim-'));
+// Decisioning is off by default; the shims are tested against the checks, so turn them on.
+writeChecksOn(join(home, 'g'));
 const run = (shim, input) => spawnSync(process.execPath, [join(root, 'hooks/claude', shim)],
   { input, encoding: 'utf8', env: { ...process.env, HOME: home, ENFORCER_HOME: home, GOVERNOR_HOME: join(home, 'g') } });
 let n = 0; const ok = (m) => { n++; console.log('  ok  ' + m); };
