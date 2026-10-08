@@ -43,6 +43,46 @@ export function checkTag(tag, root = ".") {
   return want;
 }
 
+// Fragments: changes/*.md except README.md, sorted by file name; each fragment's text becomes one bullet.
+export function readFragments(root = ".") {
+  const dir = path.join(root, "changes");
+  if (!fs.existsSync(dir)) return [];
+  return fs.readdirSync(dir).filter((f) => f.endsWith(".md") && f !== "README.md").sort().map((f) => ({
+    file: path.join("changes", f),
+    text: fs.readFileSync(path.join(dir, f), "utf8").trim().replace(/^- /, ""),
+  }));
+}
+
+function unreleasedBody(text) {
+  const m = /^## Unreleased[^\n]*\n([\s\S]*?)(?=^## |(?![\s\S]))/m.exec(text);
+  return m ? m[1].trim() : null;
+}
+
+// Throws (writing nothing) when there is nothing to release. Otherwise inserts `## <version>` directly under
+// `## Unreleased`, then deletes the fragment files.
+export function foldFragments(version, root = ".") {
+  if (!SEMVER.test(version)) throw new Error(`not a semver version: ${version}`);
+  const f = path.join(root, "CHANGELOG.md");
+  const text = fs.readFileSync(f, "utf8");
+  const frags = readFragments(root);
+  const body = unreleasedBody(text);
+  if (body === null) throw new Error('CHANGELOG.md has no "## Unreleased" section');
+  if (!frags.length && !body) throw new Error("nothing to release: no changes/*.md fragments and the Unreleased section is empty");
+  const bullets = frags.map((x) => `- ${x.text}`).join("\n");
+  const section = `## ${version}\n\n` + [body, bullets].filter(Boolean).join("\n\n") + "\n";
+  const out = text.replace(/^(## Unreleased[^\n]*\n)([\s\S]*?)(?=^## |(?![\s\S]))/m, `$1\n${section}\n`);
+  fs.writeFileSync(f, out.replace(/\n{3,}/g, "\n\n"));
+  for (const x of frags) fs.unlinkSync(path.join(root, x.file));
+  return frags.length;
+}
+
+export function releaseNotes(version, root = ".") {
+  const t = fs.readFileSync(path.join(root, "CHANGELOG.md"), "utf8");
+  const m = new RegExp(`^## ${version.replace(/\./g, "\\.")}[^\\n]*\\n([\\s\\S]*?)(?=^## |(?![\\s\\S]))`, "m").exec(t);
+  if (!m) throw new Error(`CHANGELOG.md has no "## ${version}" section`);
+  return m[1].trim();
+}
+
 export function changelogHas(version, root = ".") {
   const t = fs.readFileSync(path.join(root, "CHANGELOG.md"), "utf8");
   return new RegExp(`^## ${version.replace(/\./g, "\\.")}( |$)`, "m").test(t) || /^## Unreleased/m.test(t);
@@ -51,7 +91,14 @@ export function changelogHas(version, root = ".") {
 if (import.meta.url === `file://${process.argv[1]}`) {
   const [cmd, arg] = process.argv.slice(2);
   try {
-    if (cmd === "bump") console.log("bumped six manifests to " + bump(arg));
+    if (cmd === "bump") {
+      // Refuse before writing anything.
+      if (!SEMVER.test(arg || "")) throw new Error(`not a semver version: ${arg}`);
+      const t = fs.readFileSync("CHANGELOG.md", "utf8");
+      if (!readFragments().length && !unreleasedBody(t)) throw new Error("nothing to release: no changes/*.md fragments and the Unreleased section is empty");
+      const n = foldFragments(arg);
+      console.log(`bumped six manifests to ${bump(arg)}; folded ${n} fragment(s) into CHANGELOG.md`);
+    } else if (cmd === "notes") console.log(releaseNotes(arg));
     else if (cmd === "check-tag") console.log("tag ok: " + checkTag(arg));
     else if (cmd === "check-changed") {
       // arg = last tag, process.argv[4] = base ref (default origin/main). A PR that touches enforcer/ either
@@ -67,6 +114,6 @@ if (import.meta.url === `file://${process.argv[1]}`) {
         if (!added.length) throw new Error(`enforcer/ changed at version ${cur} (last tag ${arg}) with no changes/<slug>.md fragment; add one line under changes/ (or run npm run bump <version> for a release)`);
         console.log(`version unchanged; fragment(s) added: ${added.join(", ")}`);
       }
-    } else throw new Error("usage: release.mjs bump <v> | check-tag <tag> | check-changed <last-tag>");
+    } else throw new Error("usage: release.mjs bump <v> | notes <v> | check-tag <tag> | check-changed <last-tag>");
   } catch (e) { console.error("FAIL " + e.message); process.exit(1); }
 }
