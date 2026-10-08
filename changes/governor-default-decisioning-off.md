@@ -1,1 +1,0 @@
-The governor reports first: a fresh install has decisioning off (budgetOn, rulesOn and policyOn default to false), still writes a receipt for every call (allow, code checks_off), and an organisation's on still wins.
