@@ -22,7 +22,7 @@ export function findConfig(start) {
         const j = JSON.parse(readFileSync(p, 'utf8'));
         cfg = isObj(j) ? j : {};
       } catch {
-        cfg = {};
+        cfg = /** @type {any} */ ({});
       }
       break;
     }

@@ -42,7 +42,7 @@ export async function uninstall({ purge = false, yes = false, home = homedir(), 
     ['codex', uninstallCodex],
   ]) {
     try {
-      const r = await fn({ home, yes: true, out: () => {} });
+      const r = await /** @type {any} */ (fn)({ home, yes: true, out: () => {} });
       if (r.removed?.length) removed.push(...r.removed.map((x) => `${name}: ${x}`));
     } catch (e) {
       left.push(`${name} install (${e.message})`);

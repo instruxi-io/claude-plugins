@@ -129,7 +129,7 @@ export function toOtlp(lines, prev, install, version = '') {
 
 /**
  * Ship one batch. Never throws.
- * @returns {{ shipped?: number, rejected?: number, pending?: boolean, skipped?: string, error?: string }}
+ * @returns Promise<{ shipped?: number, rejected?: number, pending?: boolean, skipped?: string, error?: string }>
  */
 export async function shipOnce(cfg = {}, { fetchImpl = hookFetch, now = Date.now, limit = 500 } = {}) {
   if (cfg.shipOn === false) return { skipped: 'shipping is switched off (shipOn)' };

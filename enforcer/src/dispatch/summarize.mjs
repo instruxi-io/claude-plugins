@@ -128,8 +128,9 @@ export function rejectionOf(text, field) {
 export function denialClass(s) {
   const recs = (s.decisions || []).filter((r) => ['deny', 'ask'].includes(r.decision));
   if (!recs.length) return [null, null];
+  /** @type {[(c: string) => boolean, string][]} */
   const picks = [
-    [(c) => c.startsWith('destructive_'), 'triage'],
+    [(/** @type {string} */ c) => c.startsWith('destructive_'), 'triage'],
     [(c) => c === 'graph_run_not_open', 'remediation'],
     [(c) => c === 'push_needs_approval_surface', 'salvage'],
   ];

@@ -62,7 +62,7 @@ function size() {
 
 /**
  * Receipts written but not yet acknowledged by the control plane.
- * @returns {{lines:object[], from:number, to:number}} `to` is the offset to
+ * @returns {{lines:object[], from:number, to:number, prevHash:string}} `to` is the offset to
  *   pass back to markShipped once the server has them. Only whole lines are
  *   returned: a half-written tail is left for the next call rather than sent
  *   as a truncated receipt that would fail verification on the far side.

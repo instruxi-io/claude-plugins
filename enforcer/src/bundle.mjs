@@ -65,7 +65,7 @@ function secretValues(cred) {
   ].filter((v) => typeof v === 'string' && v.length >= 6);
 }
 
-export async function collect({ network = false, fetchImpl } = {}) {
+export async function collect({ network = false, fetchImpl } = /** @type {any} */ ({})) {
   const cred = readCredentials();
   const secrets = secretValues(cred);
   const clean = (t) => {

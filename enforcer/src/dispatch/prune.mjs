@@ -151,7 +151,7 @@ export function pruneWorktrees(
         removed.push([path, why]);
         say(`removed ${path} (${why})`);
         // a confirmed merge frees the branch name for a re-claim
-        if (why.startsWith('PR merged') || why.startsWith('merged into')) git(['branch', '-D', bare], src);
+        if (String(why).startsWith('PR merged') || String(why).startsWith('merged into')) git(['branch', '-D', bare], src);
       } else if (ok) {
         removed.push([path, why]);
         say(`would remove ${path} (${why})`);

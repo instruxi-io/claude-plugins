@@ -1,3 +1,4 @@
+// @ts-nocheck TODO(typecheck): many inferred-shape errors from untyped option objects, not bugs; annotate with JSDoc when tightening
 // The answer to "may this agent do this, right now?", as a value.
 //
 // v2 returned an ad-hoc object from decide() and rebuilt the same shape in

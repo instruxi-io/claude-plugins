@@ -158,14 +158,9 @@ const ask = (q) =>
   });
 const stamp = () => new Date().toISOString().replace(/[-:.]/g, '').replace('T', '-').slice(0, 15);
 
-export async function install({
-  options: given,
-  dryRun = false,
-  yes = false,
-  home = homedir(),
-  confirm = ask,
-  out = (s) => process.stdout.write(s + '\n'),
-} = {}) {
+export async function install(
+  { options: given, dryRun = false, yes = false, home = homedir(), confirm = ask, out = (s) => process.stdout.write(s + '\n') } = /** @type {any} */ ({}),
+) {
   const { p, merged, files, options, skills } = plan(home, given);
   const changed = (f) => !existsSync(f.path) || readFileSync(f.path, 'utf8') !== f.content;
   if (merged.status === 'conflict') {

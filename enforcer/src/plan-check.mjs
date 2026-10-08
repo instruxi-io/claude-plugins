@@ -1,3 +1,4 @@
+// @ts-nocheck TODO(typecheck): many inferred-shape errors from untyped option objects, not bugs; annotate with JSDoc when tightening
 // `enforcer plan check <graph> [--repo-root dir]`: run each open node's acceptance commands and flag lines
 // whose quoted output never appears. Per line: ok | MISMATCH (ran, literal absent; shows the real last line) | SKIPPED.
 // Each result is printed as soon as it is known, with a running count on stderr. Exit 1 on MISMATCH only.

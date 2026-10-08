@@ -58,7 +58,9 @@ function openBrowser(url) {
  * `resource` is the RFC 8707 audience the token is for; `onUrl` receives the
  * authorization URL (printed and opened by the CLI, captured by the tests).
  */
-export async function browserSignIn({ base, resource, resources, scope, tenantCode, fetchImpl = defaultFetch, onUrl, timeoutMs = 5 * 60_000 }) {
+export async function browserSignIn(
+  /** @type {any} */ { base, resource, resources, scope, tenantCode, fetchImpl = defaultFetch, onUrl, timeoutMs = 5 * 60_000 },
+) {
   // RFC 8707 lets one token name several resources. Asking for Enforcer's API
   // AND its MCP server is what makes this one sign-in serve both the governor
   // (which calls the API) and the MCP server (which serves tools): each server

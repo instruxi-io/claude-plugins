@@ -50,12 +50,12 @@ export function input(...allowed) {
     ev = raw.trim() ? JSON.parse(raw) : {};
     if (!raw.trim()) Object.defineProperty(ev, 'badStdin', { value: true });
   } catch {
-    ev = {};
+    ev = /** @type {any} */ ({});
     Object.defineProperty(ev, 'badStdin', { value: true });
     return ev;
   }
   if (!ev || typeof ev !== 'object' || Array.isArray(ev)) {
-    ev = {};
+    ev = /** @type {any} */ ({});
     Object.defineProperty(ev, 'badStdin', { value: true });
     return ev;
   }

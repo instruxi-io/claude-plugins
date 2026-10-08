@@ -111,7 +111,7 @@ export function deriveUrls(base, env = {}) {
  * Resolve the config. Throws ConfigError when a variable is malformed.
  * `saved` defaults to the stored credential document.
  */
-export function resolveConfig({ flag: flagBase, env = process.env, saved } = {}) {
+export function resolveConfig({ flag: flagBase, env = process.env, saved } = /** @type {any} */ ({})) {
   const errors = validateEnv(env);
   if (errors.length) throw errors[0];
   if (flagBase) url(flagBase, '--base-url');

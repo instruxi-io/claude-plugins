@@ -93,17 +93,19 @@ export async function allNodes(base, graph, h) {
 }
 
 /** Returns [{name, ok, line}] */
-export async function preflight({
-  graph,
-  repoRoot = join(homedir(), 'apps'),
-  types = DISPATCH_TYPES,
-  env = process.env,
-  pluginRoot,
-  agent = null,
-  workers = 3,
-  allowBrowserSignin = false,
-  workerRules = DEFAULT_WORKER_RULES,
-} = {}) {
+export async function preflight(
+  {
+    graph,
+    repoRoot = join(homedir(), 'apps'),
+    types = DISPATCH_TYPES,
+    env = process.env,
+    pluginRoot,
+    agent = null,
+    workers = 3,
+    allowBrowserSignin = false,
+    workerRules = DEFAULT_WORKER_RULES,
+  } = /** @type {any} */ ({}),
+) {
   const res = [];
   const add = (name, ok, line) => res.push({ name, ok, line });
   const base = resolveConfig({ env }).graphUrl;
