@@ -39,6 +39,29 @@ export const AGENTS_SCOPES = ['enforcer:read', 'policy:self', 'enforcer:agents.w
 export const PRESETS = { work: WORK_SCOPES, plan: PLAN_SCOPES, agents: AGENTS_SCOPES, admin: null /* everything offered */ };
 export const DEFAULT_PRESET = 'work';
 
+/** Capability families the plugin has tools for: the scopes each needs and the login that grants them. */
+export const FAMILIES = [
+  { name: 'graph runs and nodes', needs: ['enforcer:graph-runs.write', 'enforcer:graph-observations.write', 'enforcer:graph-nodes.write', 'enforcer:graph-edges.write'], fix: 'enforcer login --for work' },
+  { name: 'graph import and templates', needs: ['enforcer:graph-graphs.write', 'enforcer:graph-graph-templates.write', 'enforcer:graph-epochs.write'], fix: 'enforcer login --for plan' },
+  { name: 'files', needs: ['enforcer:files-files.write'], fix: 'enforcer login --for work' },
+  { name: 'agent management', needs: ['enforcer:agents.write', 'enforcer:agents-credentials.write'], fix: 'enforcer login --for agents' },
+  { name: 'workspace switching', needs: ['enforcer:workspace.write'], fix: 'enforcer login --for work' },
+];
+
+/** Lines saying which scopes a browser sign-in holds and which families they cover. Never prints a token. */
+export function scopeLines(scopeString) {
+  const granted = String(scopeString || '').split(/\s+/).filter(Boolean);
+  if (!granted.length) return ['Scopes: not recorded for this sign-in (an API key carries the scopes it was issued with).'];
+  const lines = [`Granted scopes (${granted.length}): ${granted.join(' ')}`, 'What this sign-in can do:'];
+  for (const f of FAMILIES) {
+    const missing = f.needs.filter((x) => !granted.includes(x));
+    lines.push(missing.length
+      ? `  no   ${f.name}: missing ${missing.join(', ')}. Fix: ${f.fix}`
+      : `  yes  ${f.name}`);
+  }
+  return lines;
+}
+
 /** Scope string for a preset: the preset's scopes the server offers; admin = all offered. */
 export function presetScope(meta, preset) {
   if (!Object.hasOwn(PRESETS, preset)) throw new Error(`unknown preset "${preset}". Presets: ${Object.keys(PRESETS).join(', ')}`);
@@ -266,9 +289,11 @@ async function main(rawArgv) {
     const how = process.env.ENFORCER_API_KEY ? 'the ENFORCER_API_KEY environment variable' : enforcerKey() ? 'an API key' : 'a browser sign-in';
     const me = await whoAmI(base).catch(() => ({ error: 'unreachable' }));
     const life = signInLifeLine(doc.enforcer?.oauth, Date.now());
-    if (!me || me.error) { out(`Signed in with ${how}, but Enforcer did not accept it (${me?.error || 'no credential'}). Run /enforcer:login again.`); if (life) out(life); return; }
+    const scopes = scopeLines(doc.enforcer?.oauth?.scope);
+    if (!me || me.error) { out(`Signed in with ${how}, but Enforcer did not accept it (${me?.error || 'no credential'}). Run /enforcer:login again.`); if (life) out(life); for (const l of scopes) out(l); return; }
     out(`Signed in to ${base} with ${how} as ${who(me)} (${me.role?.slug || 'unknown role'}, tenant ${me.tenant?.name || me.tenant?.id || '?'}).`);
     if (life) out(life);
+    for (const l of scopes) out(l);
     out(`Shared by every Enforcer plugin on this machine: ${SHARED_FILE()}`);
     return;
   }
