@@ -147,7 +147,7 @@ for (const a of agents.sort((x, y) => (y.tokens || 0) - (x.tokens || 0)).slice(0
   const pct = a.budget ? Math.round((a.tokens / a.budget) * 100) : 0;
   // Say WHY it stopped, not just that it did. "STOPPED" alone sends people to
   // the state file; the reason tells them whether to raise a limit or resume.
-  const why = { limit: 'over its limit', soft: 'past the warn mark', loop: 'looping',
+  const why = { limit: 'over its limit', soft: 'past the warn mark',
                 client: 'client cap', day: 'daily cap', week: 'weekly cap', month: 'monthly cap',
                 human: 'you stopped it' }[a.groundedBy] || '';
   const flag = a.status === 'grounded' ? `  STOPPED${why ? ' - ' + why : ''}`

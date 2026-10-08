@@ -120,6 +120,8 @@ The dispatcher reads the governor's decision records (from the governor log and 
 
 When several codes are present the order is destructive, then `graph_run_not_open`, then the push. Only when a worker left no record (an older plugin or governor) does the dispatcher fall back to the old text match on the denial message.
 
+The governor has no loop check, so a worker that heartbeats or polls plan status while it waits on CI is never stopped for repeating itself. Loop detection belongs to the `jev-hooks` plugin.
+
 Salvage runs only for a node whose claim card carries the `deliver-via-github-pr` skill. The card's `skills` entries are the api's attached-skill rows, `{"position", "config", "skill": {"slug", ...}}` — the slug is nested under `skill` (0.27.1; before it the dispatcher read only a flat `slug`/`key`/`name`, saw no skill on any node, and skipped every salvage).
 
 Salvage opens the PR against the node's resolved base (see below, as the worktree step does), counting commits ahead of `origin/<base>` and passing the base to the PR create step.

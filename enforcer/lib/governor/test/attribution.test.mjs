@@ -217,17 +217,16 @@ const call = (extra, cmd = 'git status') => cc.before(toolEvent({
   session_id: SID, transcript_path: parentT, cwd: '/w/acme-api', ...extra,
 }));
 
-await ok('two subagents, identical calls, no loop latch', async () => {
+await ok('two subagents, identical calls, all allowed', async () => {
   assert.equal(agentOf({ session_id: SID }), 'claude:0f3c9a1b');
   assert.notEqual(agentOf({ session_id: SID, agent_id: 'aaaa1111x' }), agentOf({ session_id: SID, agent_id: 'bbbb2222y' }));
-  // Three identical calls each stays under the loop limit of 4 per agent...
+  // Three identical calls from each agent are all allowed...
   for (let i = 0; i < 3; i++) {
     for (const id of ['aaaa1111x', 'bbbb2222y', undefined]) {
       const { verdict } = await call(id ? { agent_id: id } : {});
       assert.equal(verdict.action, 'allow', `${id || 'parent'} call ${i}: ${verdict.reason}`);
     }
   }
-  // ...though nine together would have latched one shared record.
 });
 
 await ok('subagent budget is its own', async () => {

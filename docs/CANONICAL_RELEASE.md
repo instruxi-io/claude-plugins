@@ -17,7 +17,8 @@ Instruxi ships **two** plugins:
   one every other adapter is tested against.
 - **`jev-hooks`** — Instruxi staff only. The nine Jev-backed *quality* hooks
   (narrow output, loop detection, pre-compact triage, stop self-check, subagent
-  verify, model routing…). It expects `enforcer` to be installed and contains **no
+  verify, model routing…); loop detection lives only here, the governor does
+  not do it. It expects `enforcer` to be installed and contains **no
   allow/deny policy**: that is the governor's, inside `enforcer`.
 
 `enforcer-graph`, `enforcer-files` and `enforcer-governor` stop existing as
