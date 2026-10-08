@@ -1,17 +1,13 @@
 # Enforcer Governor
 
-**A Claude Code plugin that decides whether an agent action is allowed *before* it runs — and keeps a record you can prove.**
+**A Claude Code plugin that reports what your agents spend and do, and keeps a record you can prove. Decisioning, the part that can refuse an action, is opt-in.**
 
-Agents get stuck in loops, repeat work, and run scripts straight off the internet. Every other tool reports the damage afterwards. This one answers a question first:
+Out of the box the governor **reports**: spend per agent, tools used, errors, and one receipt for every action it saw, in a hash-chained file on your machine that you can read with OpenTelemetry. It does not block anything until you turn Decisioning on. Until you sign in to an Enforcer workspace, everything stays on your machine, see [What leaves your machine](#what-leaves-your-machine).
 
-> **May this agent do this, right now?**
+- **Reporting (on)**: the status line, `governor status`, `governor report`, receipts.
+- **Decisioning (off by default)**: capability rules, spend and rate checks, and your tenant policy, which answer *may this agent do this, right now?* with allow, rewrite, deny or ask. See [Decisioning](#decisioning-opt-in).
 
-- **allow** — in budget and on task, carry on
-- **rewrite** — run it, in a form the policy accepts
-- **deny** — over budget, looping, or not permitted at all
-- **ask** — pause and check with you
-
-Every decision is appended to a hash-chained record. Edit or delete a single line and the chain visibly breaks. Until you sign in to an Enforcer workspace, everything stays on your machine — see [What leaves your machine](#what-leaves-your-machine).
+Loop detection is not the governor's job: `jev-hooks` owns it.
 
 ## Install
 
@@ -22,13 +18,13 @@ Every decision is appended to a hash-chained record. Edit or delete a single lin
 
 Since enforcer 1.0 the governor ships **inside** the `enforcer` plugin; there is no separate `enforcer-governor` plugin to install or disable. The `/enforcer-governor:*` slash commands named in older copies of this file are not registered by the `enforcer` plugin: use the `node bin/enforcer governor …` commands below (run from the plugin root, or ask for the governor skill), and the config file for everything else.
 
-Then restart Claude Code and sign in once with `/enforcer:login`. The `enforcer` plugin is the connection to your Enforcer workspace (its MCP server and the sign-in); the governor works without it, deciding and recording locally, but has no tenant policy to ask and nowhere to send receipts.
+Then restart Claude Code and sign in once with `/enforcer:login`. The `enforcer` plugin is the connection to your Enforcer workspace (its MCP server and the sign-in); the governor works without it, reporting locally, but has no tenant policy to ask and nowhere to send receipts.
 
-The governor brings the enforcement: the hooks and the capability rules. It cannot be disabled separately from the `enforcer` plugin (disabling `enforcer` also removes the graph hooks and the MCP server); switch its checks off in the config file instead, see [Getting out of the way](#getting-out-of-the-way). There is no daemon to start. The governor keeps its own state under `~/.config/enforcer/governor/` (moved from `~/.enforcer-governor/`, which now holds only a `MOVED_TO` marker) and a small shared file under `~/.enforcer/`.
+The governor brings the hooks that report and, when you enable them, decide. It cannot be disabled separately from the `enforcer` plugin (disabling `enforcer` also removes the graph hooks and the MCP server); decisioning is already off unless you turned it on, see [Turn decisioning on or off](#turn-decisioning-on-or-off). There is no daemon to start. The governor keeps its own state under `~/.config/enforcer/governor/` (moved from `~/.enforcer-governor/`, which now holds only a `MOVED_TO` marker) and a small shared file under `~/.enforcer/`.
 
-Two pieces cannot arrive that way, because Claude Code does not let a plugin ship either one: a plugin's `settings.json` honours only the `agent` and `subagentStatusLine` keys, and everything else is ignored without a word. Both are a single paste into your own `~/.claude/settings.json`, and the governor enforces correctly without either.
+Two pieces cannot arrive that way, because Claude Code does not let a plugin ship either one: a plugin's `settings.json` honours only the `agent` and `subagentStatusLine` keys, and everything else is ignored without a word. Both are a single paste into your own `~/.claude/settings.json`, and the governor reports correctly without either.
 
-**The status line**, which is the only always-on surface — the number you glance at instead of opening something:
+**The status line**, which is the only always-on surface, the number you glance at instead of opening something:
 
 ```json
 {
@@ -41,15 +37,32 @@ Two pieces cannot arrive that way, because Claude Code does not let a plugin shi
 
 The plugin's install directory changes with every version, so the status line does not name it: the governor records where it is running from in `~/.enforcer/plugin-root` at every session start, and the command follows that. Until the first session after installing, it prints nothing.
 
-**The permission rules**, which are belt to the hooks' braces. Copy the `permissions` block from this repo's [`settings.json`](settings.json) into yours. The plugin cannot install it, so without this paste the hooks are doing the work alone — see [How it works](#how-it-works) for exactly what that costs you, which is less than it sounds.
+**The permission rules**, which are belt to the hooks' braces. Copy the `permissions` block from this repo's [`settings.json`](settings.json) into yours. The plugin cannot install it, so, once decisioning is on, without this paste the hooks are doing the work alone, see [How it works](#how-it-works) for exactly what that costs you, which is less than it sounds.
 
-## What you get
+## What it reports
 
-**A number in your status line, which is also where the money figure comes from.** `· $3.40/$20` — live spend against the limit, always visible, no dashboard to open. It changes colour once, when something needs you.
+**`governor status` and `governor report`.** `node bin/enforcer governor status` shows spend per agent, limits, current burn, the state of the record, and in its first line whether Decisioning is on (`Decisioning: OFF (report only). Turn on: enforcer governor enable rules`). `node bin/enforcer governor report [--since 24h|7d|30d] [--json] [--verbose]` summarises spend, tools, errors and decisions from local cost files and receipts, per agent, project and model. It is offline and prints no command text unless you pass `--verbose`.
 
-It has a second job. Claude Code hands its own `total_cost_usd` to the status line and **only** to the status line — the hooks never see it. That figure can be computed at an organisation's contracted rates, so it beats anything a third-party price table can know. The status line records it and the gate reads it back on the next tool call. Without the paste in [Install](#install) the governor still enforces; it just meters from the transcript instead, and every receipt says which of the two answered.
+**Receipts.** Every action the governor sees is one line appended to `~/.config/enforcer/governor/receipts.jsonl`, hash-chained: edit or delete a line and `node bin/enforcer governor verify` names the first line that does not add up. Each receipt carries who the agent acted for, the tool, the model, the spend, and, once decisioning is on, which rule decided. The format is a written contract: [`otel/receipt.schema.json`](otel/receipt.schema.json), checked by `test/receipt-schema.test.mjs`.
 
-**Capability rules that ship with the plugin.** Piping a URL into a shell is refused outright. Deleting a tree, rewriting git history, reading credentials, publishing or deploying: those stop and ask. These are capability decisions, not spend ones, so they fire on a full budget — and they are checked without reading any state at all, so they hold even when the governor cannot read its own files. Deleting the state directory turns off the spend limit; it does not turn off the rules.
+**OpenTelemetry.** [`otel/collector.yaml`](otel/collector.yaml) tails the receipts file with a `filelog` receiver, so any OpenTelemetry collector can ship it. [`otel/README.md`](otel/README.md) lists every field and how to run it (`otelcol-contrib --config otel/collector.yaml` from `enforcer/lib/governor`).
+
+**A number in your status line, which is also where the money figure comes from.** `· $3.40/$20`, live spend against the limit, always visible, no dashboard to open. It changes colour once, when something needs you.
+
+It has a second job. Claude Code hands its own `total_cost_usd` to the status line and **only** to the status line, the hooks never see it. That figure can be computed at an organisation's contracted rates, so it beats anything a third-party price table can know. The status line records it and the gate reads it back on the next tool call. Without the paste in [Install](#install) the governor still reports; it just meters from the transcript instead, and every receipt says which of the two answered.
+
+
+## Decisioning (opt-in)
+
+**Decisioning is off by default.** With it off, nothing here refuses, rewrites or asks: the hook answers allow with the code `checks_off` and the receipt says so. It is three independent checks, each off until configured:
+
+| Check | Setting | What it does |
+|---|---|---|
+| capability rules | `rulesOn` | what an agent may do: pipes to a shell, deletes, force-pushes, secrets, deploys, graph worker delivery |
+| spend and rate checks | `budgetOn` | per-agent dollar limits, burn, fan-out and retry rates |
+| tenant policy lookup | `policyOn` | ask your Enforcer policy about a rule that matched |
+
+**Capability rules that ship with the plugin.** Piping a URL into a shell is refused outright. Deleting a tree, rewriting git history, reading credentials, publishing or deploying: those stop and ask. These are capability decisions, not spend ones, so they fire on a full budget, and they are checked without reading any state at all, so they hold even when the governor cannot read its own files. Deleting the state directory turns off the spend limit; it does not turn off the rules.
 
 **Your organisation's policy, not just ours.** Sign in once with `/enforcer:login` and the rules above stop being the same six patterns for everyone. When a rule matches, the governor asks your Enforcer tenant policy about it: a resource of type `agent_action` whose id names the rule (`fs.delete_tree`, `deploy.publish`, `git.force_push`, `git.rewrite_history`, `secrets.access`, `shell.pipe_to_shell`). The policy is Rego, versioned, tested before it can go live, and rolled back by activating the previous version, so "agents here never delete a whole tree" or "publishing needs a person" is one change for the whole team.
 
@@ -84,11 +97,11 @@ deny contains "ask: publishing from an agent needs a person to confirm" if {
 
 **A spend limit that means dollars.** `node bin/enforcer governor limit 40` sets $40 per agent. Claude prices each model at its own rate, so $40 is $40 whether the agent is on Opus 5 or Haiku 4.5. Where the harness figure is unavailable the cap falls back to cost-weighted effective tokens, because cached sessions re-read their whole context every turn and raw token counts explode while costing very little.
 
-**A word to the agent, not just to you.** An agent that learns it is near the limit can land what it has instead of opening a new front. At roughly two thirds of the budget it is told once — one sentence, at the turn boundary, where it can still change its plan — and then the governor goes quiet until the situation changes. Warning at the limit itself is too late: the turn is already committed. Every word costs, because it joins the cached prefix and is billed on every later turn, which is why it is one sentence and why it is said once.
+**A word to the agent, not just to you.** An agent that learns it is near the limit can land what it has instead of opening a new front. At roughly two thirds of the budget it is told once, one sentence, at the turn boundary, where it can still change its plan, and then the governor goes quiet until the situation changes. Warning at the limit itself is too late: the turn is already committed. Every word costs, because it joins the cached prefix and is billed on every later turn, which is why it is one sentence and why it is said once.
 
-**A safer command instead of a refused one.** Some actions have a form that keeps the intent and drops the footgun. `git push --force` becomes `git push --force-with-lease`, which refuses only when someone else has pushed since your last fetch — the case that loses work. The rewrite is announced and recorded; a governor that edits commands silently would be an invisible actor in your transcript.
+**A safer command instead of a refused one.** Some actions have a form that keeps the intent and drops the footgun. `git push --force` becomes `git push --force-with-lease`, which refuses only when someone else has pushed since your last fetch, the case that loses work. The rewrite is announced and recorded; a governor that edits commands silently would be an invisible actor in your transcript.
 
-**Rate limits, not just totals.** The incidents that cost real money are rate incidents. Dollars per minute, new agents per minute, and errors per minute are each watched and each *ask* rather than block — and ask once, so an overnight run waits for you instead of dying or nagging.
+**Rate limits, not just totals.** The incidents that cost real money are rate incidents. Dollars per minute, new agents per minute, and errors per minute are each watched and each *ask* rather than block, and ask once, so an overnight run waits for you instead of dying or nagging.
 
 **A record an audit can read.** `node bin/enforcer governor verify` walks the file and names the first line that does not add up. Every receipt carries who the agent acted for, what it tried, which model answered, and which rule decided.
 
@@ -98,35 +111,41 @@ Run from the plugin root:
 
 | | |
 |---|---|
-| `node bin/enforcer governor status` | spend per agent, limits, current burn, state of the record |
+| `node bin/enforcer governor status` | whether decisioning is on, spend per agent, limits, current burn, state of the record |
+| `node bin/enforcer governor report [--since 24h\|7d\|30d] [--json] [--verbose]` | spend, tools, errors and decisions from local data |
 | `node bin/enforcer governor verify` | check the chain, name the first broken line |
-| `node bin/enforcer governor limit <dollars>` | set the per-agent limit |
 | `node bin/enforcer governor config [--why]` | every setting, what it does, and which you have changed |
+| `node bin/enforcer governor enable <rules\|budget\|policy>` | turn a decisioning check on (`disable` turns it off) |
+| `node bin/enforcer governor set <name> <value>` | change a validated setting, such as `shadow` |
+| `node bin/enforcer governor limit <dollars>` | set the per-agent limit |
+| `node bin/enforcer governor telemetry [on\|off\|status]` | Claude Code's own OpenTelemetry export (default off) |
 | `/enforcer:login [<WORKSPACE-CODE> \| api-key <key> \| status \| logout]` | sign in to Enforcer; no argument opens a browser, a workspace code skips asking for it |
 
-**Not exposed in the `enforcer` plugin today:** `resume` (run a stopped agent again). `set <name> <value>` (validated), `enable|disable <rules|budget|policy>` and `telemetry [on|off|status]` are exposed through `enforcer governor` and `/enforcer:governor`.
+`resume` (run a stopped agent again) is not exposed in the `enforcer` plugin today. The same commands are available as `/enforcer:governor`.
 
-### Getting out of the way
+### Turn decisioning on or off
 
-An agent stopped for **spending** is freed by raising the limit — `node bin/enforcer governor limit 40` — and carries on from where it stopped. An agent stopped for **looping**, or one you stopped yourself, needs `resume`, because a raised limit is not consent to carry on doing the same thing; `resume` is not exposed in the `enforcer` plugin today (see Commands).
+Decisioning is off until you enable it. To turn the capability rules on:
 
-To switch the governor off without uninstalling it, set any of these in `~/.config/enforcer/governor/config.json`. That file already holds your other settings (limits, model), so change these keys in place rather than replacing the file:
-
-```json
-{"budgetOn": false, "rulesOn": false}
+```
+node bin/enforcer governor enable rules
 ```
 
-`budgetOn` covers the spend and rate checks, `rulesOn` the capability rules. The two are independent: turning spend tracking off leaves `curl | sh` and `rm -rf` still guarded. Loop detection belongs to `jev-hooks`; the old loop settings are retired. Both off is fully inert, **unless your organisation publishes a floor**, below. Do not delete `state.json` to unstick something: it holds the head of the receipt chain, so the next receipt hashes against nothing and `verify` correctly reports the record as broken.
+`enable` and `disable` take `rules`, `budget` or `policy`, which set `rulesOn`, `budgetOn` and `policyOn` in `~/.config/enforcer/governor/config.json` (that file also holds your other settings, so the commands change keys in place). `node bin/enforcer governor set <name> <value>` changes any other setting and refuses a value the validator rejects. The checks are independent: `rulesOn` alone leaves spend unmetered, and `budgetOn` alone leaves `curl | sh` unguarded. An agent stopped for **spending** is freed by raising the limit (`node bin/enforcer governor limit 40`) and carries on from where it stopped. One you stopped yourself needs `resume`, which is not exposed here. Do not delete `state.json` to unstick something: it holds the head of the receipt chain, so the next receipt hashes against nothing and `verify` correctly reports the record as broken.
 
-Shadow mode: with `rulesOn` off and `shadow` on (the default), the capability rules are still evaluated locally and each receipt records what they would have decided as `would: {decision, code, rule}`, while the hook answers allow with `checks_off`. Shadow mode never asks the tenant policy, never reads spend, does not run the graph-worker rules, and an error in it only drops `would`. With `rulesOn` on there is no `would`: the real decision is the receipt. Set `"shadow": false` to stop recording it.
+**Per process.** `ENFORCER_GOVERNOR_RULES`, `ENFORCER_GOVERNOR_BUDGET` and `ENFORCER_GOVERNOR_POLICY`, each `on` or `off`, turn `rulesOn`, `budgetOn` and `policyOn` on or off for that process and its children without touching `config.json` (any other value is ignored). They beat `config.json` but not your organisation's policy: a managed `on` still wins. `governor config` marks such a value with `~` and `governor status` names the variables.
 
-Per process: `ENFORCER_GOVERNOR_RULES`, `ENFORCER_GOVERNOR_BUDGET` and `ENFORCER_GOVERNOR_POLICY`, each `on` or `off`, turn `rulesOn`, `budgetOn` and `policyOn` on or off for that process and its children without touching `config.json` (any other value is ignored). They beat `config.json` but not an organisation floor: a managed `on` still wins. A dispatcher can set `ENFORCER_GOVERNOR_RULES=on` for its workers while another harness leaves it unset. `governor config` marks such a value with `~` and `governor status` names the variables.
+**Dispatcher workers.** `enforcer dispatch <graph> --worker-rules on|off` says whether the graph workers it starts run with the capability rules on (it sets `ENFORCER_GOVERNOR_RULES` for them). The default is off, and the dispatcher's preflight states the mode.
+
+**Shadow mode.** With `rulesOn` off and `shadow` on (the default), the capability rules are still evaluated locally and each receipt records what they would have decided as `would: {decision, code, rule}`, while the hook answers allow with `checks_off`. So you can see what turning decisioning on would do before you do it. Shadow mode never asks the tenant policy, never reads spend, does not run the graph-worker rules, and an error in it only drops `would`. With `rulesOn` on there is no `would`: the real decision is the receipt. Run `node bin/enforcer governor set shadow false` to stop recording it.
+
+**Your organisation's policy is a floor.** Whatever you set locally, an organisation that turns a check `on` keeps it on (see below).
 
 ### Settings your organisation sets
 
-An Enforcer tenant can publish a set of these settings for every install it signs in (`GET /api/v1/governance/settings`, written by a tenant admin). They are a **floor, not an override**: for each setting the governor applies whichever of the two is stricter, so a managed $150 beats your $400 and your $40 beats both, and a check the organisation turns on cannot be turned off locally. `node bin/enforcer governor config` marks them with `!` and shows your own value beside them.
+An Enforcer tenant can publish a set of these settings for every install it signs in (`GET /api/v1/governance/settings`, written by a tenant admin). They are a **floor, not an override**: for each setting the governor applies whichever of the two is stricter, so a managed $150 beats your $400 and your $40 beats both, and a check the organisation turns on (`rulesOn`, `budgetOn` or `policyOn`) cannot be turned off locally: an organisation `on` still beats a local `off`, and an organisation can therefore turn decisioning on for every install it signs in. `node bin/enforcer governor config` marks them with `!` and shows your own value beside them.
 
-Nothing waits on the network to decide: the settings are fetched at session start, at most hourly, and cached. A machine that is signed out, or has never reached the control plane, runs on its own config alone. Identity settings (`centralUrl`, `ingestUrl`, `operator`) cannot be managed — being able to repoint an install is being able to redirect its receipts.
+Nothing waits on the network to decide: the settings are fetched at session start, at most hourly, and cached. A machine that is signed out, or has never reached the control plane, runs on its own config alone. Identity settings (`centralUrl`, `ingestUrl`, `operator`) cannot be managed, being able to repoint an install is being able to redirect its receipts.
 
 ## What leaves your machine
 
@@ -136,10 +155,10 @@ Once you sign in to an Enforcer workspace, these can leave, each under a switch:
 
 | what | when | switch |
 |---|---|---|
-| **Decision receipts** — the verdict, the rule that fired, the tool name, the model, token counts, a project name derived from the working directory, the `operator` you set, and which harness decided (`claude-code`) with its adapter version. Never the command text, never file contents, never prompts. | shipped in the background after each session, to your workspace's governance API | `shipOn` (default on) |
-| **A session's project** — at session start, the session id the receipts use (`claude:` + 8 characters) and the project name derived from the working directory, so the session is filed under its project even if it never makes a governed decision. Nothing else. | once per session start, one short request, never retried | `shipOn` (default on) |
-| **Your organisation's policy answers** — for an action a local rule matched, the governor asks your workspace whether to allow, ask or deny. The request names the rule, not the command. | only when a rule matches | `policyOn` (default on) |
-| **Claude Code's own telemetry** — cost, tokens and tool-use metrics from Claude Code's built-in OpenTelemetry exporter. Prompt text is not exported. | only if you turn it on | `telemetry on` (default off; `enforcer governor telemetry on`) |
+| **Decision receipts**, the verdict, the rule that fired, the tool name, the model, token counts, a project name derived from the working directory, the `operator` you set, and which harness decided (`claude-code`) with its adapter version. Never the command text, never file contents, never prompts. | shipped in the background after each session, to your workspace's governance API | `shipOn` (default on) |
+| **A session's project**, at session start, the session id the receipts use (`claude:` + 8 characters) and the project name derived from the working directory, so the session is filed under its project even if it never makes a governed decision. Nothing else. | once per session start, one short request, never retried | `shipOn` (default on) |
+| **Your organisation's policy answers**, for an action a local rule matched, the governor asks your workspace whether to allow, ask or deny. The request names the rule, not the command. | only when a rule matches | `policyOn` (default on) |
+| **Claude Code's own telemetry**, cost, tokens and tool-use metrics from Claude Code's built-in OpenTelemetry exporter. Prompt text is not exported. | only if you turn it on | `telemetry on` (default off; `enforcer governor telemetry on`) |
 
 Everything goes to the workspace you signed in to and nowhere else. `/enforcer:login logout` stops all of them on this machine; what has already been sent stays in your workspace's records, which is the point of a record.
 
@@ -166,7 +185,7 @@ The record is written three places: as the `decision` field, last, on the hash-c
 | `force_push` | a force-push (--force, -f or a +refspec) |
 | `destructive_delete` | rm -rf of a whole tree |
 | `destructive_git` | history rewrite: reset --hard or filter-branch |
-| `secret_in_command` | the action reads or writes a credentials file (.env, keys, credentials.json, ~/.aws, ~/.ssh): a shell command on such a path, or an edit whose target is one — a mention in text, a report or a fixture is not access (1.0.3) |
+| `secret_in_command` | the action reads or writes a credentials file (.env, keys, credentials.json, ~/.aws, ~/.ssh): a shell command on such a path, or an edit whose target is one, a mention in text, a report or a fixture is not access (1.0.3) |
 | `deploy_publish` | publish or deploy (npm publish, vercel --prod, kubectl apply/delete, terraform apply) |
 | `custom_rule` | a rule from config.json with no code of its own |
 | `graph_push_allowed` | headless worker pushing its own graph/<key> branch, as the whole command |
@@ -219,21 +238,25 @@ These are the only rules that **allow** (an affirmative grant that skips the pro
 ```
 prompt  ─► UserPromptSubmit ─► a word to the agent, if the situation changed
 
-                         ┌─ capability rules ─── no state, FAILS CLOSED
-                         │     └─ matched? ask your tenant policy (Enforcer)
+                         ┌─ capability rules ─── only if rulesOn, no state, FAILS CLOSED
+                         │     └─ matched? ask your tenant policy (only if policyOn)
 tool call ─► PreToolUse ─┤         unreachable leaves the local rule in place
-                         └─ spend + rate ─────── needs state, FAILS OPEN
+                         └─ spend + rate ─────── only if budgetOn, needs state, FAILS OPEN
                                    │
                                    ▼
-             allow / deny / ask / rewrite  ─►  hash-chained receipt
+        decisioning off: allow (checks_off, `would` in shadow mode)
+        decisioning on:  allow / deny / ask / rewrite
+                                   │
+                                   ▼
+                      hash-chained receipt, always written
 
-result  ─► PostToolUse ─► what actually happened (errors feed the retry check)
+result  ─► PostToolUse ─► what actually happened (errors feed the retry-rate check)
 subagent─► SubagentStart ─► fan-out, counted rather than inferred
 ```
 
 Seven hooks, no daemon, no port, nothing listening. State lives in `~/.config/enforcer/governor/` behind a lock, so parallel tool calls land in the record in the order they were decided.
 
-That split is the architecture, and the two halves fail in opposite directions on purpose. **Spend fails open**: if the state is unreadable the hook allows the action and says in the reason line that it did not check, because a governor that blocks real work over a missing file of its own has failed at something more important than enforcing. **Capability fails closed**, because it can afford to — the rules are patterns matched against the action text and need no state, so an unreadable state directory does not reach them. A refusal decided that way is still written to the record, deliberately without a hash: there is no readable chain tail to hash against, and `verify` counts an unhashed line as unverifiable rather than as a break. Recording nothing would hide a real refusal, and forging a link would cry tampering on an honest file.
+That split is the architecture, and the two halves fail in opposite directions on purpose. **Spend fails open**: if the state is unreadable the hook allows the action and says in the reason line that it did not check, because a governor that blocks real work over a missing file of its own has failed at something more important than enforcing. **Capability fails closed**, because it can afford to, the rules are patterns matched against the action text and need no state, so an unreadable state directory does not reach them. A refusal decided that way is still written to the record, deliberately without a hash: there is no readable chain tail to hash against, and `verify` counts an unhashed line as unverifiable rather than as a break. Recording nothing would hide a real refusal, and forging a link would cry tampering on an honest file.
 
 The transcript is read forward from where the last call stopped, so the cost of checking does not grow with the length of your session.
 
@@ -245,7 +268,7 @@ npm test
 
 ## The bigger picture
 
-The Governor is one idea applied to one resource. The idea is **Enforcer**, Instruxi's policy engine, and it asks a single question in front of every system it guards: *may this identity do this, right now?* — answered three ways, with a tamper-evident receipt for every answer. Here that identity is an AI agent and the resource is your money. **[instruxi.io](https://instruxi.io)**
+The Governor is one idea applied to one resource. The idea is **Enforcer**, Instruxi's policy engine, and it asks a single question in front of every system it guards: *may this identity do this, right now?*, answered three ways, with a tamper-evident receipt for every answer. Here that identity is an AI agent and the resource is your money. **[instruxi.io](https://instruxi.io)**
 
 ## License
 
