@@ -15,10 +15,15 @@ export function rotate(path, max = MAX_BYTES) {
     if (existsSync(`${path}.1`)) rmSync(`${path}.1`, { force: true });
     renameSync(path, `${path}.1`);
     return true;
-  } catch { return false; }
+  } catch {
+    return false;
+  }
 }
 
-export function logHook({ hook, event, actor, outcome, ms, code, run_id = process.env.GRAPH_RUN_ID || process.env.ENFORCER_GRAPH_RUN_ID || undefined }, { force = false, max = MAX_BYTES } = {}) {
+export function logHook(
+  { hook, event, actor, outcome, ms, code, run_id = process.env.GRAPH_RUN_ID || process.env.ENFORCER_GRAPH_RUN_ID || undefined },
+  { force = false, max = MAX_BYTES } = {},
+) {
   if (!force && !debugOn()) return false;
   try {
     privateDir(stateBase());
@@ -26,7 +31,9 @@ export function logHook({ hook, event, actor, outcome, ms, code, run_id = proces
     rotate(p, max);
     privateWrite(p, JSON.stringify({ ts: new Date().toISOString(), hook, event, actor, outcome, ms, code, run_id }) + '\n', 'a');
     return true;
-  } catch { return false; }
+  } catch {
+    return false;
+  }
 }
 
 /** Count a failure of `hook` in `session`; returns the one-line note on the FAIL_LIMIT-th failure only. */
@@ -35,10 +42,13 @@ export function noteFailure(session, hook) {
     const dir = privateDir(join(stateBase(), 'hookfail'));
     const f = join(dir, String(session || 'unknown').replace(/[^\w.-]/g, '_'));
     let st = {};
-    try { st = JSON.parse(readFileSync(f, 'utf8')) || {}; } catch {}
+    try {
+      st = JSON.parse(readFileSync(f, 'utf8')) || {};
+    } catch {}
     st[hook] = (st[hook] || 0) + 1;
     privateWrite(f, JSON.stringify(st));
-    if (st[hook] === FAIL_LIMIT) return `enforcer: hook ${hook} has failed ${FAIL_LIMIT} times this session; see ${logPath()} (set ENFORCER_DEBUG=1 to record hook runs).`;
+    if (st[hook] === FAIL_LIMIT)
+      return `enforcer: hook ${hook} has failed ${FAIL_LIMIT} times this session; see ${logPath()} (set ENFORCER_DEBUG=1 to record hook runs).`;
   } catch {}
   return null;
 }

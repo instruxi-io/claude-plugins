@@ -62,11 +62,17 @@ async function call(fetchImpl, base, path, { method = 'GET', query, body, header
   if (!Object.keys(auth).length) throw new Error('not signed in to Enforcer. Run /enforcer:login first.');
   const res = await fetchImpl(url, { method, body, headers: { ...auth, 'User-Agent': USER_AGENT, ...headers } });
   const text = await res.text();
-  let json; try { json = JSON.parse(text); } catch { json = null; }
+  let json;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    json = null;
+  }
   if (!res.ok || json?.success === false) {
-    const why = json?.error === 'insufficient_scope'
-      ? `your sign-in does not allow this (${json.message}). Sign in again with /enforcer:login after an admin widens the grant.`
-      : (json?.message || json?.error || text.slice(0, 200) || `HTTP ${res.status}`);
+    const why =
+      json?.error === 'insufficient_scope'
+        ? `your sign-in does not allow this (${json.message}). Sign in again with /enforcer:login after an admin widens the grant.`
+        : json?.message || json?.error || text.slice(0, 200) || `HTTP ${res.status}`;
     throw new Error(`${method} ${path} → ${res.status}: ${why}`);
   }
   return json;
@@ -87,11 +93,14 @@ export async function upload(path, opts = {}, { fetchImpl = defaultFetch, base =
   const { provider: prov, mode } = await provider({ fetchImpl, base });
 
   if (mode === 'presigned') {
-    const pre = await call(fetchImpl, base, `/file/${prov}/presigned-upload-url`, { query: { file_name: fileName, overwrite: opts.overwrite ? 'true' : undefined } });
+    const pre = await call(fetchImpl, base, `/file/${prov}/presigned-upload-url`, {
+      query: { file_name: fileName, overwrite: opts.overwrite ? 'true' : undefined },
+    });
     const put = await fetchImpl(pre.data.url, { method: 'PUT', body: await openAsBlob(abs), headers: { 'Content-Type': 'application/octet-stream' } });
     if (!put.ok) throw new Error(`storage refused the upload: HTTP ${put.status} ${(await put.text()).slice(0, 200)}`);
     const done = await call(fetchImpl, base, `/file/${prov}/presigned-upload-complete`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ file_name: fileName, overwrite: !!opts.overwrite }),
     });
     return { provider: prov, path: fileName, object_key: pre.data.object_key, bytes: size, file: done?.data };
@@ -142,7 +151,13 @@ export function serverName(h) {
   const plain = /filename\s*=\s*(?:"((?:[^"\\]|\\.)*)"|([^;]+))/.exec(h);
   let n = star ? star[1].trim() : plain && (plain[1] ?? plain[2]).trim();
   if (!n) return undefined;
-  if (star) { try { n = decodeURIComponent(n); } catch { /* keep as sent */ } }
+  if (star) {
+    try {
+      n = decodeURIComponent(n);
+    } catch {
+      /* keep as sent */
+    }
+  }
   n = basename(n.replace(/\\/g, '/'));
   return n && n !== '.' && n !== '..' ? n : undefined;
 }
@@ -167,5 +182,8 @@ async function main(argv) {
 }
 
 if (isMain(import.meta.url)) {
-  main(commandArgs()).catch((e) => { out(`enforcer-files: ${e.message}`); process.exitCode = 1; });
+  main(commandArgs()).catch((e) => {
+    out(`enforcer-files: ${e.message}`);
+    process.exitCode = 1;
+  });
 }

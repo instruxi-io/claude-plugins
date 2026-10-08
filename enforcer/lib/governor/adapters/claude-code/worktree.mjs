@@ -17,7 +17,8 @@ export function branchOf(dir) {
     try {
       const st = statSync(dotgit);
       let gd = dotgit;
-      if (st.isFile()) {   // a linked worktree: ".git" names its gitdir
+      if (st.isFile()) {
+        // a linked worktree: ".git" names its gitdir
         const m = /^gitdir:\s*(.+)$/m.exec(readFileSync(dotgit, 'utf8'));
         if (!m) return null;
         gd = isAbsolute(m[1].trim()) ? m[1].trim() : resolve(d, m[1].trim());
@@ -47,11 +48,14 @@ export function workerContext(ev, env = process.env) {
  */
 export function runIdOf(ev, env = process.env) {
   if (env.GRAPH_RUN_ID || env.ENFORCER_GRAPH_RUN_ID) return env.GRAPH_RUN_ID || env.ENFORCER_GRAPH_RUN_ID;
-  const key = ev?.agent_id ? null : ev?.session_id;   // subagents key by a hash; not resolved here
+  const key = ev?.agent_id ? null : ev?.session_id; // subagents key by a hash; not resolved here
   if (!key) return undefined;
   const dirs = [join(stateBase(), 'runs')];
   for (const d of dirs) {
-    try { const r = JSON.parse(readFileSync(join(d, `${key}.json`), 'utf8')); if (r?.run_id) return String(r.run_id); } catch {}
+    try {
+      const r = JSON.parse(readFileSync(join(d, `${key}.json`), 'utf8'));
+      if (r?.run_id) return String(r.run_id);
+    } catch {}
   }
   return undefined;
 }

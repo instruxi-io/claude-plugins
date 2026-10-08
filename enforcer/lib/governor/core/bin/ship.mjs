@@ -22,5 +22,8 @@ const res = await shipAll({ ...DEFAULTS, ...loadConfig(), version });
 if (process.stdout.isTTY || process.argv.includes('--print')) {
   if (res.skipped) console.log(`Not shipped: ${res.skipped}.`);
   else if (res.error) console.log(`Not shipped: ${res.error}. Receipts stay queued and ship on the next try.`);
-  else console.log(`Shipped ${res.shipped} receipt(s)${res.rejected ? `; ${res.rejected} refused as altered or malformed` : ''}${res.pending ? '; more pending' : ''}.`);
+  else
+    console.log(
+      `Shipped ${res.shipped} receipt(s)${res.rejected ? `; ${res.rejected} refused as altered or malformed` : ''}${res.pending ? '; more pending' : ''}.`,
+    );
 }

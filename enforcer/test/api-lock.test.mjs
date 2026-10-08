@@ -23,7 +23,9 @@ test('lock lists five sources with ref and sha256', () => {
 
 test('spec files match the lock', () => {
   for (const [name, s] of Object.entries(lock.sources)) {
-    const got = createHash('sha256').update(readFileSync(resolve(api, s.file))).digest('hex');
+    const got = createHash('sha256')
+      .update(readFileSync(resolve(api, s.file)))
+      .digest('hex');
     assert.equal(got, s.sha256, `${s.file} differs from the lock (run npm run sync:spec): ${name}`);
   }
   for (const n of ['graph', 'v3', 'files', 'governance']) {
@@ -37,22 +39,35 @@ test('spec files match the lock', () => {
 
 test('swagger 2 input converts to openapi 3', () => {
   const out = swagger2ToOpenapi3({
-    swagger: '2.0', info: { title: 't', version: '1' }, host: 'h.test', basePath: '/api', schemes: ['https'],
-    paths: { '/x/{id}': { post: {
-      operationId: 'op', consumes: ['application/json'], produces: ['application/json'],
-      parameters: [
-        { name: 'id', in: 'path', required: true, type: 'string' },
-        { name: 'q', in: 'query', type: 'integer' },
-        { name: 'body', in: 'body', required: true, schema: { $ref: '#/definitions/Thing' } },
-      ],
-      responses: { 200: { description: 'ok', schema: { $ref: '#/definitions/Thing' } } },
-    } } },
+    swagger: '2.0',
+    info: { title: 't', version: '1' },
+    host: 'h.test',
+    basePath: '/api',
+    schemes: ['https'],
+    paths: {
+      '/x/{id}': {
+        post: {
+          operationId: 'op',
+          consumes: ['application/json'],
+          produces: ['application/json'],
+          parameters: [
+            { name: 'id', in: 'path', required: true, type: 'string' },
+            { name: 'q', in: 'query', type: 'integer' },
+            { name: 'body', in: 'body', required: true, schema: { $ref: '#/definitions/Thing' } },
+          ],
+          responses: { 200: { description: 'ok', schema: { $ref: '#/definitions/Thing' } } },
+        },
+      },
+    },
     definitions: { Thing: { type: 'object', properties: { a: { type: 'string', 'x-nullable': true } } } },
   });
   assert.equal(out.openapi, '3.0.0');
   assert.equal(out.servers[0].url, 'https://h.test/api');
   const op = out.paths['/x/{id}'].post;
-  assert.deepEqual(op.parameters.map((p) => p.name), ['id', 'q']);
+  assert.deepEqual(
+    op.parameters.map((p) => p.name),
+    ['id', 'q'],
+  );
   assert.deepEqual(op.parameters[0], { name: 'id', in: 'path', required: true, schema: { type: 'string' } });
   assert.equal(op.requestBody.content['application/json'].schema.$ref, '#/components/schemas/Thing');
   assert.equal(op.responses[200].content['application/json'].schema.$ref, '#/components/schemas/Thing');

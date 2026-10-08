@@ -22,7 +22,10 @@ import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const arg = (k) => { const i = process.argv.indexOf(k); return i > 0 ? process.argv[i + 1] : undefined; };
+const arg = (k) => {
+  const i = process.argv.indexOf(k);
+  return i > 0 ? process.argv[i + 1] : undefined;
+};
 const root = arg('--root') ?? join(dirname(fileURLToPath(import.meta.url)), '..');
 const manifestPath = arg('--manifest') ?? join(root, 'enforcer', 'lib', 'api', 'spec', 'mcp-manifest.json');
 const profile = arg('--profile') ?? 'graph';
@@ -34,7 +37,10 @@ const PREFIXES = ['mcp__plugin_enforcer_enforcer__', 'mcp__enforcer__', 'mcp__en
 const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
 const registered = new Set((manifest.tools ?? []).map((t) => t.name));
 const served = new Set((manifest.tools ?? []).filter((t) => (t.profiles ?? []).includes(profile)).map((t) => t.name));
-if (registered.size === 0) { console.error(`FAIL ${manifestPath}: no tools in the manifest`); process.exit(1); }
+if (registered.size === 0) {
+  console.error(`FAIL ${manifestPath}: no tools in the manifest`);
+  process.exit(1);
+}
 
 const read = (p) => readFileSync(join(root, p), 'utf8');
 const sources = []; // [where, name]
@@ -45,11 +51,14 @@ for (const rule of JSON.parse(read('enforcer/docs/graph/settings.example.json'))
 }
 // 2. The worker agent's tool allowlist (frontmatter `tools:`).
 const agent = read('enforcer/agents/graph-worker.md').match(/^tools:\s*(.+)$/m)?.[1] ?? '';
-for (const t of agent.split(',').map((s) => s.trim()).filter((s) => s.startsWith('mcp__'))) {
+for (const t of agent
+  .split(',')
+  .map((s) => s.trim())
+  .filter((s) => s.startsWith('mcp__'))) {
   sources.push(['enforcer/agents/graph-worker.md tools', t]);
 }
 // 3. `allowed-tools:` / `tools:` frontmatter of every command, skill and agent in every local plugin.
-const listFiles = (d) => existsSync(join(root, d)) ? readdirSync(join(root, d), { withFileTypes: true }) : [];
+const listFiles = (d) => (existsSync(join(root, d)) ? readdirSync(join(root, d), { withFileTypes: true }) : []);
 const fm = [];
 for (const e of listFiles('enforcer/commands')) if (e.name.endsWith('.md')) fm.push(`enforcer/commands/${e.name}`);
 for (const e of listFiles('enforcer/skills')) if (e.isDirectory()) fm.push(`enforcer/skills/${e.name}/SKILL.md`);
@@ -63,12 +72,21 @@ for (const f of fm) {
 }
 // 3b. Grok hook matchers (names without the mcp__ plugin prefix): enforcer__graph_(a|b|c).
 let grokMatchers = 0;
-const grokHooks = existsSync(join(root, 'enforcer/harness/grok/hooks/enforcer.json')) ? JSON.parse(read('enforcer/harness/grok/hooks/enforcer.json')).hooks : {};
+const grokHooks = existsSync(join(root, 'enforcer/harness/grok/hooks/enforcer.json'))
+  ? JSON.parse(read('enforcer/harness/grok/hooks/enforcer.json')).hooks
+  : {};
 for (const [event, groups] of Object.entries(grokHooks)) {
   for (const g of groups) {
     const m = (g.matcher ?? '').match(/^enforcer__graph_\(([^)]+)\)$/);
-    if (g.matcher && !m) { console.error(`FAIL grok ${event}: matcher ${g.matcher} is not enforcer__graph_(...)`); process.exit(1); }
-    if (m) for (const t of m[1].split('|')) { sources.push([`enforcer/harness/grok/hooks/enforcer.json ${event}`, `enforcer__graph_${t}`]); grokMatchers++; }
+    if (g.matcher && !m) {
+      console.error(`FAIL grok ${event}: matcher ${g.matcher} is not enforcer__graph_(...)`);
+      process.exit(1);
+    }
+    if (m)
+      for (const t of m[1].split('|')) {
+        sources.push([`enforcer/harness/grok/hooks/enforcer.json ${event}`, `enforcer__graph_${t}`]);
+        grokMatchers++;
+      }
   }
 }
 // The Grok template runs one `enforcer event` command per event; the graph-tool matchers live in enforcer/src/event.mjs.
@@ -88,11 +106,21 @@ for (const m of read('enforcer/src/event.mjs').matchAll(/^const (\w+_GRAPH) = .*
 let bad = 0;
 for (const [where, name] of sources) {
   const pre = PREFIXES.find((p) => name.startsWith(p));
-  if (!pre) { console.error(`FAIL ${where}: ${name} is not under a known enforcer server prefix (${PREFIXES.join(', ')})`); bad++; continue; }
+  if (!pre) {
+    console.error(`FAIL ${where}: ${name} is not under a known enforcer server prefix (${PREFIXES.join(', ')})`);
+    bad++;
+    continue;
+  }
   const tool = name.slice(pre.length);
-  if (!registered.has(tool)) { console.error(`FAIL ${where}: ${name} - "${tool}" is not a tool in ${manifestPath}`); bad++; }
+  if (!registered.has(tool)) {
+    console.error(`FAIL ${where}: ${name} - "${tool}" is not a tool in ${manifestPath}`);
+    bad++;
+  }
 }
-if (bad) { console.error(`\n${bad} tool name(s) the MCP server does not register. Rename them to match, or regenerate the manifest if the server changed.`); process.exit(1); }
+if (bad) {
+  console.error(`\n${bad} tool name(s) the MCP server does not register. Rename them to match, or regenerate the manifest if the server changed.`);
+  process.exit(1);
+}
 const profileOnly = new Set();
 for (const [where, name] of sources) {
   const tool = name.slice(PREFIXES.find((p) => name.startsWith(p)).length);

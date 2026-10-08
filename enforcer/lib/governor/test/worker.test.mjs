@@ -5,7 +5,11 @@ import { evaluate } from '../core/worker.mjs';
 import { DOT } from '../../../hooks/claude/paths.mjs';
 
 let pass = 0;
-const ok = (label, fn) => { fn(); pass++; console.log('  ok  ' + label); };
+const ok = (label, fn) => {
+  fn();
+  pass++;
+  console.log('  ok  ' + label);
+};
 const H = { headless: true, branch: 'graph/k1', pluginRoot: '/opt/plugin' };
 const ev = (command, worker = H) => ({ tool: 'shell', name: 'Bash', action: 'Bash:' + command, input: { command }, raw: { command }, worker });
 
@@ -21,11 +25,12 @@ const denied = [
   'gh pr merge 5 --admin',
   'gh api repos/evil.example/x -X DELETE',
 ];
-for (const c of denied) ok('deny delivery_shape: ' + c, () => {
-  const v = evaluate(ev(c));
-  assert.equal(v?.action, 'deny');
-  assert.equal(v.code, 'delivery_shape');
-});
+for (const c of denied)
+  ok('deny delivery_shape: ' + c, () => {
+    const v = evaluate(ev(c));
+    assert.equal(v?.action, 'deny');
+    assert.equal(v.code, 'delivery_shape');
+  });
 
 ok('an untrusted land lookup is denied', () => {
   const v = evaluate(ev('"$(ls -d /tmp/evil/land-pr.sh | tail -1)" 1'));
@@ -60,21 +65,35 @@ ok('a person present: unchanged (no new denial)', () => {
 });
 
 const SP = '~/.config/enforcer/governor/config.json';
-for (const c of [`python3 -c "open('${SP}','w').write('{}')"`, `dd of=${SP} if=/tmp/x`, `rsync /tmp/x ${SP}`,
-  `awk -i inplace '{print}' ${SP}`, `git apply ${SP}.patch`, `echo {} | tee ~/.enforcer/credentials.json`])
-  ok('settings_write: ' + c, () => { assert.equal(evaluate(ev(c))?.code, 'settings_write'); });
-ok('plain read of a settings file: no opinion', () => { assert.equal(evaluate(ev('cat ' + SP)), null); });
-ok('read chained to a write is denied', () => { assert.equal(evaluate(ev('cat ' + SP + ' ; rm ' + SP))?.code, 'settings_write'); });
+for (const c of [
+  `python3 -c "open('${SP}','w').write('{}')"`,
+  `dd of=${SP} if=/tmp/x`,
+  `rsync /tmp/x ${SP}`,
+  `awk -i inplace '{print}' ${SP}`,
+  `git apply ${SP}.patch`,
+  `echo {} | tee ~/.enforcer/credentials.json`,
+])
+  ok('settings_write: ' + c, () => {
+    assert.equal(evaluate(ev(c))?.code, 'settings_write');
+  });
+ok('plain read of a settings file: no opinion', () => {
+  assert.equal(evaluate(ev('cat ' + SP)), null);
+});
+ok('read chained to a write is denied', () => {
+  assert.equal(evaluate(ev('cat ' + SP + ' ; rm ' + SP))?.code, 'settings_write');
+});
 
 // The pinned lander is recognised before the settings guard (verbatim from the field probe).
 const CACHE = '/home/u/' + DOT + '/plugins/cache/instruxi/enforcer/1.0.5';
 ok('cache-path land-pr.sh is graph.land', () => {
   const v = evaluate(ev(CACHE + '/bin/land-pr.sh 101 --timeout 3000'));
-  assert.equal(v.code, 'graph_land_allowed'); assert.equal(v.ruleId, 'graph.land');
+  assert.equal(v.code, 'graph_land_allowed');
+  assert.equal(v.ruleId, 'graph.land');
 });
 ok('node <cache>/bin/enforcer land is graph.land', () => {
   const v = evaluate(ev('node ' + CACHE + '/bin/enforcer land 101'));
-  assert.equal(v.code, 'graph_land_allowed'); assert.equal(v.ruleId, 'graph.land');
+  assert.equal(v.code, 'graph_land_allowed');
+  assert.equal(v.ruleId, 'graph.land');
 });
 ok('CLAUDE_PLUGIN_ROOT land-pr.sh is graph.land', () => {
   assert.equal(evaluate(ev('"${CLAUDE_PLUGIN_ROOT}/bin/land-pr.sh" 101')).code, 'graph_land_allowed');
@@ -100,19 +119,36 @@ console.log(`\n  ${pass} passed`);
 {
   const WT = '/home/u/apps/repo-k1';
   const hev = (command, cwd = WT) => ({ ...ev(command), cwd });
-  const okd = (label, fn) => { fn(); console.log('  ok  ' + label); };
+  const okd = (label, fn) => {
+    fn();
+    console.log('  ok  ' + label);
+  };
   okd('headless rm -rf dist inside the worktree is allowed', () => {
-    const v = evaluate(hev('rm -rf dist')); assert.equal(v.action, 'allow'); assert.equal(v.code ?? v.of?.code, 'worktree_delete_allowed'); });
+    const v = evaluate(hev('rm -rf dist'));
+    assert.equal(v.action, 'allow');
+    assert.equal(v.code ?? v.of?.code, 'worktree_delete_allowed');
+  });
   okd('headless rm -r -f ./build node_modules inside the worktree is allowed', () => {
-    assert.equal(evaluate(hev('rm -r -f ./build node_modules')).action, 'allow'); });
+    assert.equal(evaluate(hev('rm -r -f ./build node_modules')).action, 'allow');
+  });
   okd('rm -rf of a path outside the worktree is not a worker opinion', () => {
-    assert.equal(evaluate(hev('rm -rf ../other')), null); assert.equal(evaluate(hev('rm -rf /tmp/x')), null); assert.equal(evaluate(hev('rm -rf ~/x')), null); });
+    assert.equal(evaluate(hev('rm -rf ../other')), null);
+    assert.equal(evaluate(hev('rm -rf /tmp/x')), null);
+    assert.equal(evaluate(hev('rm -rf ~/x')), null);
+  });
   okd('rm -rf of the worktree itself or .git is not a worker opinion', () => {
-    assert.equal(evaluate(hev('rm -rf .')), null); assert.equal(evaluate(hev('rm -rf .git')), null); assert.equal(evaluate(hev(`rm -rf ${WT}`)), null); });
+    assert.equal(evaluate(hev('rm -rf .')), null);
+    assert.equal(evaluate(hev('rm -rf .git')), null);
+    assert.equal(evaluate(hev(`rm -rf ${WT}`)), null);
+  });
   okd('a chained or globbed delete is not a worker opinion', () => {
-    assert.equal(evaluate(hev('rm -rf dist && echo x')), null); assert.equal(evaluate(hev('rm -rf dist/*')), null); });
+    assert.equal(evaluate(hev('rm -rf dist && echo x')), null);
+    assert.equal(evaluate(hev('rm -rf dist/*')), null);
+  });
   okd('interactive sessions keep the capability ask', () => {
-    assert.equal(evaluate({ ...ev('rm -rf dist', { headless: false, branch: 'graph/k1' }), cwd: WT }), null); });
+    assert.equal(evaluate({ ...ev('rm -rf dist', { headless: false, branch: 'graph/k1' }), cwd: WT }), null);
+  });
   okd('a worker not on a graph branch keeps the capability ask', () => {
-    assert.equal(evaluate({ ...ev('rm -rf dist', { headless: true, branch: 'main' }), cwd: WT }), null); });
+    assert.equal(evaluate({ ...ev('rm -rf dist', { headless: true, branch: 'main' }), cwd: WT }), null);
+  });
 }

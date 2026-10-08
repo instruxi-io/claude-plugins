@@ -56,11 +56,19 @@ export class Verdict {
   }
 
   /** Did a capability rule produce this? Callers used to infer it from entry.rule. */
-  get isCapability() { return this.source === CAPABILITY || this.source === POLICY; }
+  get isCapability() {
+    return this.source === CAPABILITY || this.source === POLICY;
+  }
   /** A capability refusal blocks THIS action; the agent is free to do something else. */
-  get stopsAgent() { return this.action === DENY && !this.isCapability; }
-  get blocks() { return this.action === DENY; }
-  get needsHuman() { return this.action === ASK; }
+  get stopsAgent() {
+    return this.action === DENY && !this.isCapability;
+  }
+  get blocks() {
+    return this.action === DENY;
+  }
+  get needsHuman() {
+    return this.action === ASK;
+  }
 
   /**
    * The receipt body. The chain hashes this, so field order must stay stable.
@@ -70,14 +78,35 @@ export class Verdict {
    * chained but never reaches economics, and conflating the two would label a
    * perfectly good receipt as degraded.
    */
-  entry({ ts = new Date().toISOString(), agent, tool = '', model = '', tokens = 0,
-          operator = '', client = '', chained = true, meter = undefined,
-          harness = '', adapterVersion = '', spentUsd = undefined, runId = undefined, graphId = undefined } = {}) {
+  entry({
+    ts = new Date().toISOString(),
+    agent,
+    tool = '',
+    model = '',
+    tokens = 0,
+    operator = '',
+    client = '',
+    chained = true,
+    meter = undefined,
+    harness = '',
+    adapterVersion = '',
+    spentUsd = undefined,
+    runId = undefined,
+    graphId = undefined,
+  } = {}) {
     return {
-      ts, agent, verdict: this.action, reason: this.reason, source: this.source,
+      ts,
+      agent,
+      verdict: this.action,
+      reason: this.reason,
+      source: this.source,
       rule: this.rule || undefined,
       rewrote: this.input ? true : undefined,
-      tool, model, tokens, operator: operator || undefined, client: client || undefined,
+      tool,
+      model,
+      tokens,
+      operator: operator || undefined,
+      client: client || undefined,
       meter: meter || undefined,
       // Present only on the degraded path: an answer given without reading the
       // books at all, so a reader can tell an allow that was checked from one
@@ -106,8 +135,16 @@ export class Verdict {
     };
   }
 
-  static allow(reason, opts = {}) { return new Verdict({ ...opts, action: ALLOW, reason }); }
-  static deny(reason, opts = {}) { return new Verdict({ ...opts, action: DENY, reason }); }
-  static ask(reason, opts = {}) { return new Verdict({ ...opts, action: ASK, reason }); }
-  static rewrite(input, reason, opts = {}) { return new Verdict({ ...opts, action: REWRITE, reason, input }); }
+  static allow(reason, opts = {}) {
+    return new Verdict({ ...opts, action: ALLOW, reason });
+  }
+  static deny(reason, opts = {}) {
+    return new Verdict({ ...opts, action: DENY, reason });
+  }
+  static ask(reason, opts = {}) {
+    return new Verdict({ ...opts, action: ASK, reason });
+  }
+  static rewrite(input, reason, opts = {}) {
+    return new Verdict({ ...opts, action: REWRITE, reason, input });
+  }
 }

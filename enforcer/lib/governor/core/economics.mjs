@@ -16,14 +16,16 @@
 
 import { Verdict, ECONOMICS, CAPABILITY, OPERATOR } from './verdict.mjs';
 import { nameOf } from './tools.mjs';
-import {
-  PERIODS, burnRate, spawnRate, addSpend, getAgent, setModel, clientFor,
-  rollPeriods, modelAdvice, taskShape, BURN_WINDOW, dayKey,
-} from './policy.mjs';
+import { PERIODS, burnRate, spawnRate, addSpend, getAgent, setModel, clientFor, rollPeriods, modelAdvice, taskShape, BURN_WINDOW, dayKey } from './policy.mjs';
 
 const of = { source: ECONOMICS, checked: [CAPABILITY, ECONOMICS] };
-const ground = (a, by) => { a.status = 'grounded'; a.groundedBy = by; };
-const pause = (a) => { a.status = 'paused'; };
+const ground = (a, by) => {
+  a.status = 'grounded';
+  a.groundedBy = by;
+};
+const pause = (a) => {
+  a.status = 'paused';
+};
 // An ask the hook cannot see answered. It is remembered; post-tool-use clears it
 // when the tool ran (the user said yes), so a 'no' is whatever is still here.
 const asking = (a, reason, now) => {
@@ -42,7 +44,7 @@ export function ingest(state, ev, cfg, now) {
   if (cfg.operator) a.operator = cfg.operator;
   if (ev.task) a.task = ev.task;
   if (ev.model) setModel(a, ev.model);
-  a.tool = nameOf(ev) || a.tool;   // the harness's name, not the kind: state reads as it always has
+  a.tool = nameOf(ev) || a.tool; // the harness's name, not the kind: state reads as it always has
   if (ev.cwd) a.cwd = ev.cwd;
   // An explicit client always wins over a derived one, so a header or a config
   // entry can correct a directory that guessed wrong.
@@ -55,9 +57,10 @@ export function ingest(state, ev, cfg, now) {
   // every comparison against the budget silently evaluates false and the agent
   // is never stopped at all. Infinity poisons the running totals permanently,
   // and a negative lets a caller rewind its own spend.
-  const clean = n => (typeof n === 'number' && Number.isFinite(n) && n >= 0) ? n : null;
+  const clean = (n) => (typeof n === 'number' && Number.isFinite(n) && n >= 0 ? n : null);
   const was = a.tokens;
-  const abs = clean(ev.tokens), delta = clean(ev.deltaTokens);
+  const abs = clean(ev.tokens),
+    delta = clean(ev.deltaTokens);
   // Cumulative totals only move forward; a lower figure means a restarted or
   // re-read transcript, not spend that un-happened.
   if (abs !== null) a.tokens = Math.max(a.tokens, abs);
@@ -73,16 +76,21 @@ export function ingest(state, ev, cfg, now) {
 /** A human stop latches; spend stops do not, so raising a limit frees an agent. */
 function latched(state, a, ev, cfg) {
   if (a.status === 'grounded' && a.groundedBy === 'human') {
-    return Verdict.deny('you stopped this agent. Resume it with /enforcer-governor:resume',
-      { ...of, source: OPERATOR });
+    return Verdict.deny('you stopped this agent. Resume it with /enforcer-governor:resume', { ...of, source: OPERATOR });
   }
-  if (a.status === 'grounded') { a.status = 'active'; a.groundedBy = undefined; }
+  if (a.status === 'grounded') {
+    a.status = 'active';
+    a.groundedBy = undefined;
+  }
   return null;
 }
 
 /** A declined ask stays declined until the user clears it or the day rolls. */
 function declined(state, a, ev, cfg, now) {
-  if (a.pendingAsk && a.pendingAsk.day !== dayKey(now)) { a.pendingAsk = undefined; if (a.status === 'paused') a.status = 'active'; }
+  if (a.pendingAsk && a.pendingAsk.day !== dayKey(now)) {
+    a.pendingAsk = undefined;
+    if (a.status === 'paused') a.status = 'active';
+  }
   if (a.pendingAsk) {
     return Verdict.deny(`you did not approve this: ${a.pendingAsk.reason}. Resume it with /enforcer-governor:resume`, { ...of, source: OPERATOR });
   }
@@ -96,7 +104,8 @@ function periodCaps(state, a, ev, cfg) {
   const caps = { day: cfg.dailyLimit, week: cfg.weeklyLimit, month: cfg.monthlyLimit };
   const word = { day: 'today', week: 'this week', month: 'this month' };
   for (const [name] of PERIODS) {
-    const cap = caps[name], spent = state.periods[name].usd;
+    const cap = caps[name],
+      spent = state.periods[name].usd;
     if (cap > 0 && spent >= cap) {
       ground(a, name);
       return Verdict.deny(`your agents have spent $${spent.toFixed(2)} ${word[name]}, which is your $${cap} limit`, of);
@@ -108,12 +117,17 @@ function periodCaps(state, a, ev, cfg) {
 /** Speed before totals: by the time a daily cap notices, the day's money is gone. */
 function burn(state, a, ev, cfg, now) {
   if (!cfg.budgetOn || a.burnFlagged) return null;
-  const mine = burnRate(state, now, a.id), all = burnRate(state, now);
-  const hit = cfg.burnLimit > 0 && mine >= cfg.burnLimit ? ['this agent is spending', mine, cfg.burnLimit]
-            : cfg.fleetBurnLimit > 0 && all >= cfg.fleetBurnLimit ? ['your agents together are spending', all, cfg.fleetBurnLimit]
-            : null;
+  const mine = burnRate(state, now, a.id),
+    all = burnRate(state, now);
+  const hit =
+    cfg.burnLimit > 0 && mine >= cfg.burnLimit
+      ? ['this agent is spending', mine, cfg.burnLimit]
+      : cfg.fleetBurnLimit > 0 && all >= cfg.fleetBurnLimit
+        ? ['your agents together are spending', all, cfg.fleetBurnLimit]
+        : null;
   if (!hit) return null;
-  a.burnFlagged = true; pause(a);
+  a.burnFlagged = true;
+  pause(a);
   return asking(a, `${hit[0]} $${hit[1].toFixed(2)} a minute, over your $${hit[2]} a minute mark`, now);
 }
 
@@ -122,9 +136,9 @@ function fanout(state, a, ev, cfg, now) {
   if (!cfg.budgetOn || !(cfg.fanoutLimit > 0) || state.fanoutFlagged) return null;
   const spawned = spawnRate(state, now);
   if (spawned < cfg.fanoutLimit) return null;
-  state.fanoutFlagged = true; pause(a);
-  return asking(a,
-    `${spawned} new agents started in the last minute, and you asked to be told past ${cfg.fanoutLimit}`, now);
+  state.fanoutFlagged = true;
+  pause(a);
+  return asking(a, `${spawned} new agents started in the last minute, and you asked to be told past ${cfg.fanoutLimit}`, now);
 }
 
 /** A rate-limited call fails cheaply; the retry does not. */
@@ -132,9 +146,9 @@ function retryStorm(state, a, ev, cfg, now) {
   if (!cfg.budgetOn || !(cfg.retryLimit > 0) || !a.fails || a.retryFlagged) return null;
   const recent = a.fails.reduce((n, t) => n + (t > now - BURN_WINDOW ? 1 : 0), 0);
   if (recent < cfg.retryLimit) return null;
-  a.retryFlagged = true; pause(a);
-  return asking(a,
-    `it hit ${recent} errors in a minute and kept going, which is a retry loop, not progress`, now);
+  a.retryFlagged = true;
+  pause(a);
+  return asking(a, `it hit ${recent} errors in a minute and kept going, which is a retry loop, not progress`, now);
 }
 
 function clientCap(state, a, ev, cfg) {
@@ -143,8 +157,7 @@ function clientCap(state, a, ev, cfg) {
   const spent = state.clients.month.by[a.client] || 0;
   if (!(cap > 0) || spent < cap) return null;
   ground(a, 'client');
-  return Verdict.deny(
-    `work for ${a.client} has cost $${spent.toFixed(2)} this month, which is its $${cap} limit`, of);
+  return Verdict.deny(`work for ${a.client} has cost $${spent.toFixed(2)} this month, which is its $${cap} limit`, of);
 }
 
 function hardLimit(state, a, ev, cfg) {
@@ -166,9 +179,17 @@ function softLimit(state, a, ev, cfg, now) {
 
 const CHECKS = [latched, declined, periodCaps, burn, fanout, retryStorm, clientCap, hardLimit, softLimit];
 // Each check's machine code (codes.mjs), stamped on the verdict it returns.
-const CHECK_CODES = new Map([[latched, 'agent_stopped'], [declined, 'ask_declined'], [periodCaps, 'period_limit'],
-  [burn, 'burn_rate'], [fanout, 'fanout_rate'], [retryStorm, 'retry_storm'], [clientCap, 'client_limit'],
-  [hardLimit, 'spend_limit'], [softLimit, 'spend_warning']]);
+const CHECK_CODES = new Map([
+  [latched, 'agent_stopped'],
+  [declined, 'ask_declined'],
+  [periodCaps, 'period_limit'],
+  [burn, 'burn_rate'],
+  [fanout, 'fanout_rate'],
+  [retryStorm, 'retry_storm'],
+  [clientCap, 'client_limit'],
+  [hardLimit, 'spend_limit'],
+  [softLimit, 'spend_warning'],
+]);
 
 /**
  * Run Layer B. Advances state, then judges.

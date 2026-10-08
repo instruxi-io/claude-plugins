@@ -20,7 +20,8 @@ const scan = (sub, local) => {
       const spec = m[1] || m[2] || m[3];
       // One sanctioned exception: core/credentials.mjs re-exports the single
       // shared credentials module, so the plugin and governor cannot drift.
-      const shared = (join(sub, f) === 'credentials.mjs' && spec === '../../../src/credentials.mjs') || (join(sub, f) === 'http.mjs' && spec === '../../api/client.mjs');
+      const shared =
+        (join(sub, f) === 'credentials.mjs' && spec === '../../../src/credentials.mjs') || (join(sub, f) === 'http.mjs' && spec === '../../api/client.mjs');
       const ok = spec.startsWith('node:') || local.test(spec) || shared;
       if (!ok) bad.push(`${join(sub, f)} imports ${spec}`);
     }
@@ -29,6 +30,12 @@ const scan = (sub, local) => {
 scan('', /^\.\/[a-z-]+\.mjs$/);
 scan('test', /^\.\.\/[a-z-]+\.mjs$/);
 scan('bin', /^\.\.\/[a-z-]+\.mjs$/);
-if (!files) { console.error('FAIL: core/ has no modules'); process.exit(1); }
-if (bad.length) { console.error('FAIL: core/ must import only core/ and node: built-ins:\n  ' + bad.join('\n  ')); process.exit(1); }
+if (!files) {
+  console.error('FAIL: core/ has no modules');
+  process.exit(1);
+}
+if (bad.length) {
+  console.error('FAIL: core/ must import only core/ and node: built-ins:\n  ' + bad.join('\n  '));
+  process.exit(1);
+}
 console.log(`core/ imports only core/ and node: built-ins (${files} modules) ok`);

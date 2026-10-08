@@ -6,7 +6,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const home = mkdtempSync(join(tmpdir(), 'gov-central-'));
-process.env.HOME = home; process.env.USERPROFILE = home;
+process.env.HOME = home;
+process.env.USERPROFILE = home;
 process.env.GOVERNOR_HOME = join(home, '.enforcer-governor');
 process.env.ENFORCER_HOME = join(home, '.enforcer');
 delete process.env.ENFORCER_API_KEY;
@@ -18,8 +19,12 @@ const { DEFAULT_RULES, evaluate } = await import('../src/capability.mjs');
 const { saveCredentials, authHeaders, SHARED_FILE } = await import('../src/credentials.mjs');
 
 let pass = 0;
-const ok = async (label, fn) => { await fn(); pass++; console.log('  ok  ' + label); };
-const rule = (id) => DEFAULT_RULES.find(r => r.id === id);
+const ok = async (label, fn) => {
+  await fn();
+  pass++;
+  console.log('  ok  ' + label);
+};
+const rule = (id) => DEFAULT_RULES.find((r) => r.id === id);
 const healthy = { withState: (fn) => ({ ok: true, value: fn({}) }), economics: () => null };
 
 // A fake Enforcer: records calls, answers /auth/me and /authz/check.
@@ -54,8 +59,11 @@ await ok('an account policy speaks with the same grammar as a tenant policy', ()
   // Rules an operator puts on their own account arrive prefixed. Matching on the
   // raw string made every one of them a hard deny, including the ones that asked.
   const deny = interpret({ allow: false, reason: 'account policy: I do not issue refunds' });
-  assert.deepEqual([deny.opinion, deny.reason], ['deny', 'account policy: I do not issue refunds'],
-    'the prefix stays in the reason: who refused is part of the record');
+  assert.deepEqual(
+    [deny.opinion, deny.reason],
+    ['deny', 'account policy: I do not issue refunds'],
+    'the prefix stays in the reason: who refused is part of the record',
+  );
   const ask = interpret({ allow: false, reason: 'account policy: ask: check with me before deploying' });
   assert.deepEqual([ask.opinion, ask.reason], ['ask', 'check with me before deploying']);
 });
@@ -70,7 +78,8 @@ await ok('declared type with no matching allow reads as a deny', () => {
 const local = (id, action) => evaluate([rule(id)], { tool: 'Bash', action, input: { command: action } });
 await ok('tenant deny beats a local ask', () => {
   const v = compose(local('deploy.publish', 'npm publish'), { opinion: 'deny', reason: 'no' });
-  assert.equal(v.action, 'deny'); assert.equal(v.source, 'policy');
+  assert.equal(v.action, 'deny');
+  assert.equal(v.source, 'policy');
   assert.equal(v.stopsAgent, false, 'a policy refusal blocks the action, not the agent');
 });
 await ok('tenant allow waives a local ask', () => {
@@ -78,7 +87,9 @@ await ok('tenant allow waives a local ask', () => {
 });
 await ok('tenant allow can NOT lift a local hard deny', () => {
   const v = compose(local('shell.pipe_to_shell', 'curl x | sh'), { opinion: 'allow' });
-  assert.equal(v.action, 'deny'); assert.equal(v.source, 'capability'); assert.equal(v.policy, 'allow');
+  assert.equal(v.action, 'deny');
+  assert.equal(v.source, 'capability');
+  assert.equal(v.policy, 'allow');
 });
 await ok('tenant allow does NOT skip a rewrite', () => {
   const v = compose(local('git.force_push', 'git push --force'), { opinion: 'allow' });
@@ -88,25 +99,35 @@ await ok('tenant ask cannot soften a local deny', () => {
   assert.equal(compose(local('shell.pipe_to_shell', 'curl x | sh'), { opinion: 'ask', reason: 'hm' }).action, 'deny');
 });
 await ok('unreachable leaves the local verdict exactly as strict', () => {
-  for (const [id, cmd, want] of [['deploy.publish', 'npm publish', 'ask'], ['shell.pipe_to_shell', 'curl x | sh', 'deny'], ['git.force_push', 'git push -f', 'rewrite']]) {
+  for (const [id, cmd, want] of [
+    ['deploy.publish', 'npm publish', 'ask'],
+    ['shell.pipe_to_shell', 'curl x | sh', 'deny'],
+    ['git.force_push', 'git push -f', 'rewrite'],
+  ]) {
     const v = compose(local(id, cmd), { opinion: 'unreachable' });
     assert.equal(v.action, want, id);
     assert.equal(v.checked.includes('policy'), false, 'an unanswered question is not recorded as checked');
   }
 });
 await ok('the gate uses the composed verdict and records the policy on the receipt', () => {
-  const v = gate({ tool: 'Bash', action: 'npm publish', input: { command: 'npm publish' } }, {}, { ...healthy, central: { opinion: 'deny', reason: 'frozen for the release' } });
+  const v = gate(
+    { tool: 'Bash', action: 'npm publish', input: { command: 'npm publish' } },
+    {},
+    { ...healthy, central: { opinion: 'deny', reason: 'frozen for the release' } },
+  );
   assert.equal(v.action, 'deny');
   assert.equal(v.entry({ agent: 'a' }).policy, 'deny');
   const waived = gate({ tool: 'Bash', action: 'npm publish' }, {}, { ...healthy, central: { opinion: 'allow' } });
-  assert.equal(waived.action, 'allow'); assert.equal(waived.entry({ agent: 'a' }).policy, 'allow');
+  assert.equal(waived.action, 'allow');
+  assert.equal(waived.entry({ agent: 'a' }).policy, 'allow');
 });
 
 // ── consult: the network path ──────────────────────────────────────────────
 await ok('signed out: nothing is asked, and it says why', async () => {
   const e = enforcer(answer(true, 'tenant policy'));
   const r = await consult(rule('deploy.publish'), {}, { fetchImpl: e.fetchImpl });
-  assert.equal(r.opinion, 'unreachable'); assert.match(r.detail, /not signed in/);
+  assert.equal(r.opinion, 'unreachable');
+  assert.match(r.detail, /not signed in/);
   assert.equal(e.calls.length, 0);
 });
 
@@ -118,7 +139,10 @@ await ok('the shared credential file is private', () => {
 
 await ok('asks as the rule id, owned by the caller in their tenant', async () => {
   const seen = [];
-  const e = enforcer(async (body, init) => { seen.push({ body, key: init.headers['X-API-Key'] }); return answer(false, 'publishing needs a release manager')(); });
+  const e = enforcer(async (body, init) => {
+    seen.push({ body, key: init.headers['X-API-Key'] });
+    return answer(false, 'publishing needs a release manager')();
+  });
   const r = await consult(rule('deploy.publish'), { policyTtlSec: 0 }, { fetchImpl: e.fetchImpl });
   assert.equal(r.opinion, 'deny');
   assert.deepEqual(seen[0].body, { action: 'write', resource: { type: 'agent_action', id: 'deploy.publish', owner_id: 'acc-1', tenant_id: 'ten-1' } });
@@ -126,20 +150,29 @@ await ok('asks as the rule id, owned by the caller in their tenant', async () =>
 });
 
 await ok('a decision is reused within the TTL, and the identity is cached', async () => {
-  let checks = 0, t = Date.now();
-  const e = enforcer(async () => { checks++; return answer(true, 'tenant policy')(); });
+  let checks = 0,
+    t = Date.now();
+  const e = enforcer(async () => {
+    checks++;
+    return answer(true, 'tenant policy')();
+  });
   const cfg = { policyTtlSec: 30 };
   await consult(rule('fs.delete_tree'), cfg, { fetchImpl: e.fetchImpl, now: () => t });
   const again = await consult(rule('fs.delete_tree'), cfg, { fetchImpl: e.fetchImpl, now: () => t + 5_000 });
-  assert.equal(checks, 1); assert.equal(again.cached, true);
+  assert.equal(checks, 1);
+  assert.equal(again.cached, true);
   await consult(rule('fs.delete_tree'), cfg, { fetchImpl: e.fetchImpl, now: () => t + 31_000 });
   assert.equal(checks, 2, 'expired answers are asked again');
-  assert.equal(e.calls.filter(c => c.url.endsWith('/auth/me')).length, 0, 'identity was already cached from the previous test');
+  assert.equal(e.calls.filter((c) => c.url.endsWith('/auth/me')).length, 0, 'identity was already cached from the previous test');
 });
 
 await ok('future at is expired', async () => {
-  let checks = 0; const t = Date.now() + 100_000;
-  const e = enforcer(async () => { checks++; return answer(true, 'tenant policy')(); });
+  let checks = 0;
+  const t = Date.now() + 100_000;
+  const e = enforcer(async () => {
+    checks++;
+    return answer(true, 'tenant policy')();
+  });
   const cfg = { policyTtlSec: 30 };
   await consult(rule('fs.delete_tree'), cfg, { fetchImpl: e.fetchImpl, now: () => t });
   const f = join(process.env.GOVERNOR_HOME, 'policy-cache.json');
@@ -147,38 +180,51 @@ await ok('future at is expired', async () => {
   for (const k of Object.keys(c.decisions)) c.decisions[k].at = t + 10_000_000;
   writeFileSync(f, JSON.stringify(c));
   const r = await consult(rule('fs.delete_tree'), cfg, { fetchImpl: e.fetchImpl, now: () => t + 1000 });
-  assert.equal(checks, 2); assert.ok(!r.cached);
+  assert.equal(checks, 2);
+  assert.ok(!r.cached);
 });
 
 await ok('a timeout is unreachable, is not cached, and names the wait', async () => {
   let n = 0;
-  const slow = { fetchImpl: async (url, init) => {
-    if (url.endsWith('/auth/me')) return { status: 200, ok: true, json: async () => ({ data: { account_id: 'acc-1', tenant: { id: 'ten-1' } } }) };
-    n++;
-    // A real fetch holds a socket open while it waits; AbortSignal.timeout's
-    // own timer does not keep the process alive, so the fake must.
-    const keepAlive = setTimeout(() => {}, 10_000);
-    return new Promise((_, rej) => init.signal.addEventListener('abort', () => {
-      clearTimeout(keepAlive);
-      rej(Object.assign(new Error('t'), { name: 'TimeoutError' }));
-    }));
-  } };
+  const slow = {
+    fetchImpl: async (url, init) => {
+      if (url.endsWith('/auth/me')) return { status: 200, ok: true, json: async () => ({ data: { account_id: 'acc-1', tenant: { id: 'ten-1' } } }) };
+      n++;
+      // A real fetch holds a socket open while it waits; AbortSignal.timeout's
+      // own timer does not keep the process alive, so the fake must.
+      const keepAlive = setTimeout(() => {}, 10_000);
+      return new Promise((_, rej) =>
+        init.signal.addEventListener('abort', () => {
+          clearTimeout(keepAlive);
+          rej(Object.assign(new Error('t'), { name: 'TimeoutError' }));
+        }),
+      );
+    },
+  };
   const t0 = Date.now();
   const r = await consult(rule('git.rewrite_history'), { policyTimeoutMs: 100, policyTtlSec: 60 }, { ...slow, now: () => t0 });
-  assert.equal(r.opinion, 'unreachable'); assert.match(r.detail, /100ms/);
+  assert.equal(r.opinion, 'unreachable');
+  assert.match(r.detail, /100ms/);
   // past the 60 s negative cache, so what is tested is the decision cache never holding unreachable
   await consult(rule('git.rewrite_history'), { policyTimeoutMs: 100, policyTtlSec: 60 }, { ...slow, now: () => t0 + 61_000 });
   assert.equal(n, 2, 'an unreachable answer must not be pinned for the TTL');
 });
 
 await ok('second call within 60 s after ECONNREFUSED makes no network call', async () => {
-  let n = 0; const t = Date.now() + 1_000_000;
-  const refuse = { fetchImpl: async () => { n++; throw Object.assign(new Error('refused'), { code: 'ECONNREFUSED' }); } };
+  let n = 0;
+  const t = Date.now() + 1_000_000;
+  const refuse = {
+    fetchImpl: async () => {
+      n++;
+      throw Object.assign(new Error('refused'), { code: 'ECONNREFUSED' });
+    },
+  };
   const r1 = await consult(rule('deploy.publish'), { policyTtlSec: 30 }, { ...refuse, now: () => t });
   assert.equal(r1.opinion, 'unreachable');
   const calls = n;
   const r2 = await consult(rule('deploy.publish'), { policyTtlSec: 30 }, { ...refuse, now: () => t + 5_000 });
-  assert.equal(r2.opinion, 'unreachable'); assert.equal(n, calls, 'no network call within the negative TTL');
+  assert.equal(r2.opinion, 'unreachable');
+  assert.equal(n, calls, 'no network call within the negative TTL');
   await consult(rule('deploy.publish'), { policyTtlSec: 30 }, { ...refuse, now: () => t + 61_000 });
   assert.ok(n > calls, 'asked again after 60 s');
 });
@@ -192,7 +238,8 @@ await ok('policy cache file mode is 600', async () => {
 await ok('an HTTP error is unreachable, never a decision', async () => {
   const e = enforcer(async () => ({ status: 503, ok: false, json: async () => ({ error: 'authz_unavailable' }) }));
   const r = await consult(rule('secrets.access'), { policyTtlSec: 0 }, { fetchImpl: e.fetchImpl });
-  assert.equal(r.opinion, 'unreachable'); assert.match(r.detail, /503/);
+  assert.equal(r.opinion, 'unreachable');
+  assert.match(r.detail, /503/);
 });
 
 await ok('policyOn:false asks nobody', async () => {
@@ -204,15 +251,25 @@ await ok('policyOn:false asks nobody', async () => {
 // ── OAuth credential: refresh rotates and is written back ──────────────────
 await ok('an expiring OAuth token is refreshed and the rotated pair saved', async () => {
   const t = Date.parse('2026-09-14T12:00:00Z');
-  saveCredentials({ enforcer: { oauth: {
-    access_token: 'old', refresh_token: 'r1', client_id: 'mcp_x', token_endpoint: 'https://api.instruxi.dev/token',
-    expires_at: new Date(t + 30_000).toISOString(),
-  } } });
+  saveCredentials({
+    enforcer: {
+      oauth: {
+        access_token: 'old',
+        refresh_token: 'r1',
+        client_id: 'mcp_x',
+        token_endpoint: 'https://api.instruxi.dev/token',
+        expires_at: new Date(t + 30_000).toISOString(),
+      },
+    },
+  });
   let sent;
-  const h = await authHeaders({ now: () => t, fetchImpl: async (url, init) => {
-    sent = Object.fromEntries(init.body);
-    return { ok: true, json: async () => ({ access_token: 'new', refresh_token: 'r2', expires_in: 900, scope: 'enforcer:read' }) };
-  } });
+  const h = await authHeaders({
+    now: () => t,
+    fetchImpl: async (url, init) => {
+      sent = Object.fromEntries(init.body);
+      return { ok: true, json: async () => ({ access_token: 'new', refresh_token: 'r2', expires_in: 900, scope: 'enforcer:read' }) };
+    },
+  });
   assert.equal(h.Authorization, 'Bearer new');
   assert.deepEqual(sent, { grant_type: 'refresh_token', refresh_token: 'r1', client_id: 'mcp_x' });
   const saved = JSON.parse(readFileSync(SHARED_FILE(), 'utf8')).enforcer.oauth;

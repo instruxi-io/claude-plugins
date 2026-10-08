@@ -33,7 +33,12 @@ const srv = createServer((req, res) => {
 });
 await new Promise((r) => srv.listen(0, '127.0.0.1', r));
 const base = `http://127.0.0.1:${srv.address().port}`;
-after(() => { srv.close(); try { rmSync(home, { recursive: true, force: true }); } catch {} });
+after(() => {
+  srv.close();
+  try {
+    rmSync(home, { recursive: true, force: true });
+  } catch {}
+});
 
 const { createGovernor } = await import('../core/index.mjs');
 const { shadow } = await import('../core/shadow.mjs');
@@ -104,9 +109,12 @@ test('shadow adds no would field when rulesOn is true', async () => {
 });
 
 test('shadow never consults the tenant policy', async () => {
-  writeFileSync(join(process.env.ENFORCER_HOME, 'credentials.json'), JSON.stringify({
-    enforcer: { base_url: base, oauth: { client_id: 'client-1', access_token: 'at-1', expires_at: '2999-01-01T00:00:00Z' } },
-  }));
+  writeFileSync(
+    join(process.env.ENFORCER_HOME, 'credentials.json'),
+    JSON.stringify({
+      enforcer: { base_url: base, oauth: { client_id: 'client-1', access_token: 'at-1', expires_at: '2999-01-01T00:00:00Z' } },
+    }),
+  );
   try {
     // Signed in, policy on, rules off: the shadow verdict is recorded and nobody is asked.
     setConfig({ rulesOn: false, policyOn: true, centralUrl: base, policyTtlSec: 0 });
@@ -132,7 +140,9 @@ test('shadow never consults the tenant policy', async () => {
 
 test('an error in shadow evaluation is swallowed', async () => {
   // Unit: a rule resolver that throws gives no `would`, and no throw.
-  const boom = () => { throw new Error('boom'); };
+  const boom = () => {
+    throw new Error('boom');
+  };
   assert.equal(shadow(bash('rm -rf ~'), { rulesOn: false, shadow: true }, { rules: boom }), undefined);
 
   // End to end: a broken rules list (not an array) only breaks the shadow
@@ -162,5 +172,7 @@ test('the decide command answers allow with checks_off and records would on a fr
   assert.equal(rec.code, 'checks_off');
   const receipt = JSON.parse(readFileSync(join(gdir, 'receipts.jsonl'), 'utf8').trim().split('\n').pop());
   assert.equal(receipt.would.rule, 'fs.delete_tree');
-  try { rmSync(h, { recursive: true, force: true }); } catch {}
+  try {
+    rmSync(h, { recursive: true, force: true });
+  } catch {}
 });

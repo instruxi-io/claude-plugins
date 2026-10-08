@@ -20,14 +20,17 @@ function fixture() {
   writeFileSync(join(gov, 'cost-old.json'), JSON.stringify({ usd: 99, at: now - 40 * 86400e3 }));
   const ts = new Date(now - 5000).toISOString();
   const rec = (o) => JSON.stringify({ ts, agent: 'claude:s1', client: 'acme', source: 'capability', reason: SECRET, ...o });
-  writeFileSync(join(gov, 'receipts.jsonl'), [
-    rec({ verdict: 'allow', tool: 'Bash', source: 'economics', chained: undefined }),
-    rec({ verdict: 'allow', tool: 'Read', source: 'economics' }),
-    rec({ verdict: 'deny', tool: 'Bash', rule: 'shell.pipe_to_shell' }),
-    rec({ verdict: 'ask', tool: 'Bash', rule: 'deploy.publish', would: undefined }),
-    rec({ verdict: 'allow', tool: 'Edit', source: 'economics', would: { decision: 'deny', code: 'destructive_delete', rule: 'fs.delete_tree' } }),
-    rec({ verdict: 'summary', tool: '', model: 'claude-sonnet-5-5', tokens: 1000, cost_usd: 1.5 }),
-  ].join('\n') + '\n');
+  writeFileSync(
+    join(gov, 'receipts.jsonl'),
+    [
+      rec({ verdict: 'allow', tool: 'Bash', source: 'economics', chained: undefined }),
+      rec({ verdict: 'allow', tool: 'Read', source: 'economics' }),
+      rec({ verdict: 'deny', tool: 'Bash', rule: 'shell.pipe_to_shell' }),
+      rec({ verdict: 'ask', tool: 'Bash', rule: 'deploy.publish', would: undefined }),
+      rec({ verdict: 'allow', tool: 'Edit', source: 'economics', would: { decision: 'deny', code: 'destructive_delete', rule: 'fs.delete_tree' } }),
+      rec({ verdict: 'summary', tool: '', model: 'claude-sonnet-5-5', tokens: 1000, cost_usd: 1.5 }),
+    ].join('\n') + '\n',
+  );
   return { home, gov };
 }
 function run(home, gov, args) {
@@ -70,7 +73,10 @@ test('report json has the same totals as the table', () => {
   assert.match(t, new RegExp(`Tokens: ${j.tokens}`));
   assert.equal(j.spend_usd, 3.75);
   assert.equal(j.tokens, 1000);
-  assert.equal(Object.values(j.spend_by_agent).reduce((a, b) => a + b, 0), j.spend_usd);
+  assert.equal(
+    Object.values(j.spend_by_agent).reduce((a, b) => a + b, 0),
+    j.spend_usd,
+  );
 });
 
 test('report prints no command text by default', () => {

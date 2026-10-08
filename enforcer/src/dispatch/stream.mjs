@@ -51,13 +51,20 @@ export function* grokEvents(path) {
     yield { type: 'assistant', message: { content: [] } };
   }
   const ok = o.stopReason === 'end_turn';
-  yield { type: 'result', subtype: ok ? 'success' : 'error_' + String(o.stopReason), result: o.text,
-          usage: o.usage, num_turns: n, session_id: sid, total_cost_usd: o.total_cost_usd, message: {} };
+  yield {
+    type: 'result',
+    subtype: ok ? 'success' : 'error_' + String(o.stopReason),
+    result: o.text,
+    usage: o.usage,
+    num_turns: n,
+    session_id: sid,
+    total_cost_usd: o.total_cost_usd,
+    message: {},
+  };
 }
 
 export function codexEvents() {
-  throw new Error('codex stream parser: no fixture (no real `codex exec --json` sample ' +
-                  'is recorded); refusing to guess the schema');
+  throw new Error('codex stream parser: no fixture (no real `codex exec --json` sample ' + 'is recorded); refusing to guess the schema');
 }
 
 export const HARNESS_PARSERS = { grok: grokEvents, codex: codexEvents };

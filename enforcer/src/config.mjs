@@ -16,7 +16,11 @@ import { readCredentials } from './credentials.mjs';
 export const DEFAULT_BASE_URL = 'https://api.instruxi.dev';
 
 export class ConfigError extends Error {
-  constructor(variable, message) { super(`${variable}: ${message}`); this.name = 'ConfigError'; this.variable = variable; }
+  constructor(variable, message) {
+    super(`${variable}: ${message}`);
+    this.name = 'ConfigError';
+    this.variable = variable;
+  }
 }
 
 const num = (min, max) => (v, name) => {
@@ -24,12 +28,23 @@ const num = (min, max) => (v, name) => {
   if (v.trim() === '' || !Number.isFinite(n) || n < min || n > max) throw new ConfigError(name, `must be a number between ${min} and ${max}, got "${v}"`);
 };
 const url = (v, name) => {
-  let u; try { u = new URL(v); } catch { throw new ConfigError(name, `must be an absolute http(s) URL, got "${v}"`); }
+  let u;
+  try {
+    u = new URL(v);
+  } catch {
+    throw new ConfigError(name, `must be an absolute http(s) URL, got "${v}"`);
+  }
   if (u.protocol !== 'https:' && u.protocol !== 'http:') throw new ConfigError(name, `must be http(s), got "${v}"`);
 };
-const oneOf = (...ok) => (v, name) => { if (!ok.includes(v)) throw new ConfigError(name, `must be one of ${ok.join(', ')}, got "${v}"`); };
+const oneOf =
+  (...ok) =>
+  (v, name) => {
+    if (!ok.includes(v)) throw new ConfigError(name, `must be one of ${ok.join(', ')}, got "${v}"`);
+  };
 const flag = oneOf('0', '1', 'true', 'false', '', 'yes', 'no');
-const nonEmpty = (v, name) => { if (!v.trim()) throw new ConfigError(name, 'must not be blank'); };
+const nonEmpty = (v, name) => {
+  if (!v.trim()) throw new ConfigError(name, 'must not be blank');
+};
 
 /** Every variable the plugin reads: name -> {default, check}. docs/CONFIG.md lists these. */
 export const VARS = {
@@ -63,7 +78,12 @@ export function validateEnv(env = process.env) {
   for (const [name, spec] of Object.entries(VARS)) {
     const v = env[name];
     if (v === undefined || (v === '' && !spec.blankIsError)) continue; // blank means unset, except where blank would silently change behavior
-    try { spec.check(String(v), name); } catch (e) { if (e instanceof ConfigError) errors.push(e); else throw e; }
+    try {
+      spec.check(String(v), name);
+    } catch (e) {
+      if (e instanceof ConfigError) errors.push(e);
+      else throw e;
+    }
   }
   return errors;
 }
@@ -98,16 +118,29 @@ export function resolveConfig({ flag: flagBase, env = process.env, saved } = {})
   const doc = saved === undefined ? readCredentials() : saved;
   const savedBase = doc?.enforcer?.base_url;
   let base, source;
-  if (flagBase) { base = flagBase; source = 'flag'; }
-  else if (envBaseUrl(env)) { base = envBaseUrl(env); source = 'ENFORCER_BASE_URL'; }
-  else if (savedBase) { base = savedBase; source = 'saved credentials'; }
-  else { base = DEFAULT_BASE_URL; source = 'default'; }
+  if (flagBase) {
+    base = flagBase;
+    source = 'flag';
+  } else if (envBaseUrl(env)) {
+    base = envBaseUrl(env);
+    source = 'ENFORCER_BASE_URL';
+  } else if (savedBase) {
+    base = savedBase;
+    source = 'saved credentials';
+  } else {
+    base = DEFAULT_BASE_URL;
+    source = 'default';
+  }
   base = trim(base);
   const home = env.HOME || env.USERPROFILE || homedir();
   const configHome = env.ENFORCER_CONFIG_HOME || join(home, '.config', 'enforcer');
   const harness = env.ENFORCER_HARNESS || 'claude';
   return {
-    baseUrl: base, source, ...deriveUrls(base, env), harness, configHome,
+    baseUrl: base,
+    source,
+    ...deriveUrls(base, env),
+    harness,
+    configHome,
     stateDir: env.ENFORCER_STATE_DIR || env.CLAUDE_PLUGIN_DATA || join(configHome, 'sessions', harness),
   };
 }

@@ -21,12 +21,21 @@ function fresh() {
   process.env.GRAPH_API_KEY = 'k';
   return { root, proj, sid: `s${++n}` };
 }
-const stub = (calls = []) => async (cfg, method, path, body) => {
-  calls.push([method, path, body]);
-  if (path.endsWith('/frontier')) return { data: [{ key: 'api-contract' }, { key: 'legal' }] };
-  if (path.includes('/nodes?')) return { data: [{ key: 'a', status: 'running' }, { key: 'b', status: 'failed' }, { key: 'c', status: 'done' }] };
-  return {};
-};
+const stub =
+  (calls = []) =>
+  async (cfg, method, path, body) => {
+    calls.push([method, path, body]);
+    if (path.endsWith('/frontier')) return { data: [{ key: 'api-contract' }, { key: 'legal' }] };
+    if (path.includes('/nodes?'))
+      return {
+        data: [
+          { key: 'a', status: 'running' },
+          { key: 'b', status: 'failed' },
+          { key: 'c', status: 'done' },
+        ],
+      };
+    return {};
+  };
 
 test('session start prints the frontier from a stub', async () => {
   const { proj, sid } = fresh();
@@ -57,10 +66,12 @@ test('version check reads the locked manifest', async () => {
 
 test('version check reports a stale install once', async () => {
   const { root, proj, sid } = fresh();
-  const cc = join(root, 'cc'), mk = join(root, 'mkt');
+  const cc = join(root, 'cc'),
+    mk = join(root, 'mkt');
   const md = MANIFEST_DIR;
   mkdirSync(join(cc, 'plugins'), { recursive: true });
-  mkdirSync(join(mk, md), { recursive: true }); mkdirSync(join(mk, 'enforcer', md), { recursive: true });
+  mkdirSync(join(mk, md), { recursive: true });
+  mkdirSync(join(mk, 'enforcer', md), { recursive: true });
   writeFileSync(join(mk, md, 'marketplace.json'), JSON.stringify({ plugins: [{ name: 'enforcer', source: './enforcer' }] }));
   writeFileSync(join(mk, 'enforcer', md, 'plugin.json'), JSON.stringify({ version: '9.1.0' }));
   writeFileSync(join(cc, 'plugins', 'known_marketplaces.json'), JSON.stringify({ instruxi: { installLocation: mk } }));
@@ -74,13 +85,15 @@ test('version check reports a stale install once', async () => {
 const hold = (sid, extra = {}) => saveRun(sid, { graph_id: 'g', node_id: 'n', key: 'k', run_id: 'run-1', ...extra });
 
 test('open-run guard blocks a quoted graph_report', async () => {
-  const { sid } = fresh(); hold(sid);
+  const { sid } = fresh();
+  hold(sid);
   const r = await openRunGuard({ session_id: sid, last_assistant_message: 'I should call graph_report and reported this run' });
   assert.equal(r.decision, 'block');
 });
 
 test('open-run guard: marker passes, second stop passes, subagent blocks, no run is silent', async () => {
-  const { sid } = fresh(); hold(sid);
+  const { sid } = fresh();
+  hold(sid);
   assert.equal(await openRunGuard({ session_id: sid, last_assistant_message: 'Paused.\nstill running: run-1' }), null);
   assert.equal(await openRunGuard({ session_id: sid, last_assistant_message: 'x', stop_hook_active: true }), null);
   assert.equal(await openRunGuard({ session_id: 'nobody', last_assistant_message: 'x' }), null);
@@ -90,7 +103,8 @@ test('open-run guard: marker passes, second stop passes, subagent blocks, no run
 });
 
 test('remember on compact posts one observation on the held node', async () => {
-  const { root, proj, sid } = fresh(); hold(sid);
+  const { root, proj, sid } = fresh();
+  hold(sid);
   const tp = join(root, 't.jsonl');
   writeFileSync(tp, JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'two shapes left to pin' }] } }) + '\n');
   const calls = [];

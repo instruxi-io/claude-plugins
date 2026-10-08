@@ -5,7 +5,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const home = mkdtempSync(join(tmpdir(), 'gov-outbox-'));
-process.env.HOME = home; process.env.USERPROFILE = home;
+process.env.HOME = home;
+process.env.USERPROFILE = home;
 process.env.GOVERNOR_HOME = join(home, '.enforcer-governor');
 mkdirSync(join(home, '.enforcer-governor'), { recursive: true });
 const FILE = join(home, '.enforcer-governor', 'receipts.jsonl');
@@ -13,7 +14,11 @@ const FILE = join(home, '.enforcer-governor', 'receipts.jsonl');
 const { pending, markShipped, markFailure, stats } = await import('../src/outbox.mjs');
 
 let pass = 0;
-const ok = (label, fn) => { fn(); pass++; console.log('  ok  ' + label); };
+const ok = (label, fn) => {
+  fn();
+  pass++;
+  console.log('  ok  ' + label);
+};
 const add = (n) => appendFileSync(FILE, JSON.stringify({ verdict: 'allow', n, hash: 'h' + n }) + '\n');
 
 ok('an empty record has nothing to ship', () => {
@@ -23,7 +28,9 @@ ok('an empty record has nothing to ship', () => {
 });
 
 ok('new receipts are pending', () => {
-  add(1); add(2); add(3);
+  add(1);
+  add(2);
+  add(3);
   const p = pending();
   assert.equal(p.lines.length, 3);
   assert.equal(p.lines[2].n, 3);
@@ -47,7 +54,7 @@ ok('only new receipts ship after that', () => {
 
 ok('a half-written tail is left for next time', () => {
   // Shipping a truncated receipt would fail verification on the far side.
-  appendFileSync(FILE, '{"verdict":"allow","n":5,"hash":"h5"}');   // no newline
+  appendFileSync(FILE, '{"verdict":"allow","n":5,"hash":"h5"}'); // no newline
   assert.equal(pending().lines.length, 0, 'incomplete line must not ship');
   appendFileSync(FILE, '\n');
   assert.equal(pending().lines.length, 1);

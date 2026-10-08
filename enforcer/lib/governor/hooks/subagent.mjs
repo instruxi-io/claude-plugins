@@ -10,14 +10,13 @@ import { guard, input, emit, done } from './lib.mjs';
 import { agentOf } from '../adapters/claude-code/events.mjs';
 import { governor } from '../adapters/claude-code/index.mjs';
 await guard(async () => {
+  const ev = input('SubagentStart', 'SubagentStop');
+  const EVENT = ev.hook_event_name === 'SubagentStop' ? 'SubagentStop' : 'SubagentStart';
 
-const ev = input('SubagentStart', 'SubagentStop');
-const EVENT = ev.hook_event_name === 'SubagentStop' ? 'SubagentStop' : 'SubagentStart';
+  // The id is what the harness calls the subagent where it gives us one; a start
+  // event without one still counts.
+  if (EVENT === 'SubagentStart') governor().spawned(ev.session_id ? agentOf(ev) : 'subagent');
 
-// The id is what the harness calls the subagent where it gives us one; a start
-// event without one still counts.
-if (EVENT === 'SubagentStart') governor().spawned(ev.session_id ? agentOf(ev) : 'subagent');
-
-if (EVENT === 'SubagentStop') done();
-emit(EVENT, {});
+  if (EVENT === 'SubagentStop') done();
+  emit(EVENT, {});
 });

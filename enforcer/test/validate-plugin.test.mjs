@@ -36,16 +36,25 @@ function validate(s, v, path = '$') {
 const plugin = rd('plugin.json');
 assert.deepEqual(validate(schema, plugin), []);
 console.log('ok   plugin.json validates against the vendored Agent Plugins 1.0.0 schema');
-assert.ok(validate(schema, { name: 'x' }).length > 0); assert.ok(validate(schema, { ...plugin, bogus: 1 }).length > 0);
+assert.ok(validate(schema, { name: 'x' }).length > 0);
+assert.ok(validate(schema, { ...plugin, bogus: 1 }).length > 0);
 console.log('ok   the validator rejects a missing $schema and an unknown property');
 
-const versions = { 'plugin.json': plugin.version, [`${DOT}-plugin/plugin.json`]: rd(`${DOT}-plugin/plugin.json`).version, 'package.json': rd('package.json').version };
+const versions = {
+  'plugin.json': plugin.version,
+  [`${DOT}-plugin/plugin.json`]: rd(`${DOT}-plugin/plugin.json`).version,
+  'package.json': rd('package.json').version,
+};
 const kitJson = JSON.parse(readFileSync(new URL('../../kit.json', import.meta.url), 'utf8'));
 if (kitJson.version) versions['kit.json'] = kitJson.version;
 const codex = JSON.parse(readFileSync(new URL('../../.agents/plugins/marketplace.json', import.meta.url), 'utf8')).plugins.find((p) => p.name === 'enforcer');
-assert.ok(codex.version, 'Codex marketplace entry has no version'); versions['.agents marketplace.json'] = codex.version;
+assert.ok(codex.version, 'Codex marketplace entry has no version');
+versions['.agents marketplace.json'] = codex.version;
 assert.ok(codex.policy?.authentication, 'Codex marketplace entry has no policy.authentication');
-{ const g = readFileSync(new URL('../src/grok-install.mjs', import.meta.url), 'utf8'); assert.match(g, /JSON\.parse\(rd\('plugin\.json'\)\)\.version/, 'Grok VERSION file must come from plugin.json'); }
+{
+  const g = readFileSync(new URL('../src/grok-install.mjs', import.meta.url), 'utf8');
+  assert.match(g, /JSON\.parse\(rd\('plugin\.json'\)\)\.version/, 'Grok VERSION file must come from plugin.json');
+}
 const market = rd(`../${DOT}-plugin/marketplace.json`).plugins.find((p) => p.name === 'enforcer');
 if (market.version) versions['marketplace.json'] = market.version;
 assert.equal(new Set(Object.values(versions)).size, 1, `versions differ: ${JSON.stringify(versions)}`);
@@ -53,7 +62,9 @@ console.log(`ok   versions agree across plugin.json, both marketplaces and kit.j
 console.log(`ok   one version everywhere: ${plugin.version} (${Object.keys(versions).join(', ')})`);
 
 {
-  const t = (ok, msg) => { assert.ok(ok, msg); };
+  const t = (ok, msg) => {
+    assert.ok(ok, msg);
+  };
   const m = rd('.mcp.json');
   const names = Object.keys(m.mcpServers ?? {});
   t(names.length > 0, '.mcp.json has no mcpServers');
@@ -68,17 +79,23 @@ console.log(`ok   one version everywhere: ${plugin.version} (${Object.keys(versi
 }
 {
   const KNOWN = new Set(['Bash', 'Read', 'Edit', 'Write', 'Grep', 'Glob', 'ToolSearch', 'Skill', 'WebFetch', 'WebSearch', 'Task', 'NotebookEdit', 'TodoWrite']);
-  for (const d of ['agents', 'harness/grok/agents']) for (const f of readdirSync(new URL(`../${d}/`, import.meta.url))) {
-    const head = readFileSync(new URL(`../${d}/${f}`, import.meta.url), 'utf8').match(/^---\n([\s\S]*?)\n---/)?.[1];
-    assert.ok(head, `${d}/${f}: no frontmatter`);
-    assert.match(head, /^name:\s*\S+/m, `${d}/${f}: name`); assert.match(head, /^description:\s*\S+/m, `${d}/${f}: description`);
-    const tools = (head.match(/^tools:\s*(.+)$/m)?.[1] ?? '').split(',').map((s) => s.trim()).filter(Boolean);
-    for (const x of tools) assert.ok(KNOWN.has(x) || /^mcp__[\w-]+__\w+$/.test(x) || /^enforcer__\w+$/.test(x), `${d}/${f}: unknown tool ${x}`);
-  }
+  for (const d of ['agents', 'harness/grok/agents'])
+    for (const f of readdirSync(new URL(`../${d}/`, import.meta.url))) {
+      const head = readFileSync(new URL(`../${d}/${f}`, import.meta.url), 'utf8').match(/^---\n([\s\S]*?)\n---/)?.[1];
+      assert.ok(head, `${d}/${f}: no frontmatter`);
+      assert.match(head, /^name:\s*\S+/m, `${d}/${f}: name`);
+      assert.match(head, /^description:\s*\S+/m, `${d}/${f}: description`);
+      const tools = (head.match(/^tools:\s*(.+)$/m)?.[1] ?? '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+      for (const x of tools) assert.ok(KNOWN.has(x) || /^mcp__[\w-]+__\w+$/.test(x) || /^enforcer__\w+$/.test(x), `${d}/${f}: unknown tool ${x}`);
+    }
   console.log('ok   agent frontmatter tools are known');
 }
 const mcp = rd('mcp.json').mcpServers.enforcer;
-assert.equal(mcp.type, 'streamable-http'); assert.equal(mcp.url, 'https://api.instruxi.dev/mcp');
+assert.equal(mcp.type, 'streamable-http');
+assert.equal(mcp.url, 'https://api.instruxi.dev/mcp');
 console.log('ok   mcp.json is streamable-http at api.instruxi.dev/mcp');
 assert.ok(existsSync(new URL('../.mcp.json', import.meta.url)) && existsSync(new URL('../skills/enforcer/SKILL.md', import.meta.url)));
 for (const c of readdirSync(new URL('../commands/', import.meta.url))) {
@@ -104,13 +121,21 @@ for (const n of ['enforcer-graph', 'enforcer-files', 'enforcer-governor']) {
 const withHooks = ['enforcer', 'enforcer-graph', 'enforcer-files', 'enforcer-governor'].filter((n) => {
   const src = mkt.plugins.find((p) => p.name === n).source.replace('./', '');
   const f = root(`${src}/hooks/hooks.json`);
-  return existsSync(f) && Object.values(JSON.parse(readFileSync(f, 'utf8')).hooks).flat().some((g) => g.hooks.some((h) => h.type === 'command' && !/this alias is now part/.test(h.command)));
+  return (
+    existsSync(f) &&
+    Object.values(JSON.parse(readFileSync(f, 'utf8')).hooks)
+      .flat()
+      .some((g) => g.hooks.some((h) => h.type === 'command' && !/this alias is now part/.test(h.command)))
+  );
 });
 assert.deepEqual(withHooks, ['enforcer']);
 console.log('ok   no alias carries hooks or mcp beyond the one notice');
 const kit = JSON.parse(readFileSync(root('kit.json'), 'utf8'));
 assert.deepEqual(kit.plugins.map((p) => p.id).sort(), ['enforcer@instruxi', 'jev-hooks@instruxi']);
-assert.deepEqual(kit.plugins.filter((p) => p.default).map((p) => p.id), ['enforcer@instruxi']);
+assert.deepEqual(
+  kit.plugins.filter((p) => p.default).map((p) => p.id),
+  ['enforcer@instruxi'],
+);
 console.log('ok   kit defaults: only enforcer and jev-hooks are selectable, only enforcer default');
 
 // no suite reads the real home directory: every node suite runs under the isolating preload,

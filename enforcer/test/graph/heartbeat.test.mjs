@@ -11,13 +11,28 @@ import { heartbeat } from '../../src/graph/hooks/heartbeat.mjs';
 import { saveRun, loadRun } from '../../src/graph/run.mjs';
 
 const root = mkdtempSync(join(realpathSync(tmpdir()), 'tick-'));
-Object.assign(process.env, { ENFORCER_STATE_DIR: join(root, 's'), HOME: root, GRAPH_ID: 'g1', ENFORCER_BASE_URL: 'http://127.0.0.1:9', GRAPH_API_KEY: 'k', ENFORCER_API_KEY: 'k', GRAPH_TICK_SECONDS: '0.05' });
+Object.assign(process.env, {
+  ENFORCER_STATE_DIR: join(root, 's'),
+  HOME: root,
+  GRAPH_ID: 'g1',
+  ENFORCER_BASE_URL: 'http://127.0.0.1:9',
+  GRAPH_API_KEY: 'k',
+  ENFORCER_API_KEY: 'k',
+  GRAPH_TICK_SECONDS: '0.05',
+});
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let n = 0;
 // a 300 s lease claimed just now; the call under test runs for a few ticks
 const live = () => {
   const sid = `t${++n}`;
-  saveRun(sid, { graph_id: 'g1', node_id: 'n1', run_id: 'r1', key: 'k', claimed_at: new Date().toISOString(), lease_expires_at: new Date(Date.now() + 300000).toISOString() });
+  saveRun(sid, {
+    graph_id: 'g1',
+    node_id: 'n1',
+    run_id: 'r1',
+    key: 'k',
+    claimed_at: new Date().toISOString(),
+    lease_expires_at: new Date(Date.now() + 300000).toISOString(),
+  });
   return sid;
 };
 const pre = (sid, id) => ({ hook_event_name: 'PreToolUse', session_id: sid, tool_name: 'Bash', tool_use_id: id, cwd: root });
@@ -25,10 +40,14 @@ const markers = (sid) => readdirSync(join(root, 's', 'runs')).filter((f) => f.st
 // Arm a call's marker without spawning the detached ticker: that process rewrites the shared run file (saveRun
 // truncates before it writes), so an in-process loop could read it empty and return 'no-run'.
 const arm = (sid, id) => writeFileSync(join(root, 's', 'runs', `${sid}.tick-${id}`), String(Date.now()));
-const answer = (state, calls) => async (cfg, method, path) => { calls.push(path); return [200, { data: { state, lease_expires_at: new Date(Date.now() + 300000).toISOString() } }, null]; };
+const answer = (state, calls) => async (cfg, method, path) => {
+  calls.push(path);
+  return [200, { data: { state, lease_expires_at: new Date(Date.now() + 300000).toISOString() } }, null];
+};
 
 test('a Bash call longer than lease/3 heartbeats while it runs', async () => {
-  const sid = live(), calls = [];
+  const sid = live(),
+    calls = [];
   const other = live();
   await startTicker(pre(other, 'u0'));
   assert.equal(markers(other).length, 1, 'startTicker leaves a marker for the call');
@@ -44,7 +63,8 @@ test('a Bash call longer than lease/3 heartbeats while it runs', async () => {
 });
 
 test('the ticker stops on PostToolUse', async () => {
-  const sid = live(), calls = [];
+  const sid = live(),
+    calls = [];
   arm(sid, 'u2');
   const loop = tickLoop(pre(sid, 'u2'), answer('ok', calls));
   await sleep(200);
@@ -63,7 +83,8 @@ test('the ticker stops on PostToolUse', async () => {
 });
 
 test('the ticker stops on a reclaimed heartbeat', async () => {
-  const sid = live(), calls = [];
+  const sid = live(),
+    calls = [];
   arm(sid, 'u4');
   const loop = tickLoop(pre(sid, 'u4'), answer('reclaimed', calls));
   assert.equal(await loop, 'reclaimed');
@@ -85,7 +106,12 @@ test('the ticker stops when the run file is gone, and ignores non-Bash tools', a
 
 test('the spawned ticker process heartbeats a real server and stops with the call', async () => {
   const seen = [];
-  const srv = createServer((req, res) => { seen.push(req.url); req.resume(); res.setHeader('content-type', 'application/json'); res.end(JSON.stringify({ success: true, data: { state: 'ok', lease_expires_at: new Date(Date.now() + 300000).toISOString() } })); });
+  const srv = createServer((req, res) => {
+    seen.push(req.url);
+    req.resume();
+    res.setHeader('content-type', 'application/json');
+    res.end(JSON.stringify({ success: true, data: { state: 'ok', lease_expires_at: new Date(Date.now() + 300000).toISOString() } }));
+  });
   await new Promise((r) => srv.listen(0, '127.0.0.1', r));
   const prev = process.env.ENFORCER_BASE_URL;
   process.env.ENFORCER_BASE_URL = `http://127.0.0.1:${srv.address().port}`;
@@ -99,5 +125,8 @@ test('the spawned ticker process heartbeats a real server and stops with the cal
     const after = seen.length;
     await sleep(400);
     assert.equal(seen.length, after, 'the ticker process exited with the call');
-  } finally { process.env.ENFORCER_BASE_URL = prev; srv.close(); }
+  } finally {
+    process.env.ENFORCER_BASE_URL = prev;
+    srv.close();
+  }
 });

@@ -18,16 +18,23 @@ const state = loadState();
 // _BUDGET, _POLICY). They beat config.json for this process tree only, so both
 // `config` and `status` say where a value came from.
 const fromEnv = envOverrides();
-const envLine = () => Object.keys(fromEnv).length
-  ? 'Set by this process\'s environment: ' + Object.keys(fromEnv).map(k => `${ENV_OVERRIDES[k]}=${fromEnv[k] ? 'on' : 'off'}`).join(', ')
-    + '. These apply to this process and its children, not to the machine-wide config.'
-  : '';
+const envLine = () =>
+  Object.keys(fromEnv).length
+    ? "Set by this process's environment: " +
+      Object.keys(fromEnv)
+        .map((k) => `${ENV_OVERRIDES[k]}=${fromEnv[k] ? 'on' : 'off'}`)
+        .join(', ') +
+      '. These apply to this process and its children, not to the machine-wide config.'
+    : '';
 const usd = (t, m) => '$' + dollarsForTokens(t, priceOf(m, cfg.model).in).toFixed(2);
 
 if (cmd === 'verify') {
   const v = verify();
   if (!v.receipts) console.log('No decisions recorded yet.');
-  else if (v.ok) console.log(`All ${v.receipts} records check out.${v.unverifiable ? ` (${v.unverifiable} carry no hash and could not be chain-checked: either written before hashes were stored, or decided while the governor could not read its own chain.)` : ''}`);
+  else if (v.ok)
+    console.log(
+      `All ${v.receipts} records check out.${v.unverifiable ? ` (${v.unverifiable} carry no hash and could not be chain-checked: either written before hashes were stored, or decided while the governor could not read its own chain.)` : ''}`,
+    );
   else console.log(`The record does NOT check out. Line ${v.brokeAt} of ${v.receipts} does not match the one before it.\nFile: ${RECEIPTS}`);
   // Non-zero on a broken chain, so a script or CI step can gate on it.
   process.exit(v.ok ? 0 : 1);
@@ -44,9 +51,9 @@ if (cmd === 'config') {
   const managed = readManaged();
   const local = { ...cfg, ...fromEnv };
   const applied = merge(local, managed);
-  const width = Math.max(...Object.keys(SETTINGS).map(k => k.length));
+  const width = Math.max(...Object.keys(SETTINGS).map((k) => k.length));
   for (const g of GROUPS) {
-    const keys = Object.keys(SETTINGS).filter(k => SETTINGS[k].group === g);
+    const keys = Object.keys(SETTINGS).filter((k) => SETTINGS[k].group === g);
     if (!keys.length) continue;
     console.log(`\n${g.toUpperCase()}`);
     for (const k of keys) {
@@ -55,17 +62,18 @@ if (cmd === 'config') {
       // Mark what has been changed. On a page of defaults the two or three
       // someone actually set are the only interesting rows.
       const set = Object.prototype.hasOwnProperty.call(live, k) && live[k] !== DEFAULTS[k];
-      const shown = spec.type === 'boolean' ? (val ? 'on' : 'off')
-                  : spec.unit === '$' ? `$${val}`
-                  : String(val);
+      const shown = spec.type === 'boolean' ? (val ? 'on' : 'off') : spec.unit === '$' ? `$${val}` : String(val);
       // A managed setting is marked, and the local value is shown beside it
       // when the two differ -- otherwise "it says $150 but I set $400" has no
       // visible explanation.
       const mine = k in fromEnv ? fromEnv[k] : live[k];
       const floored = k in managed && applied[k] !== mine && mine !== undefined;
       const env = k in fromEnv ? `  [from the environment: ${ENV_OVERRIDES[k]}=${fromEnv[k] ? 'on' : 'off'}]` : '';
-      console.log(`  ${k.padEnd(width)}  ${shown.padEnd(12)}${k in managed ? '!' : k in fromEnv ? '~' : set ? '*' : ' '} ${spec.describe}`
-        + env + (floored ? `  [your organisation's setting; yours was ${String(mine)}]` : ''));
+      console.log(
+        `  ${k.padEnd(width)}  ${shown.padEnd(12)}${k in managed ? '!' : k in fromEnv ? '~' : set ? '*' : ' '} ${spec.describe}` +
+          env +
+          (floored ? `  [your organisation's setting; yours was ${String(mine)}]` : ''),
+      );
       if (arg === '--why' && spec.hint) console.log(`  ${' '.repeat(width)}  ${' '.repeat(13)}${spec.hint}`);
     }
   }
@@ -75,7 +83,7 @@ if (cmd === 'config') {
   }
   if (Object.keys(fromEnv).length) console.log(`  ~ set by this process's environment. ${envLine()}`);
   console.log('  Change one with /enforcer-governor:set <name> <value>.');
-  const dead = Object.keys(RETIRED).filter(k => k in live);
+  const dead = Object.keys(RETIRED).filter((k) => k in live);
   if (dead.length) {
     console.log(`\n  Your config still carries ${dead.length} retired setting(s) that do nothing:`);
     for (const k of dead) console.log(`    ${k} — ${RETIRED[k]}`);
@@ -94,17 +102,20 @@ if (cmd === 'set') {
   // Refuse rather than absorb. These values are compared against spend on every
   // tool call and the failure is silent: a soft mark of 75 instead of 0.75 means
   // the warn never fires and nothing tells you.
-  if (err) { console.log(`Not changed — ${err}`); process.exit(0); }
+  if (err) {
+    console.log(`Not changed — ${err}`);
+    process.exit(0);
+  }
   const value = parseValue(SETTINGS[key], raw);
   const before = cfg[key];
   saveConfig({ ...loadConfig(), [key]: value });
-  const show = v => SETTINGS[key].type === 'boolean' ? (v ? 'on' : 'off') : String(v);
+  const show = (v) => (SETTINGS[key].type === 'boolean' ? (v ? 'on' : 'off') : String(v));
   console.log(`${key}: ${show(before)} -> ${show(value)}   ${SETTINGS[key].describe}`);
   if (SETTINGS[key].hint) console.log(`  ${SETTINGS[key].hint}`);
   const managed = readManaged();
   if (key in managed) {
     const applied = merge({ ...cfg, [key]: value }, managed)[key];
-    const show2 = v => SETTINGS[key].type === 'boolean' ? (v ? 'on' : 'off') : String(v);
+    const show2 = (v) => (SETTINGS[key].type === 'boolean' ? (v ? 'on' : 'off') : String(v));
     if (applied !== value) {
       console.log(`Your organisation sets ${key} to ${show2(managed[key])}, and a local value can only be stricter, so ${show2(applied)} is what applies.`);
     }
@@ -118,7 +129,10 @@ if (cmd === 'set') {
 
 if (cmd === 'limit') {
   const d = Number(arg);
-  if (!Number.isFinite(d) || d <= 0) { console.log('Give a dollar amount, e.g. /enforcer-governor:limit 40'); process.exit(0); }
+  if (!Number.isFinite(d) || d <= 0) {
+    console.log('Give a dollar amount, e.g. /enforcer-governor:limit 40');
+    process.exit(0);
+  }
   saveConfig({ ...loadConfig(), dollars: d });
   console.log(`Spend limit is now $${d} per agent, at ${priceOf(cfg.model).label} rates. Agents already running pick this up on their next action.`);
   process.exit(0);
@@ -134,12 +148,12 @@ if (cmd === 'resume') {
     const stopped = Object.entries(s.agents || {}).filter(([, a]) => a.status === 'grounded');
     if (!stopped.length) return { msg: 'No agent is stopped. Nothing to resume.' };
 
-    let ids = arg ? [arg, 'claude:' + arg].filter(id => s.agents[id]) : stopped.map(([id]) => id);
+    let ids = arg ? [arg, 'claude:' + arg].filter((id) => s.agents[id]) : stopped.map(([id]) => id);
     if (arg && !ids.length) return { msg: `No agent called ${arg}. Stopped right now: ${stopped.map(([id]) => id).join(', ')}` };
     // With no argument and several stopped, name them rather than guess: resuming
     // the wrong agent spends real money on work nobody asked to continue.
     if (!arg && ids.length > 1) {
-      return { msg: `${ids.length} agents are stopped. Name one:\n` + ids.map(id => `  /enforcer-governor:resume ${id.replace(/^claude:/, '')}`).join('\n') };
+      return { msg: `${ids.length} agents are stopped. Name one:\n` + ids.map((id) => `  /enforcer-governor:resume ${id.replace(/^claude:/, '')}`).join('\n') };
     }
     const id = ids[0];
     const before = s.prevHash;
@@ -148,30 +162,40 @@ if (cmd === 'resume') {
     const a = s.agents[id];
     return { msg: `${id} is running again, with its limit raised to ${usd(a.budget, a.model)}. Recorded as your decision.` };
   });
-  console.log(held.ok && held.value ? held.value.msg
-    : 'Could not take the lock on the governor state, so nothing was changed. Try again.');
+  console.log(held.ok && held.value ? held.value.msg : 'Could not take the lock on the governor state, so nothing was changed. Try again.');
   process.exit(0);
 }
 
 console.log(decisioningLine(cfg));
 if (Object.keys(fromEnv).length) console.log(envLine() + '\n');
 const agents = Object.values(state.agents || {});
-if (!agents.length) { console.log('No agents seen yet.'); process.exit(0); }
+if (!agents.length) {
+  console.log('No agents seen yet.');
+  process.exit(0);
+}
 
-console.log(`Limit: $${cfg.dollars} per agent  ·  warns at ${Math.round(cfg.soft * 100)}%  ·  $${cfg.burnLimit}/min per agent, $${cfg.fleetBurnLimit}/min across all`);
+console.log(
+  `Limit: $${cfg.dollars} per agent  ·  warns at ${Math.round(cfg.soft * 100)}%  ·  $${cfg.burnLimit}/min per agent, $${cfg.fleetBurnLimit}/min across all`,
+);
 console.log('');
 for (const a of agents.sort((x, y) => (y.tokens || 0) - (x.tokens || 0)).slice(0, 12)) {
   const pct = a.budget ? Math.round((a.tokens / a.budget) * 100) : 0;
   // Say WHY it stopped, not just that it did. "STOPPED" alone sends people to
   // the state file; the reason tells them whether to raise a limit or resume.
-  const why = { limit: 'over its limit', soft: 'past the warn mark',
-                client: 'client cap', day: 'daily cap', week: 'weekly cap', month: 'monthly cap',
-                human: 'you stopped it' }[a.groundedBy] || '';
-  const flag = a.status === 'grounded' ? `  STOPPED${why ? ' - ' + why : ''}`
-             : a.escalated ? '  WAITING ON YOU' : '';
+  const why =
+    {
+      limit: 'over its limit',
+      soft: 'past the warn mark',
+      client: 'client cap',
+      day: 'daily cap',
+      week: 'weekly cap',
+      month: 'monthly cap',
+      human: 'you stopped it',
+    }[a.groundedBy] || '';
+  const flag = a.status === 'grounded' ? `  STOPPED${why ? ' - ' + why : ''}` : a.escalated ? '  WAITING ON YOU' : '';
   console.log(`  ${a.id.padEnd(18)} ${usd(a.tokens || 0, a.model).padStart(8)}  ${String(pct).padStart(3)}%${a.client ? '  ' + a.client : ''}${flag}`);
 }
-if (agents.some(a => a.status === 'grounded')) {
+if (agents.some((a) => a.status === 'grounded')) {
   console.log('\nStopped agents run again with /enforcer-governor:resume. Raising the limit');
   console.log('with /enforcer-governor:limit also frees any agent stopped for spending.');
 }

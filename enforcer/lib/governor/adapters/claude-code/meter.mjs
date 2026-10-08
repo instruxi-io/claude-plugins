@@ -35,14 +35,18 @@ export const TRANSCRIPT = 'transcript';
 // know is live. Ten minutes is generous for a line that redraws on every turn.
 const STALE_MS = 10 * 60 * 1000;
 
-const file = id => join(DIR, `cost-${String(id || 'default').replace(/[^\w-]/g, '')}.json`);
+const file = (id) => join(DIR, `cost-${String(id || 'default').replace(/[^\w-]/g, '')}.json`);
 
 /** Called by the status line with what Claude Code handed it. Never throws. */
 export function recordHarnessCost(sessionId, cost) {
   const usd = cost && typeof cost.total_cost_usd === 'number' ? cost.total_cost_usd : null;
   if (usd === null || !Number.isFinite(usd) || usd < 0) return false;
-  try { writeFileSync(file(sessionId), JSON.stringify({ usd, at: Date.now() })); return true; }
-  catch { return false; }
+  try {
+    writeFileSync(file(sessionId), JSON.stringify({ usd, at: Date.now() }));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -57,7 +61,9 @@ export function harnessUsd(sessionId) {
     if (typeof d.usd !== 'number' || !Number.isFinite(d.usd) || d.usd < 0) return null;
     if (Date.now() - (d.at || 0) > STALE_MS) return null;
     return d.usd;
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
 /**

@@ -92,20 +92,31 @@ function place(tmp, label, { config = {}, blind = false } = {}) {
   delete env.ANTHROPIC_AUTH_TOKEN;
   // A headless parent (a graph worker running this suite) must not make the
   // contract's session headless: the graph-worker rules would then decide.
-  delete env.JEV_HOOKS_HEADLESS; delete env.ENFORCER_HEADLESS; delete env.CLAUDE_CODE_ENTRYPOINT;
+  delete env.JEV_HOOKS_HEADLESS;
+  delete env.ENFORCER_HEADLESS;
+  delete env.CLAUDE_CODE_ENTRYPOINT;
   return { home, env };
 }
 
 const receipts = (home) => {
   const f = join(home, 'receipts.jsonl');
   if (!existsSync(f)) return [];
-  return readFileSync(f, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  return readFileSync(f, 'utf8')
+    .trim()
+    .split('\n')
+    .filter(Boolean)
+    .map((l) => JSON.parse(l));
 };
 
 // Hold the state lock as another process would. Re-touched before each call:
 // the store breaks a lock older than a few seconds, and this one must look
 // alive for the whole scenario.
-const holdLock = (home) => { const f = join(home, '.lock'); writeFileSync(f, '999999'); const t = new Date(); utimesSync(f, t, t); };
+const holdLock = (home) => {
+  const f = join(home, '.lock');
+  writeFileSync(f, '999999');
+  const t = new Date();
+  utimesSync(f, t, t);
+};
 
 /**
  * Run the contract against an adapter. Resolves to the list of promises kept;
@@ -118,7 +129,10 @@ export async function runContract(adapter, { tmp = tmpdir(), log = (m) => consol
   const canRewrite = adapter.canRewrite !== false;
   const askAs = canAsk ? 'ask' : 'deny';
   const kept = [];
-  const keep = (m) => { kept.push(m); log(m); };
+  const keep = (m) => {
+    kept.push(m);
+    log(m);
+  };
   const run = async (command, env) => {
     const out = await adapter.run(command, env);
     must(out && typeof out.decision === 'string', 'run() resolves to { decision }', JSON.stringify(out));
@@ -146,7 +160,11 @@ export async function runContract(adapter, { tmp = tmpdir(), log = (m) => consol
     const r = receipts(home);
     must(r.length === 4, 'every decision is recorded', `${r.length} receipts`);
     must(r.map((x) => x.verdict).join() === 'allow,deny,ask,rewrite', 'the record holds the core verdicts', r.map((x) => x.verdict).join());
-    must(r.every((x) => x.harness === adapter.harness), `every receipt names the harness '${adapter.harness}'`, r.map((x) => x.harness).join());
+    must(
+      r.every((x) => x.harness === adapter.harness),
+      `every receipt names the harness '${adapter.harness}'`,
+      r.map((x) => x.harness).join(),
+    );
     keep('allow, deny, ask and rewrite reach the harness, and are recorded under its name');
   }
 
@@ -173,11 +191,20 @@ export async function runContract(adapter, { tmp = tmpdir(), log = (m) => consol
     must(THROUGH.has(plain.decision), 'with the lock held, ordinary work passes (fail open)', plain.decision);
     const r = receipts(home);
     must(r.length === 2, 'decisions made without the lock are still recorded', `${r.length} receipts`);
-    must(r[0].verdict === 'deny' && r[0].chained === false && r[0].hash === undefined,
-      'a refusal made without the lock is recorded unchained, not forged into the chain', JSON.stringify(r[0]));
-    must(r[1].verdict === 'allow' && r[1].unchecked === true,
-      'an allow made without reading the books says so on the receipt (unchecked)', JSON.stringify(r[1]));
-    must(r.every((x) => x.harness === adapter.harness), 'blind receipts name the harness too');
+    must(
+      r[0].verdict === 'deny' && r[0].chained === false && r[0].hash === undefined,
+      'a refusal made without the lock is recorded unchained, not forged into the chain',
+      JSON.stringify(r[0]),
+    );
+    must(
+      r[1].verdict === 'allow' && r[1].unchecked === true,
+      'an allow made without reading the books says so on the receipt (unchecked)',
+      JSON.stringify(r[1]),
+    );
+    must(
+      r.every((x) => x.harness === adapter.harness),
+      'blind receipts name the harness too',
+    );
     keep('capability rules fail closed and spend fails open, on the record, when the lock is held');
   }
 
@@ -192,8 +219,11 @@ export async function runContract(adapter, { tmp = tmpdir(), log = (m) => consol
     const pipe = await run(PIPE, env);
     must(pipe.decision === 'deny', 'an unreachable tenant leaves the local deny in charge', pipe.decision);
     const r = receipts(home);
-    must(r.length === 2 && r.every((x) => x.policy === 'unreachable'),
-      'the receipt records that the tenant could not be reached', r.map((x) => x.policy).join());
+    must(
+      r.length === 2 && r.every((x) => x.policy === 'unreachable'),
+      'the receipt records that the tenant could not be reached',
+      r.map((x) => x.policy).join(),
+    );
     keep('an unreachable tenant policy leaves the local rule in charge, and says so');
   }
 
@@ -202,10 +232,17 @@ export async function runContract(adapter, { tmp = tmpdir(), log = (m) => consol
     const { home, env } = place(tmp, 'burst');
     const N = 12;
     const outs = await Promise.all(Array.from({ length: N }, (_, i) => run(`echo ${i}`, env)));
-    must(outs.every((o) => THROUGH.has(o.decision)), 'concurrent ordinary calls all pass', outs.map((o) => o.decision).join());
+    must(
+      outs.every((o) => THROUGH.has(o.decision)),
+      'concurrent ordinary calls all pass',
+      outs.map((o) => o.decision).join(),
+    );
     const r = receipts(home);
     must(r.length === N, 'every concurrent call is recorded once', `${r.length} of ${N}`);
-    must(r.every((x) => x.harness === adapter.harness), 'every concurrent receipt names the harness');
+    must(
+      r.every((x) => x.harness === adapter.harness),
+      'every concurrent receipt names the harness',
+    );
     const v = verify(join(home, 'receipts.jsonl'));
     // Not "and none unchained": a call that loses the lock race for longer than
     // the store waits takes the blind path, correctly, and its line is

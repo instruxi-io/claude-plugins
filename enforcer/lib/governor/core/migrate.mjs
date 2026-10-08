@@ -14,11 +14,20 @@ export function migrateDir(from, to) {
   const moved = [];
   try {
     if (resolve(from) === resolve(to) || !existsSync(from) || existsSync(join(from, POINTER))) return moved;
-    mkdirSync(to, { recursive: true, mode: 0o700 }); try { chmodSync(to, 0o700); } catch {}
+    mkdirSync(to, { recursive: true, mode: 0o700 });
+    try {
+      chmodSync(to, 0o700);
+    } catch {}
     for (const name of readdirSync(from)) {
-      const src = join(from, name), dst = join(to, name);
+      const src = join(from, name),
+        dst = join(to, name);
       if (existsSync(dst)) continue;
-      try { renameSync(src, dst); } catch { cpSync(src, dst, { recursive: true }); rmSync(src, { recursive: true, force: true }); }
+      try {
+        renameSync(src, dst);
+      } catch {
+        cpSync(src, dst, { recursive: true });
+        rmSync(src, { recursive: true, force: true });
+      }
       moved.push(name);
     }
     writeFileSync(join(from, POINTER), to + '\n');

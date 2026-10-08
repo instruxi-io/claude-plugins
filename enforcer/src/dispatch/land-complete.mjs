@@ -12,7 +12,11 @@ export function acceptanceCommands(node) {
   const out = [];
   for (const line of (node.data || {}).acceptance || []) {
     if (typeof line !== 'string' || !line.includes(' prints ')) continue;
-    const cmd = line.split(' prints ')[0].trim().replace(/^`+|`+$/g, '').trim();
+    const cmd = line
+      .split(' prints ')[0]
+      .trim()
+      .replace(/^`+|`+$/g, '')
+      .trim();
     if (/\bgh\b|\bgit\b/.test(cmd)) continue;
     const rest = cmd.replace(/^cd\s+\S+\s*&&\s*/, '');
     if (!ACCEPT_RUNNERS.includes(rest.split(' ')[0])) continue;
@@ -40,9 +44,11 @@ export function completionBody({ pr, url, rc, out = '', mergeCommit = '', worker
       ...(ok ? evidence : []),
     ],
     data: {
-      report: `1. ${ok ? 'MET' : 'NOT MET'}: PR #${pr} was open with checks passing or pending (landing_blocked: the worker could not run the lander); ` +
+      report:
+        `1. ${ok ? 'MET' : 'NOT MET'}: PR #${pr} was open with checks passing or pending (landing_blocked: the worker could not run the lander); ` +
         `the lander exited ${rc} (${why}). Landed by graph-dispatch after the worker could not run the lander${mergeCommit ? '; merge commit ' + mergeCommit : ''}. Run by graph-dispatch with no agent.`,
-      runner: 'graph-dispatch', outcome: 'landing_blocked',
+      runner: 'graph-dispatch',
+      outcome: 'landing_blocked',
     },
   };
   if (url) body.pr = url;
@@ -56,8 +62,12 @@ export function completionBody({ pr, url, rc, out = '', mergeCommit = '', worker
  */
 export async function landAndComplete({ pr, url, view, cmd, workerReport, land, mergeCommit, evidence, complete }) {
   const { rc, out } = await land();
-  let mc = '', ev = [];
-  if (rc === 0) { mc = (await mergeCommit()) || ''; ev = await evidence(mc); }
+  let mc = '',
+    ev = [];
+  if (rc === 0) {
+    mc = (await mergeCommit()) || '';
+    ev = await evidence(mc);
+  }
   const body = completionBody({ pr, url, rc, out, mergeCommit: mc, workerReport, view, cmd, evidence: ev });
   await complete(body);
   return body;

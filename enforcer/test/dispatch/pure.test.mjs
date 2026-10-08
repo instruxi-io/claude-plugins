@@ -8,15 +8,35 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { modelFor } from '../../src/dispatch/model.mjs';
 import { select, lapsed, mergeTarget, affinityOrder, sessionUsable, warmKey } from '../../src/dispatch/select.mjs';
-import { summarize, decisionRecords, denialClass, skillsOf, judgeLines, rejectionOf, failedOutcome,
-         remediationPrompt, harnessLimitText, limitResetAt, DECISION_PREFIX, DELIVER_SKILL } from '../../src/dispatch/summarize.mjs';
+import {
+  summarize,
+  decisionRecords,
+  denialClass,
+  skillsOf,
+  judgeLines,
+  rejectionOf,
+  failedOutcome,
+  remediationPrompt,
+  harnessLimitText,
+  limitResetAt,
+  DECISION_PREFIX,
+  DELIVER_SKILL,
+} from '../../src/dispatch/summarize.mjs';
 import { triageDecision, unsafeIdent } from '../../src/dispatch/triage.mjs';
 import { pruneWorktrees, liveWorkerKeys, ghPrState } from '../../src/dispatch/prune.mjs';
 import { countTurns } from '../../src/dispatch/stream.mjs';
 
 const FX = join(dirname(fileURLToPath(import.meta.url)), '..', 'fixtures', 'dispatch');
-const node = (key, type = 'task', data = {}, extra = {}) => ({ id: 'id-' + key, key, type, status: 'active', title: key,
-  work_state: 'looking_for_work', data, ...extra });
+const node = (key, type = 'task', data = {}, extra = {}) => ({
+  id: 'id-' + key,
+  key,
+  type,
+  status: 'active',
+  title: key,
+  work_state: 'looking_for_work',
+  data,
+  ...extra,
+});
 const keys = (ns) => ns.map((n) => n.key);
 const tmp = () => mkdtempSync(join(tmpdir(), 'dpure-'));
 
@@ -55,9 +75,16 @@ test('select blocks on a resource held elsewhere', () => {
   assert.deepEqual(keys(chosen), ['b']);
 });
 test('select bounds slots', () => {
-  const { chosen, skipped } = select([...'abcd'].map((k) => node(k)), new Set(), 2);
+  const { chosen, skipped } = select(
+    [...'abcd'].map((k) => node(k)),
+    new Set(),
+    2,
+  );
   assert.equal(chosen.length, 2);
-  assert.deepEqual(skipped.map(([, why]) => why), ['no free worker slot', 'no free worker slot']);
+  assert.deepEqual(
+    skipped.map(([, why]) => why),
+    ['no free worker slot', 'no free worker slot'],
+  );
 });
 test('select skips busy keys', () => {
   const { chosen } = select([node('a'), node('b')], new Set(), 3, { a: {} });
@@ -120,7 +147,8 @@ test('summarize reads the run id and report from a stream', () => {
     { type: 'assistant', message: { content: [{ type: 'tool_use', id: 't1', name: 'mcp__plugin_enforcer_enforcer__graph_next_work' }] } },
     { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 't1', content: [{ type: 'text', text: card }] }] } },
     { type: 'assistant', message: { content: [{ type: 'text', text: 'working' }] } },
-    { type: 'result', subtype: 'success', permission_denials: [], total_cost_usd: 0.1 }];
+    { type: 'result', subtype: 'success', permission_denials: [], total_cost_usd: 0.1 },
+  ];
   const f = join(tmp(), 's.jsonl');
   writeFileSync(f, lines.map((x) => JSON.stringify(x)).join('\n') + '\nnot json\n');
   const s = summarize(f);
@@ -129,7 +157,15 @@ test('summarize reads the run id and report from a stream', () => {
   assert.deepEqual([s.turns, s.result, s.denials], [2, 'success', 0]);
 });
 test('judge lines list a rejected verdict lowest first', () => {
-  const v = { state: 'rejected', score: 0.4, confidence: 0.9, criteria: [{ text: 'b', probability: 0.9 }, { text: 'a'.repeat(200), probability: 0.1 }] };
+  const v = {
+    state: 'rejected',
+    score: 0.4,
+    confidence: 0.9,
+    criteria: [
+      { text: 'b', probability: 0.9 },
+      { text: 'a'.repeat(200), probability: 0.1 },
+    ],
+  };
   const out = judgeLines('k', v);
   assert.equal(out[0], 'JUDGE k score=0.4 conf=0.9');
   assert.equal(out[1], '  0.10 ' + 'a'.repeat(120));
@@ -146,7 +182,10 @@ test('decision records parse from a stderr line and the stream', () => {
   assert.deepEqual(decisionRecords(DECISION_PREFIX + '{broken'), []);
   const log = join(tmp(), 's.jsonl');
   writeFileSync(log, rec('push_needs_approval_surface') + '\n' + rec('destructive_git') + '\n');
-  assert.deepEqual(summarize(log).decisions.map((r) => r.code), ['push_needs_approval_surface', 'destructive_git']);
+  assert.deepEqual(
+    summarize(log).decisions.map((r) => r.code),
+    ['push_needs_approval_surface', 'destructive_git'],
+  );
 });
 test('denial class per code', () => {
   const cls = (...recs) => denialClass({ decisions: recs })[0];
@@ -171,14 +210,23 @@ test('skills of reads the claimed node', () => {
   assert.deepEqual(skillsOf(wrapped), ['deliver-via-github-pr', 'other']);
 });
 test('skills of prefers the slug over the display name', () => {
-  const card = JSON.stringify({ state: 'claimed', graph_id: 'g', node: { key: 'k', type: 'bug' },
-    skills: [{ slug: 'deliver-via-github-pr', name: 'Deliver via GitHub pull request', version: 1, body: '# x' }] });
+  const card = JSON.stringify({
+    state: 'claimed',
+    graph_id: 'g',
+    node: { key: 'k', type: 'bug' },
+    skills: [{ slug: 'deliver-via-github-pr', name: 'Deliver via GitHub pull request', version: 1, body: '# x' }],
+  });
   assert.deepEqual(skillsOf(card), ['deliver-via-github-pr']);
   assert.ok(skillsOf(card).includes(DELIVER_SKILL));
 });
 test('skills of reads attached skill rows', () => {
-  const card = JSON.stringify({ node_id: 'e5395ade', key: 'portal-vendor-bot', skills: [
-    { node_id: 'e5395ade', position: 0, config: {}, skill: { id: '674fd6aa', slug: 'deliver-via-github-pr', version: 1, name: 'Deliver via GitHub PR' } }] });
+  const card = JSON.stringify({
+    node_id: 'e5395ade',
+    key: 'portal-vendor-bot',
+    skills: [
+      { node_id: 'e5395ade', position: 0, config: {}, skill: { id: '674fd6aa', slug: 'deliver-via-github-pr', version: 1, name: 'Deliver via GitHub PR' } },
+    ],
+  });
   assert.deepEqual(skillsOf(card), ['deliver-via-github-pr']);
   assert.deepEqual(skillsOf(JSON.stringify({ state: 'claimed', node: JSON.parse(card) })), ['deliver-via-github-pr']);
 });
@@ -216,8 +264,16 @@ test('limit multi-slash zone parses', () => {
 
 // ---- failure outcome and remediation
 test('failed outcome', () => {
-  const base = { reported: true, report_status: 'succeeded', report_error: null, rejection: null,
-    card_rejection: '{"reasons": ["old"]}', result: 'success', turns: 3, result_text: null };
+  const base = {
+    reported: true,
+    report_status: 'succeeded',
+    report_error: null,
+    rejection: null,
+    card_rejection: '{"reasons": ["old"]}',
+    result: 'success',
+    turns: 3,
+    result_text: null,
+  };
   assert.equal(failedOutcome(base, 0), null);
   assert.deepEqual(failedOutcome({ ...base, report_status: 'failed', report_error: 'E' }, 0), { error: 'E', rejection: '{"reasons": ["old"]}' });
   const o = failedOutcome({ ...base, rejection: '{"state": "rejected"}' }, 0);
@@ -303,7 +359,11 @@ test('the codex stub fails loudly', () => {
 });
 
 // ---- prune
-const run = (args, cwd, cmd = 'git') => { const r = spawnSync(cmd, args, { cwd, encoding: 'utf8' }); assert.equal(r.status, 0, r.stderr); return r.stdout; };
+const run = (args, cwd, cmd = 'git') => {
+  const r = spawnSync(cmd, args, { cwd, encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr);
+  return r.stdout;
+};
 function repoWithOrigin() {
   const t = tmp();
   const o = join(t, 'origin.git');
@@ -331,7 +391,15 @@ test('prune keeps dirty and unmerged', () => {
   run(['add', '-A'], join(root, 'r-unmerged'));
   run(['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '-m', 'u'], join(root, 'r-unmerged'));
   let text = '';
-  const { removed, kept } = pruneWorktrees(root, { yes: true, registry: {}, prState: () => null, out: (s) => { text += s; }, minAge: 0 });
+  const { removed, kept } = pruneWorktrees(root, {
+    yes: true,
+    registry: {},
+    prState: () => null,
+    out: (s) => {
+      text += s;
+    },
+    minAge: 0,
+  });
   assert.deepEqual(names(removed), ['r-merged']);
   assert.ok(!existsSync(join(root, 'r-merged')));
   assert.deepEqual(Object.fromEntries(kept.map(([p, w]) => [basename(p), w])), { 'r-dirty': 'uncommitted changes', 'r-unmerged': 'unmerged commits' });
@@ -383,10 +451,14 @@ test('prune: an old merged PR with a different head is not a match', () => {
   try {
     process.env.GH_FAKE = JSON.stringify([{ state: 'MERGED', headRefOid: '0'.repeat(40) }]);
     assert.equal(ghPrState('graph/o', src), null);
-    process.env.GH_FAKE = JSON.stringify([{ state: 'MERGED', headRefOid: '0'.repeat(40) }, { state: 'MERGED', headRefOid: head }]);
+    process.env.GH_FAKE = JSON.stringify([
+      { state: 'MERGED', headRefOid: '0'.repeat(40) },
+      { state: 'MERGED', headRefOid: head },
+    ]);
     assert.equal(ghPrState('graph/o', src), 'MERGED');
   } finally {
     process.env.PATH = old.PATH;
-    if (old.GH_FAKE === undefined) delete process.env.GH_FAKE; else process.env.GH_FAKE = old.GH_FAKE;
+    if (old.GH_FAKE === undefined) delete process.env.GH_FAKE;
+    else process.env.GH_FAKE = old.GH_FAKE;
   }
 });

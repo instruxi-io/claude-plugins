@@ -41,52 +41,84 @@ const SETTINGS_ANY = SETTINGS_PATHS.replace(/\\\//g, '[\\\\/]');
 // rule id already tells a policy WHICH action this is; the verb only has to get
 // the question past the platform.
 export const DEFAULT_RULES = [
-  { id: 'shell.pipe_to_shell', authz: 'write',
-    name: 'run a script downloaded from the internet', tool: 'shell', action: 'deny',
+  {
+    id: 'shell.pipe_to_shell',
+    authz: 'write',
+    name: 'run a script downloaded from the internet',
+    tool: 'shell',
+    action: 'deny',
     // Judged on the stripped, tokenised pipeline (sudo/env/nohup/... removed),
     // so a sudo'd shell, a tee in the middle, a bare interpreter and a decoded
     // payload are the same shape as the plain one; process and command
     // substitution into a shell are covered too.
-    match: '(?:(?:curl|wget)\\b|base64\\s+(?:-d|--decode)\\b)[^|;&\\n]*(?:\\|[^|;&\\n]*)*?\\|\\s*(?:(?:(?:ba|z|fi|da|k|a)?sh)\\b|(?:python[\\d.]*|perl|ruby|node|php)\\b(?=\\s*(?:-\\s*)?(?:$|[|;&)])))'
-      + '|\\b(?:ba|z|da|k)?sh\\s+(?:-\\S+\\s+)*<\\(\\s*(?:curl|wget)\\b'
-      + '|(?:^|[\\s;&|(])(?:\\.|source)\\s+<\\(\\s*(?:curl|wget)\\b'
-      + '|\\b(?:(?:ba|z|da|k)?sh\\s+-\\w*c|eval)\\s+["\']?(?:\\$\\(|`)\\s*(?:curl|wget)\\b'
+    match:
+      '(?:(?:curl|wget)\\b|base64\\s+(?:-d|--decode)\\b)[^|;&\\n]*(?:\\|[^|;&\\n]*)*?\\|\\s*(?:(?:(?:ba|z|fi|da|k|a)?sh)\\b|(?:python[\\d.]*|perl|ruby|node|php)\\b(?=\\s*(?:-\\s*)?(?:$|[|;&)])))' +
+      '|\\b(?:ba|z|da|k)?sh\\s+(?:-\\S+\\s+)*<\\(\\s*(?:curl|wget)\\b' +
+      '|(?:^|[\\s;&|(])(?:\\.|source)\\s+<\\(\\s*(?:curl|wget)\\b' +
+      '|\\b(?:(?:ba|z|da|k)?sh\\s+-\\w*c|eval)\\s+["\']?(?:\\$\\(|`)\\s*(?:curl|wget)\\b' +
       // PowerShell: iex fed by a fetch, as an argument or down a pipe.
-      + '|(?:^|[\\s;&|(])' + PS_IEX + '\\b[^;&\\n]*\\b' + PS_FETCH + '\\b'
-      + '|\\b' + PS_FETCH + '\\b[^;&\\n]*\\|\\s*' + PS_IEX + '\\b' },
+      '|(?:^|[\\s;&|(])' +
+      PS_IEX +
+      '\\b[^;&\\n]*\\b' +
+      PS_FETCH +
+      '\\b' +
+      '|\\b' +
+      PS_FETCH +
+      '\\b[^;&\\n]*\\|\\s*' +
+      PS_IEX +
+      '\\b',
+  },
   // A shell command that writes to plugin or governor settings: a PowerShell
   // writer cmdlet or a redirection whose operands name a settings path.
-  { id: 'governor.settings', authz: 'write',
-    name: 'edit plugin or governor settings', tool: 'shell', action: 'deny',
-    match: '(?:(?:^|[\\s;&|(])' + PS_WRITE + '\\b|[^0-9&<]>{1,2}(?!&))[^;&\\n]*?(?:^|[\\s"\'=/\\\\])(?:' + SETTINGS_ANY + ')' },
+  {
+    id: 'governor.settings',
+    authz: 'write',
+    name: 'edit plugin or governor settings',
+    tool: 'shell',
+    action: 'deny',
+    match: '(?:(?:^|[\\s;&|(])' + PS_WRITE + '\\b|[^0-9&<]>{1,2}(?!&))[^;&\\n]*?(?:^|[\\s"\'=/\\\\])(?:' + SETTINGS_ANY + ')',
+  },
 
   // A force-push is the one dangerous git action with a strictly safer form
   // that preserves the intent: --force-with-lease refuses when someone else
   // has pushed since you last fetched, which is the case that loses work.
   // Rewriting is honest here in a way it would not be for, say, turning a
   // kubectl delete into --dry-run — that does not do what was asked at all.
-  { id: 'git.force_push', authz: 'write',
-    name: 'force-push without a lease', tool: 'shell', action: 'rewrite',
+  {
+    id: 'git.force_push',
+    authz: 'write',
+    name: 'force-push without a lease',
+    tool: 'shell',
+    action: 'rewrite',
     // Judged per segment (never across `&&`), anchored at the segment's `git`,
     // case-sensitive (`-F` is not `-f`), flag-cluster aware (`-uf`), and
     // tolerant of `git -C dir` / `git -c k=v` before `push`.
-    scope: 'segment', cs: true, field: 'command',
+    scope: 'segment',
+    cs: true,
+    field: 'command',
     match: '^git\\s+(?:(?:-[Cc]\\s+\\S+|-\\S+)\\s+)*push\\s+(?:.*\\s)?(?:--force|-[a-zA-Z]*f[a-zA-Z]*)(?=\\s|$)',
-    replace: ['(?<=\\spush\\s(?:.*\\s)?)(?:--force|-([a-zA-Z]*)f([a-zA-Z]*))(?=\\s|$)',
-      (m, a, b) => ((a || '') + (b || '') ? `-${a || ''}${b || ''} ` : '') + '--force-with-lease'],
-    why: 'a lease refuses the push if someone else has pushed since your last fetch' },
+    replace: [
+      '(?<=\\spush\\s(?:.*\\s)?)(?:--force|-([a-zA-Z]*)f([a-zA-Z]*))(?=\\s|$)',
+      (m, a, b) => ((a || '') + (b || '') ? `-${a || ''}${b || ''} ` : '') + '--force-with-lease',
+    ],
+    why: 'a lease refuses the push if someone else has pushed since your last fetch',
+  },
 
-  { id: 'fs.delete_tree', authz: 'write',
-    name: 'delete a whole tree', tool: 'shell', action: 'ask',
+  {
+    id: 'fs.delete_tree',
+    authz: 'write',
+    name: 'delete a whole tree',
+    tool: 'shell',
+    action: 'ask',
     // Any spelling of recursive + force, split across flags or not:
     // -rf, -fr, -r -f, -R --force, --recursive -f.
-    match: '\\brm\\s+(?=(?:[^;&|\\n]*\\s)?(?:-[a-zA-Z]*r[a-zA-Z]*|--recursive)(?=\\s|$))(?=(?:[^;&|\\n]*\\s)?(?:-[a-zA-Z]*f[a-zA-Z]*|--force)(?=\\s|$))'
+    match:
+      '\\brm\\s+(?=(?:[^;&|\\n]*\\s)?(?:-[a-zA-Z]*r[a-zA-Z]*|--recursive)(?=\\s|$))(?=(?:[^;&|\\n]*\\s)?(?:-[a-zA-Z]*f[a-zA-Z]*|--force)(?=\\s|$))' +
       // PowerShell: Remove-Item and its aliases, -Recurse and -Force in any
       // order, abbreviated or not.
-      + '|(?:^|[\\s;&|(])(?:remove-item|ri|del|erase|rd|rmdir|rm)\\s+(?=(?:[^;&|\\n]*\\s)?-r(?:e(?:c(?:u(?:r(?:se?)?)?)?)?)?(?=[\\s:]|$))(?=(?:[^;&|\\n]*\\s)?-f(?:o(?:r(?:ce?)?)?)?(?=[\\s:]|$))' },
-  { id: 'git.rewrite_history', authz: 'write',
-    name: 'rewrite git history', tool: 'shell', action: 'ask',
-    match: 'reset\\s+--hard|filter-branch' },
+      '|(?:^|[\\s;&|(])(?:remove-item|ri|del|erase|rd|rmdir|rm)\\s+(?=(?:[^;&|\\n]*\\s)?-r(?:e(?:c(?:u(?:r(?:se?)?)?)?)?)?(?=[\\s:]|$))(?=(?:[^;&|\\n]*\\s)?-f(?:o(?:r(?:ce?)?)?)?(?=[\\s:]|$))',
+  },
+  { id: 'git.rewrite_history', authz: 'write', name: 'rewrite git history', tool: 'shell', action: 'ask', match: 'reset\\s+--hard|filter-branch' },
   // Credentials: a shell command that READS OR WRITES a credentials file (the
   // path is an operand of a reading/writing verb or a redirection), or an
   // edit/write whose TARGET is one. Not a mention: until 1.0.3 this rule
@@ -94,25 +126,57 @@ export const DEFAULT_RULES = [
   // whose task was "copy .env into worktrees" was asked on every command,
   // every edit and even its graph_report — and a headless worker's ask is a
   // denial (2026-10-05, dispatcher-worktree-include, three attempts).
-  { id: 'secrets.access', authz: 'read',
-    name: 'read or write credentials', tool: 'shell', field: 'command', action: 'ask',
-    match: '(?:^|[\\s;&|(`])(?:cat|less|more|head|tail|cp|mv|scp|rsync|source|\\.|tee|sed|awk|cut|base64|xxd|od|strings|curl|wget|gh|printf|echo|vim?|nano|cmp|diff|gpg|openssl|python3?|node|grep|egrep|fgrep|rg|ag|bat|tac|nl|find|perl|ruby|php)\\s+(?:[^|;&\\n]*?[\\s\'"=/])?(?:\\.env(?:\\.[\\w-]+)?|id_rsa\\w*|id_ed25519\\w*|[\\w.-]+\\.pem|credentials\\.json|\\.npmrc|\\.netrc|\\.git-credentials|\\.pgpass|policy-cache\\.json)(?=[\\s\'"|;&)]|$)|(?:\\.(?:aws|ssh)|~/\\.enforcer)/|[<>]{1,2}\\s*[^|;&\\s]*(?:\\.env(?:\\.[\\w-]+)?|id_rsa|id_ed25519|\\.pem\\b|credentials\\.json|\\.npmrc|\\.netrc|\\.git-credentials|\\.pgpass|policy-cache\\.json|\\.aws/|\\.ssh/|\\.enforcer/)' },
-  { id: 'secrets.edit', authz: 'write',
-    name: 'read or write credentials', tool: '', field: 'path', action: 'ask',
-    match: '(?:^|/)(?:\\.env(?:\\.[\\w-]+)?|id_rsa\\w*|id_ed25519\\w*|[\\w.-]+\\.pem|credentials\\.json|\\.npmrc|\\.netrc|\\.git-credentials|\\.pgpass|policy-cache\\.json)$|(?:^|/)\\.(?:aws|ssh|enforcer)/' },
+  {
+    id: 'secrets.access',
+    authz: 'read',
+    name: 'read or write credentials',
+    tool: 'shell',
+    field: 'command',
+    action: 'ask',
+    match:
+      '(?:^|[\\s;&|(`])(?:cat|less|more|head|tail|cp|mv|scp|rsync|source|\\.|tee|sed|awk|cut|base64|xxd|od|strings|curl|wget|gh|printf|echo|vim?|nano|cmp|diff|gpg|openssl|python3?|node|grep|egrep|fgrep|rg|ag|bat|tac|nl|find|perl|ruby|php)\\s+(?:[^|;&\\n]*?[\\s\'"=/])?(?:\\.env(?:\\.[\\w-]+)?|id_rsa\\w*|id_ed25519\\w*|[\\w.-]+\\.pem|credentials\\.json|\\.npmrc|\\.netrc|\\.git-credentials|\\.pgpass|policy-cache\\.json)(?=[\\s\'"|;&)]|$)|(?:\\.(?:aws|ssh)|~/\\.enforcer)/|[<>]{1,2}\\s*[^|;&\\s]*(?:\\.env(?:\\.[\\w-]+)?|id_rsa|id_ed25519|\\.pem\\b|credentials\\.json|\\.npmrc|\\.netrc|\\.git-credentials|\\.pgpass|policy-cache\\.json|\\.aws/|\\.ssh/|\\.enforcer/)',
+  },
+  {
+    id: 'secrets.edit',
+    authz: 'write',
+    name: 'read or write credentials',
+    tool: '',
+    field: 'path',
+    action: 'ask',
+    match:
+      '(?:^|/)(?:\\.env(?:\\.[\\w-]+)?|id_rsa\\w*|id_ed25519\\w*|[\\w.-]+\\.pem|credentials\\.json|\\.npmrc|\\.netrc|\\.git-credentials|\\.pgpass|policy-cache\\.json)$|(?:^|/)\\.(?:aws|ssh|enforcer)/',
+  },
   // Enforcer MCP writes. enforcer_api_write can reach any route and the
   // agent_credential_* tools mint or revoke credentials; both were ungated.
   // Headless there is nobody to ask, so these are refused outright, except a
   // graph route from a session that carries GRAPH_ID (see graphRoute).
-  { id: 'enforcer.api_write', authz: 'write', headless: 'deny', graphExempt: true,
-    name: 'write through the Enforcer API', tool: '', action: 'ask',
-    match: '^mcp__[\\w-]*__enforcer_api_write:' },
-  { id: 'enforcer.credential', authz: 'write', headless: 'deny',
-    name: 'issue, rotate or revoke an agent credential', tool: '', action: 'ask',
-    match: '^mcp__[\\w-]*__agent_credential_(?:issue|rotate|revoke)\\w*:' },
-  { id: 'deploy.publish', authz: 'write',
-    name: 'publish or deploy', tool: 'shell', action: 'ask',
-    match: 'npm\\s+publish|vercel\\s+.*--prod|kubectl\\s+(apply|delete)|terraform\\s+apply' },
+  {
+    id: 'enforcer.api_write',
+    authz: 'write',
+    headless: 'deny',
+    graphExempt: true,
+    name: 'write through the Enforcer API',
+    tool: '',
+    action: 'ask',
+    match: '^mcp__[\\w-]*__enforcer_api_write:',
+  },
+  {
+    id: 'enforcer.credential',
+    authz: 'write',
+    headless: 'deny',
+    name: 'issue, rotate or revoke an agent credential',
+    tool: '',
+    action: 'ask',
+    match: '^mcp__[\\w-]*__agent_credential_(?:issue|rotate|revoke)\\w*:',
+  },
+  {
+    id: 'deploy.publish',
+    authz: 'write',
+    name: 'publish or deploy',
+    tool: 'shell',
+    action: 'ask',
+    match: 'npm\\s+publish|vercel\\s+.*--prod|kubectl\\s+(apply|delete)|terraform\\s+apply',
+  },
 ];
 
 /**
@@ -122,7 +186,13 @@ export const DEFAULT_RULES = [
  */
 export function ruleId(rule) {
   if (rule?.id) return String(rule.id);
-  return 'custom.' + String(rule?.name || 'rule').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+  return (
+    'custom.' +
+    String(rule?.name || 'rule')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_|_$/g, '')
+  );
 }
 
 /** The authorization action a rule is asked about. Unknown means the widest. */
@@ -136,7 +206,11 @@ export function ruleProblem(r) {
   if (!r || typeof r !== 'object' || Array.isArray(r)) return 'not an object';
   if (typeof r.match !== 'string' || !r.match) return 'match must be a non-empty string';
   if (r.tool != null && typeof r.tool !== 'string') return 'tool must be a string';
-  try { new RegExp(r.match, 'i'); } catch (e) { return `match is not a valid regex (${e.message})`; }
+  try {
+    new RegExp(r.match, 'i');
+  } catch (e) {
+    return `match is not a valid regex (${e.message})`;
+  }
   return null;
 }
 
@@ -153,9 +227,19 @@ export function resolveRules(cfg = {}) {
   cfg.rules.forEach((r, i) => {
     const why = ruleProblem(r);
     if (!why) return good.push(r);
-    let shown; try { shown = JSON.stringify(r); } catch { shown = String(r); }
+    let shown;
+    try {
+      shown = JSON.stringify(r);
+    } catch {
+      shown = String(r);
+    }
     const line = `enforcer-governor: invalid rule #${i} ${shown}: ${why}; skipped`;
-    if (!warned.has(line)) { warned.add(line); try { process.stderr.write(line + '\n'); } catch {} }
+    if (!warned.has(line)) {
+      warned.add(line);
+      try {
+        process.stderr.write(line + '\n');
+      } catch {}
+    }
   });
   if (cfg.rules.length && !good.length) throw new Error('config.rules has no valid rule');
   return good;
@@ -170,22 +254,38 @@ const SHELLS = new Set(['sh', 'bash', 'zsh', 'dash', 'ksh', 'ash']);
 // wrapper -> the options that take a separate argument
 const WRAPPERS = {
   sudo: ['-u', '-g', '-h', '-p', '-C', '-D', '-R', '-T', '-U', '-r', '-t'],
-  env: ['-u', '-C', '-S'], nohup: [], time: ['-f', '-o'], command: [], exec: ['-a'], builtin: [],
-  nice: ['-n'], ionice: ['-c', '-n', '-p'], stdbuf: ['-i', '-o', '-e'], setsid: [], timeout: ['-s', '-k'],
+  env: ['-u', '-C', '-S'],
+  nohup: [],
+  time: ['-f', '-o'],
+  command: [],
+  exec: ['-a'],
+  builtin: [],
+  nice: ['-n'],
+  ionice: ['-c', '-n', '-p'],
+  stdbuf: ['-i', '-o', '-e'],
+  setsid: [],
+  timeout: ['-s', '-k'],
   xargs: ['-I', '-n', '-P', '-d', '-L', '-s', '-E', '-a', '-l'],
 };
-const MAX_DEPTH = 5, MAX_SEGS = 400;
+const MAX_DEPTH = 5,
+  MAX_SEGS = 400;
 
 function words(seg) {
-  const out = []; let i = 0;
+  const out = [];
+  let i = 0;
   while (i < seg.length) {
     while (i < seg.length && /\s/.test(seg[i])) i++;
     if (i >= seg.length) break;
-    const start = i; let w = ''; let q = null;
+    const start = i;
+    let w = '';
+    let q = null;
     while (i < seg.length && (q || !/\s/.test(seg[i]))) {
       const c = seg[i];
-      if (q) { if (c === q) q = null; else if (c === '\\' && q === '"' && i + 1 < seg.length) w += seg[++i]; else w += c; }
-      else if (c === '"' || c === "'") q = c;
+      if (q) {
+        if (c === q) q = null;
+        else if (c === '\\' && q === '"' && i + 1 < seg.length) w += seg[++i];
+        else w += c;
+      } else if (c === '"' || c === "'") q = c;
       else if (c === '\\' && i + 1 < seg.length) w += seg[++i];
       else w += c;
       i++;
@@ -212,8 +312,10 @@ function strip(seg) {
       while (k < ws.length) {
         const t = ws[k].w;
         if (/^[A-Za-z_]\w*=/.test(t)) k++;
-        else if (t === '--') { k++; break; }
-        else if (t.startsWith('-') && t.length > 1) k += takes.includes(t) ? 2 : 1;
+        else if (t === '--') {
+          k++;
+          break;
+        } else if (t.startsWith('-') && t.length > 1) k += takes.includes(t) ? 2 : 1;
         else break;
       }
       if (base === 'timeout' && k < ws.length && /^[\d.]+[smhd]?$/.test(ws[k].w)) k++;
@@ -224,7 +326,10 @@ function strip(seg) {
     if (SHELLS.has(base)) {
       for (let m = k + 1; m < ws.length; m++) {
         const t = ws[m].w;
-        if (/^-[a-zA-Z]*c[a-zA-Z]*$/.test(t)) { if (ws[m + 1]) inner.push(ws[m + 1].w); break; }
+        if (/^-[a-zA-Z]*c[a-zA-Z]*$/.test(t)) {
+          if (ws[m + 1]) inner.push(ws[m + 1].w);
+          break;
+        }
         if (!t.startsWith('-')) break;
       }
     }
@@ -235,11 +340,15 @@ function strip(seg) {
 
 // Index just past the ')' that closes a '(' already consumed at text[from-1].
 function closeParen(text, from) {
-  let i = from, d = 1, q = null;
+  let i = from,
+    d = 1,
+    q = null;
   while (i < text.length && d) {
     const c = text[i];
-    if (q) { if (c === q) q = null; else if (c === '\\' && q === '"') i++; }
-    else if (c === '"' || c === "'") q = c;
+    if (q) {
+      if (c === q) q = null;
+      else if (c === '\\' && q === '"') i++;
+    } else if (c === '"' || c === "'") q = c;
     else if (c === '\\') i++;
     else if (c === '(') d++;
     else if (c === ')') d--;
@@ -251,35 +360,81 @@ function closeParen(text, from) {
 // Split text into top-level segments, noting which are joined by a pipe, and
 // collect $( ) / ` ` / <( ) bodies. Quotes and substitutions are atomic.
 function split(text) {
-  const segs = []; const subs = [];
-  let q = null, start = 0, i = 0;
-  const push = (end, sep) => { segs.push({ start, end, sep }); };
+  const segs = [];
+  const subs = [];
+  let q = null,
+    start = 0,
+    i = 0;
+  const push = (end, sep) => {
+    segs.push({ start, end, sep });
+  };
   while (i < text.length) {
-    const c = text[i], n = text[i + 1];
-    if (q === "'") { if (c === "'") q = null; i++; continue; }
-    if (c === '\\') { i += 2; continue; }
+    const c = text[i],
+      n = text[i + 1];
+    if (q === "'") {
+      if (c === "'") q = null;
+      i++;
+      continue;
+    }
+    if (c === '\\') {
+      i += 2;
+      continue;
+    }
     if (c === '`') {
       const e = text.indexOf('`', i + 1);
       subs.push(text.slice(i + 1, e < 0 ? text.length : e));
-      i = e < 0 ? text.length : e + 1; continue;
+      i = e < 0 ? text.length : e + 1;
+      continue;
     }
     if ((c === '$' || (!q && (c === '<' || c === '>'))) && n === '(') {
       const e = closeParen(text, i + 2);
       subs.push(text.slice(i + 2, Math.max(i + 2, e - 1)));
-      i = e; continue;
+      i = e;
+      continue;
     }
-    if (q === '"') { if (c === '"') q = null; i++; continue; }
-    if (c === "'" || c === '"') { q = c; i++; continue; }
-    if (c === ';' || c === '\n') { push(i, ';'); i++; start = i; continue; }
+    if (q === '"') {
+      if (c === '"') q = null;
+      i++;
+      continue;
+    }
+    if (c === "'" || c === '"') {
+      q = c;
+      i++;
+      continue;
+    }
+    if (c === ';' || c === '\n') {
+      push(i, ';');
+      i++;
+      start = i;
+      continue;
+    }
     if (c === '|') {
-      if (n === '|') { push(i, ';'); i += 2; } else { push(i, '|'); i += n === '&' ? 2 : 1; }
-      start = i; continue;
+      if (n === '|') {
+        push(i, ';');
+        i += 2;
+      } else {
+        push(i, '|');
+        i += n === '&' ? 2 : 1;
+      }
+      start = i;
+      continue;
     }
     if (c === '&') {
       const p = text[i - 1];
-      if (n === '&') { push(i, ';'); i += 2; start = i; continue; }
-      if (p === '>' || p === '<' || n === '>') { i++; continue; }
-      push(i, ';'); i++; start = i; continue;
+      if (n === '&') {
+        push(i, ';');
+        i += 2;
+        start = i;
+        continue;
+      }
+      if (p === '>' || p === '<' || n === '>') {
+        i++;
+        continue;
+      }
+      push(i, ';');
+      i++;
+      start = i;
+      continue;
     }
     i++;
   }
@@ -289,12 +444,16 @@ function split(text) {
 
 /** Every command in `text`: [{raw, start, end, cmd, top}] and the pipelines, as joined strings. */
 export function commands(text) {
-  const out = []; const pipes = [];
+  const out = [];
+  const pipes = [];
   const walk = (t, top, depth) => {
     if (depth > MAX_DEPTH || out.length > MAX_SEGS) return;
     const { segs, subs } = split(t);
     let run = [];
-    const flush = () => { if (run.length > 1) pipes.push(run.join(' | ')); run = []; };
+    const flush = () => {
+      if (run.length > 1) pipes.push(run.join(' | '));
+      run = [];
+    };
     for (const s of segs) {
       const raw = t.slice(s.start, s.end);
       const { cmd, inner } = strip(raw);
@@ -311,10 +470,14 @@ export function commands(text) {
 }
 
 const STRICT = { deny: 3, ask: 2, rewrite: 1 };
-const strictness = (r) => STRICT[r.action] ?? 2;   // an unknown action is treated as an ask
+const strictness = (r) => STRICT[r.action] ?? 2; // an unknown action is treated as an ask
 
 function compile(r) {
-  try { return new RegExp(r.match, r.cs ? '' : 'i'); } catch { return null; }  // a bad pattern must not break the check
+  try {
+    return new RegExp(r.match, r.cs ? '' : 'i');
+  } catch {
+    return null;
+  } // a bad pattern must not break the check
 }
 
 /**
@@ -331,7 +494,7 @@ function graphRoute(ev) {
 
 function scan(rules, ev) {
   const text = String(ev.action || '');
-  const cache = new Map();   // command analysis per subject text
+  const cache = new Map(); // command analysis per subject text
   let best = null;
   for (const r of rules || []) {
     if (!toolMatches(r.tool, ev)) continue;
@@ -343,9 +506,10 @@ function scan(rules, ev) {
     // report or a test fixture is not a credential access.
     const subject = r.field ? fieldText(r.field, ev) : text;
     const shell = (!r.field || r.field === 'command') && toolMatches('shell', ev);
-    let segs = null;   // null: no hit
-    if (!shell) { if (re.test(subject)) segs = []; }
-    else {
+    let segs = null; // null: no hit
+    if (!shell) {
+      if (re.test(subject)) segs = [];
+    } else {
       const body = r.field ? subject : subject.replace(/^[\w.-]+:/, '');
       if (!cache.has(body)) cache.set(body, commands(body));
       const { commands: cmds, pipelines } = cache.get(body);
@@ -390,7 +554,11 @@ function rewriteInput(rule, ev, segs) {
   const before = input?.[key];
   if (typeof before !== 'string') return null;
   let re;
-  try { re = new RegExp(rule.replace[0], rule.cs ? 'g' : 'gi'); } catch { return null; }
+  try {
+    re = new RegExp(rule.replace[0], rule.cs ? 'g' : 'gi');
+  } catch {
+    return null;
+  }
   let after;
   if (rule.scope === 'segment') {
     if (!segs?.length || before !== fieldText(rule.field, ev)) return null;
@@ -425,11 +593,10 @@ export function evaluate(rules, ev) {
   if (hit.action === 'rewrite') {
     const input = rewriteInput(hit, ev, found.segs);
     if (input) return Verdict.rewrite(input, `${hit.name} — ${hit.why}`, of);
-    return Verdict.ask(`would ${hit.name}`, of);   // could not make it safer; ask instead
+    return Verdict.ask(`would ${hit.name}`, of); // could not make it safer; ask instead
   }
 
-  if (hit.headless === 'deny' && ev.worker?.headless)
-    return Verdict.deny(`not allowed to ${hit.name} headless`, of);
+  if (hit.headless === 'deny' && ev.worker?.headless) return Verdict.deny(`not allowed to ${hit.name} headless`, of);
 
   // Deliberately does not latch anything: every separate dangerous action
   // deserves its own answer, not one blanket approval for the session.

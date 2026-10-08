@@ -21,46 +21,46 @@ export const MODELS = {
   // ── xAI ── Prices are the sub-200k tier; xAI doubles them past 200k, so a very
   // long context is metered low here rather than high, which is the safe
   // direction for a cap but worth knowing.
-  'grok-4.6':          { p: 'xai',  label: 'Grok 4.6',    in: 2,    out: 6,  cin: 0.5 },
-  'grok-4.5':          { p: 'xai',  label: 'Grok 4.5',    in: 2,    out: 6,  cin: 0.3 },
-  'grok-4.3':          { p: 'xai',  label: 'Grok 4.3',    in: 1.25, out: 2.5, cin: 0.2 },
-  'grok-build-0.1':    { p: 'xai',  label: 'Grok Build',  in: 1,    out: 2,  cin: 0.2 },
+  'grok-4.6': { p: 'xai', label: 'Grok 4.6', in: 2, out: 6, cin: 0.5 },
+  'grok-4.5': { p: 'xai', label: 'Grok 4.5', in: 2, out: 6, cin: 0.3 },
+  'grok-4.3': { p: 'xai', label: 'Grok 4.3', in: 1.25, out: 2.5, cin: 0.2 },
+  'grok-build-0.1': { p: 'xai', label: 'Grok Build', in: 1, out: 2, cin: 0.2 },
   // ── Anthropic ──  cache read 0.1x input, 5-minute cache write 1.25x
-  'claude-fable-5':    { p: 'anthropic', label: 'Fable 5',     in: 10,   out: 50 },
-  'claude-opus-5':     { p: 'anthropic', label: 'Opus 5',      in: 5,    out: 25 },
-  'claude-opus-4-8':   { p: 'anthropic', label: 'Opus 4.8',    in: 5,    out: 25 },
-  'claude-opus-4-7':   { p: 'anthropic', label: 'Opus 4.7',    in: 5,    out: 25 },
-  'claude-opus-4-6':   { p: 'anthropic', label: 'Opus 4.6',    in: 5,    out: 25 },
+  'claude-fable-5': { p: 'anthropic', label: 'Fable 5', in: 10, out: 50 },
+  'claude-opus-5': { p: 'anthropic', label: 'Opus 5', in: 5, out: 25 },
+  'claude-opus-4-8': { p: 'anthropic', label: 'Opus 4.8', in: 5, out: 25 },
+  'claude-opus-4-7': { p: 'anthropic', label: 'Opus 4.7', in: 5, out: 25 },
+  'claude-opus-4-6': { p: 'anthropic', label: 'Opus 4.6', in: 5, out: 25 },
   // Sonnet 5 was priced here at $3/$15 on the strength of an announced
   // increase for 2026-09-01. Anthropic have since confirmed the $2/$10
   // introductory rate is the standard rate and the increase will not happen,
   // so every Sonnet 5 figure we showed was 1.5x the real cost.
-  'claude-sonnet-5':   { p: 'anthropic', label: 'Sonnet 5',    in: 2,    out: 10 },
-  'claude-sonnet-4-6': { p: 'anthropic', label: 'Sonnet 4.6',  in: 3,    out: 15 },
-  'claude-haiku-4-5':  { p: 'anthropic', label: 'Haiku 4.5',   in: 1,    out: 5  },
+  'claude-sonnet-5': { p: 'anthropic', label: 'Sonnet 5', in: 2, out: 10 },
+  'claude-sonnet-4-6': { p: 'anthropic', label: 'Sonnet 4.6', in: 3, out: 15 },
+  'claude-haiku-4-5': { p: 'anthropic', label: 'Haiku 4.5', in: 1, out: 5 },
   // ── OpenAI ──  cached input priced explicitly, no separate cache-write charge
-  'gpt-5.6-sol':       { p: 'openai', label: 'GPT-5.6 Sol',    in: 5,    out: 30,  cin: 0.50  },
-  'gpt-5.6-terra':     { p: 'openai', label: 'GPT-5.6 Terra',  in: 2,    out: 12,  cin: 0.20  },
-  'gpt-5.6-luna':      { p: 'openai', label: 'GPT-5.6 Luna',   in: 0.20, out: 1.20, cin: 0.02 },
-  'gpt-5.5-pro':       { p: 'openai', label: 'GPT-5.5 Pro',    in: 30,   out: 180 },
-  'gpt-5.5':           { p: 'openai', label: 'GPT-5.5',        in: 5,    out: 30,  cin: 0.50  },
-  'gpt-5.4-mini':      { p: 'openai', label: 'GPT-5.4 mini',   in: 0.75, out: 4.50, cin: 0.075 },
-  'gpt-5.4-nano':      { p: 'openai', label: 'GPT-5.4 nano',   in: 0.20, out: 1.25, cin: 0.02 },
-  'gpt-5.4-pro':       { p: 'openai', label: 'GPT-5.4 Pro',    in: 30,   out: 180 },
-  'gpt-5.4':           { p: 'openai', label: 'GPT-5.4',        in: 2.50, out: 15,  cin: 0.25  },
-  'gpt-5.1':           { p: 'openai', label: 'GPT-5.1',        in: 1.25, out: 10,  cin: 0.125 },
-  'gpt-5-mini':        { p: 'openai', label: 'GPT-5 mini',     in: 0.25, out: 2,   cin: 0.025 },
-  'gpt-5-nano':        { p: 'openai', label: 'GPT-5 nano',     in: 0.05, out: 0.40, cin: 0.005 },
-  'gpt-5-pro':         { p: 'openai', label: 'GPT-5 Pro',      in: 15,   out: 120 },
-  'gpt-5':             { p: 'openai', label: 'GPT-5',          in: 1.25, out: 10,  cin: 0.125 },
-  'gpt-4.1-mini':      { p: 'openai', label: 'GPT-4.1 mini',   in: 0.40, out: 1.60, cin: 0.10 },
-  'gpt-4.1-nano':      { p: 'openai', label: 'GPT-4.1 nano',   in: 0.10, out: 0.40, cin: 0.025 },
-  'gpt-4.1':           { p: 'openai', label: 'GPT-4.1',        in: 2,    out: 8,   cin: 0.50  },
-  'gpt-4o-mini':       { p: 'openai', label: 'GPT-4o mini',    in: 0.15, out: 0.60, cin: 0.075 },
-  'gpt-4o':            { p: 'openai', label: 'GPT-4o',         in: 2.50, out: 10,  cin: 1.25  },
-  'o4-mini':           { p: 'openai', label: 'o4-mini',        in: 1.10, out: 4.40, cin: 0.275 },
-  'o3-mini':           { p: 'openai', label: 'o3-mini',        in: 1.10, out: 4.40, cin: 0.55 },
-  'o3':                { p: 'openai', label: 'o3',             in: 2,    out: 8,   cin: 0.50  },
+  'gpt-5.6-sol': { p: 'openai', label: 'GPT-5.6 Sol', in: 5, out: 30, cin: 0.5 },
+  'gpt-5.6-terra': { p: 'openai', label: 'GPT-5.6 Terra', in: 2, out: 12, cin: 0.2 },
+  'gpt-5.6-luna': { p: 'openai', label: 'GPT-5.6 Luna', in: 0.2, out: 1.2, cin: 0.02 },
+  'gpt-5.5-pro': { p: 'openai', label: 'GPT-5.5 Pro', in: 30, out: 180 },
+  'gpt-5.5': { p: 'openai', label: 'GPT-5.5', in: 5, out: 30, cin: 0.5 },
+  'gpt-5.4-mini': { p: 'openai', label: 'GPT-5.4 mini', in: 0.75, out: 4.5, cin: 0.075 },
+  'gpt-5.4-nano': { p: 'openai', label: 'GPT-5.4 nano', in: 0.2, out: 1.25, cin: 0.02 },
+  'gpt-5.4-pro': { p: 'openai', label: 'GPT-5.4 Pro', in: 30, out: 180 },
+  'gpt-5.4': { p: 'openai', label: 'GPT-5.4', in: 2.5, out: 15, cin: 0.25 },
+  'gpt-5.1': { p: 'openai', label: 'GPT-5.1', in: 1.25, out: 10, cin: 0.125 },
+  'gpt-5-mini': { p: 'openai', label: 'GPT-5 mini', in: 0.25, out: 2, cin: 0.025 },
+  'gpt-5-nano': { p: 'openai', label: 'GPT-5 nano', in: 0.05, out: 0.4, cin: 0.005 },
+  'gpt-5-pro': { p: 'openai', label: 'GPT-5 Pro', in: 15, out: 120 },
+  'gpt-5': { p: 'openai', label: 'GPT-5', in: 1.25, out: 10, cin: 0.125 },
+  'gpt-4.1-mini': { p: 'openai', label: 'GPT-4.1 mini', in: 0.4, out: 1.6, cin: 0.1 },
+  'gpt-4.1-nano': { p: 'openai', label: 'GPT-4.1 nano', in: 0.1, out: 0.4, cin: 0.025 },
+  'gpt-4.1': { p: 'openai', label: 'GPT-4.1', in: 2, out: 8, cin: 0.5 },
+  'gpt-4o-mini': { p: 'openai', label: 'GPT-4o mini', in: 0.15, out: 0.6, cin: 0.075 },
+  'gpt-4o': { p: 'openai', label: 'GPT-4o', in: 2.5, out: 10, cin: 1.25 },
+  'o4-mini': { p: 'openai', label: 'o4-mini', in: 1.1, out: 4.4, cin: 0.275 },
+  'o3-mini': { p: 'openai', label: 'o3-mini', in: 1.1, out: 4.4, cin: 0.55 },
+  o3: { p: 'openai', label: 'o3', in: 2, out: 8, cin: 0.5 },
   // ── Google ──  context-cache priced explicitly, no separate cache-write charge.
   // Two caveats baked into these numbers, both taken from Google's pricing page:
   // the Flash 3.7/3.6 rates are the ones in force through 2026-12-31 (they rise
@@ -68,30 +68,30 @@ export const MODELS = {
   // about double). Both are the common case; a long-prompt Pro session is
   // therefore under-counted, which is the direction that lets an agent run
   // slightly past its limit rather than being cut off early.
-  'gemini-3.7-flash':      { p: 'google', label: 'Gemini 3.7 Flash',      in: 0.75, out: 3.75, cin: 0.075 },
-  'gemini-3.6-flash':      { p: 'google', label: 'Gemini 3.6 Flash',      in: 0.75, out: 3.75, cin: 0.075 },
-  'gemini-3.5-flash-lite': { p: 'google', label: 'Gemini 3.5 Flash-Lite', in: 0.30, out: 2.50, cin: 0.03 },
-  'gemini-3.5-flash':      { p: 'google', label: 'Gemini 3.5 Flash',      in: 1.50, out: 9.00, cin: 0.15 },
-  'gemini-3.1-flash-lite': { p: 'google', label: 'Gemini 3.1 Flash-Lite', in: 0.25, out: 1.50, cin: 0.025 },
-  'gemini-3.1-pro':        { p: 'google', label: 'Gemini 3.1 Pro',        in: 2.00, out: 12.00, cin: 0.20 },
-  'gemini-2.5-flash-lite': { p: 'google', label: 'Gemini 2.5 Flash-Lite', in: 0.10, out: 0.40, cin: 0.01 },
-  'gemini-2.5-flash':      { p: 'google', label: 'Gemini 2.5 Flash',      in: 0.30, out: 2.50, cin: 0.03 },
-  'gemini-2.5-pro':        { p: 'google', label: 'Gemini 2.5 Pro',        in: 1.25, out: 10.00, cin: 0.125 },
+  'gemini-3.7-flash': { p: 'google', label: 'Gemini 3.7 Flash', in: 0.75, out: 3.75, cin: 0.075 },
+  'gemini-3.6-flash': { p: 'google', label: 'Gemini 3.6 Flash', in: 0.75, out: 3.75, cin: 0.075 },
+  'gemini-3.5-flash-lite': { p: 'google', label: 'Gemini 3.5 Flash-Lite', in: 0.3, out: 2.5, cin: 0.03 },
+  'gemini-3.5-flash': { p: 'google', label: 'Gemini 3.5 Flash', in: 1.5, out: 9.0, cin: 0.15 },
+  'gemini-3.1-flash-lite': { p: 'google', label: 'Gemini 3.1 Flash-Lite', in: 0.25, out: 1.5, cin: 0.025 },
+  'gemini-3.1-pro': { p: 'google', label: 'Gemini 3.1 Pro', in: 2.0, out: 12.0, cin: 0.2 },
+  'gemini-2.5-flash-lite': { p: 'google', label: 'Gemini 2.5 Flash-Lite', in: 0.1, out: 0.4, cin: 0.01 },
+  'gemini-2.5-flash': { p: 'google', label: 'Gemini 2.5 Flash', in: 0.3, out: 2.5, cin: 0.03 },
+  'gemini-2.5-pro': { p: 'google', label: 'Gemini 2.5 Pro', in: 1.25, out: 10.0, cin: 0.125 },
   // ── DeepSeek ──  peak-hour rates (off-peak is half), so an off-peak session
   // is metered high rather than low. Cache-hit input priced explicitly.
-  'deepseek-v4-pro':       { p: 'deepseek', label: 'DeepSeek V4 Pro',       in: 1.32, out: 3.96, cin: 0.044 },
-  'deepseek-flash':        { p: 'deepseek', label: 'DeepSeek V4.1 Flash',   in: 0.30, out: 1.20, cin: 0.006 },
+  'deepseek-v4-pro': { p: 'deepseek', label: 'DeepSeek V4 Pro', in: 1.32, out: 3.96, cin: 0.044 },
+  'deepseek-flash': { p: 'deepseek', label: 'DeepSeek V4.1 Flash', in: 0.3, out: 1.2, cin: 0.006 },
   // ── Alibaba (Qwen) ──  Model Studio International list prices, smallest
   // context tier. The Mainland endpoint is cheaper, so it is metered high.
-  'qwen3.8-max':           { p: 'alibaba', label: 'Qwen3.8 Max',           in: 2,    out: 6    },
-  'qwen3.8-flash':         { p: 'alibaba', label: 'Qwen3.8 Flash',         in: 0.15, out: 0.47 },
-  'qwen3.7-max':           { p: 'alibaba', label: 'Qwen3.7 Max',           in: 2.50, out: 7.50 },
-  'qwen3.7-plus':          { p: 'alibaba', label: 'Qwen3.7 Plus',          in: 0.40, out: 1.60 },
-  'qwen3-coder-plus':      { p: 'alibaba', label: 'Qwen3 Coder Plus',      in: 1,    out: 5    },
-  'qwen3-coder-flash':     { p: 'alibaba', label: 'Qwen3 Coder Flash',     in: 0.30, out: 1.50 },
-  'qwen-max':              { p: 'alibaba', label: 'Qwen Max',              in: 1.60, out: 6.40 },
-  'qwen-plus':             { p: 'alibaba', label: 'Qwen Plus',             in: 0.40, out: 1.20 },
-  'qwen-flash':            { p: 'alibaba', label: 'Qwen Flash',            in: 0.05, out: 0.40 },
+  'qwen3.8-max': { p: 'alibaba', label: 'Qwen3.8 Max', in: 2, out: 6 },
+  'qwen3.8-flash': { p: 'alibaba', label: 'Qwen3.8 Flash', in: 0.15, out: 0.47 },
+  'qwen3.7-max': { p: 'alibaba', label: 'Qwen3.7 Max', in: 2.5, out: 7.5 },
+  'qwen3.7-plus': { p: 'alibaba', label: 'Qwen3.7 Plus', in: 0.4, out: 1.6 },
+  'qwen3-coder-plus': { p: 'alibaba', label: 'Qwen3 Coder Plus', in: 1, out: 5 },
+  'qwen3-coder-flash': { p: 'alibaba', label: 'Qwen3 Coder Flash', in: 0.3, out: 1.5 },
+  'qwen-max': { p: 'alibaba', label: 'Qwen Max', in: 1.6, out: 6.4 },
+  'qwen-plus': { p: 'alibaba', label: 'Qwen Plus', in: 0.4, out: 1.2 },
+  'qwen-flash': { p: 'alibaba', label: 'Qwen Flash', in: 0.05, out: 0.4 },
 };
 
 // Longest key first, so 'gpt-5.6-sol' matches before the 'gpt-5' substring.
@@ -104,7 +104,7 @@ export const DEFAULT_MODEL = 'claude-opus-5';
 // than under-charged and can never quietly run past its limit.
 export function priceOf(model = '', fallback = DEFAULT_MODEL) {
   const m = String(model).toLowerCase();
-  const key = KEYS.find(k => m.includes(k));
+  const key = KEYS.find((k) => m.includes(k));
   if (key) return { key, ...MODELS[key] };
   if (/^(gpt|o[134]\b|chatgpt)/.test(m)) return { key: 'gpt-5.5', ...MODELS['gpt-5.5'] };
   if (/(gemini|bard|palm)/.test(m)) return { key: 'gemini-3.1-pro', ...MODELS['gemini-3.1-pro'] };
@@ -140,20 +140,26 @@ export const dollarsForTokens = (tok, perM) => (tok / 1e6) * perM;
 // action: 'deny' refuses outright; 'ask' hands the decision to the human via
 // Claude Code's own permission prompt -- no bespoke approval UI needed.
 export const DEFAULT_RULES = [
-  { name: 'run a script downloaded from the internet', tool: 'Bash',
-    match: '(curl|wget)[^|]*\\|\\s*(ba|z|fi)?sh', action: 'deny' },
-  { name: 'delete a whole tree', tool: 'Bash',
-    match: 'rm\\s+(-[a-zA-Z]*r[a-zA-Z]*f|-[a-zA-Z]*f[a-zA-Z]*r)', action: 'ask' },
-  { name: 'rewrite git history', tool: 'Bash',
-    match: 'push\\s+(--force|-f)\\b|reset\\s+--hard|filter-branch', action: 'ask' },
-  { name: 'read or write credentials', tool: 'Bash',
-    match: '(?:^|[\\s;&|(`])(?:cat|less|more|head|tail|cp|mv|scp|rsync|source|\\.|tee|sed|awk|cut|base64|curl|wget|printf|echo|vim?|nano)\\s+(?:[^|;&\\n]*?[\\s\'"=/])?(?:\\.env(?:\\.[\\w-]+)?|id_rsa\\w*|[\\w.-]+\\.pem|credentials\\.json|\\.aws/|\\.ssh/)(?=[\\s\'"|;&)]|$)|[<>]{1,2}\\s*[^|;&\\s]*(?:\\.env\\b|id_rsa|\\.pem\\b|credentials\\.json|\\.aws/|\\.ssh/)', action: 'ask' },
+  { name: 'run a script downloaded from the internet', tool: 'Bash', match: '(curl|wget)[^|]*\\|\\s*(ba|z|fi)?sh', action: 'deny' },
+  { name: 'delete a whole tree', tool: 'Bash', match: 'rm\\s+(-[a-zA-Z]*r[a-zA-Z]*f|-[a-zA-Z]*f[a-zA-Z]*r)', action: 'ask' },
+  { name: 'rewrite git history', tool: 'Bash', match: 'push\\s+(--force|-f)\\b|reset\\s+--hard|filter-branch', action: 'ask' },
+  {
+    name: 'read or write credentials',
+    tool: 'Bash',
+    match:
+      '(?:^|[\\s;&|(`])(?:cat|less|more|head|tail|cp|mv|scp|rsync|source|\\.|tee|sed|awk|cut|base64|curl|wget|printf|echo|vim?|nano)\\s+(?:[^|;&\\n]*?[\\s\'"=/])?(?:\\.env(?:\\.[\\w-]+)?|id_rsa\\w*|[\\w.-]+\\.pem|credentials\\.json|\\.aws/|\\.ssh/)(?=[\\s\'"|;&)]|$)|[<>]{1,2}\\s*[^|;&\\s]*(?:\\.env\\b|id_rsa|\\.pem\\b|credentials\\.json|\\.aws/|\\.ssh/)',
+    action: 'ask',
+  },
   // Any tool whose input names a credentials FILE as its path (Read/Edit/Write:
   // "file_path": "/app/.env") — the path key, not a mention in content.
-  { name: 'read or write credentials', tool: '',
-    match: '"(?:file_)?path"\\s*:\\s*"[^"]*(?:^|/)(?:\\.env(?:\\.[\\w-]+)?|id_rsa\\w*|[\\w.-]+\\.pem|credentials\\.json)"|"(?:file_)?path"\\s*:\\s*"[^"]*/\\.(?:aws|ssh)/', action: 'ask' },
-  { name: 'publish or deploy', tool: 'Bash',
-    match: 'npm\\s+publish|vercel\\s+.*--prod|kubectl\\s+(apply|delete)|terraform\\s+apply', action: 'ask' },
+  {
+    name: 'read or write credentials',
+    tool: '',
+    match:
+      '"(?:file_)?path"\\s*:\\s*"[^"]*(?:^|/)(?:\\.env(?:\\.[\\w-]+)?|id_rsa\\w*|[\\w.-]+\\.pem|credentials\\.json)"|"(?:file_)?path"\\s*:\\s*"[^"]*/\\.(?:aws|ssh)/',
+    action: 'ask',
+  },
+  { name: 'publish or deploy', tool: 'Bash', match: 'npm\\s+publish|vercel\\s+.*--prod|kubectl\\s+(apply|delete)|terraform\\s+apply', action: 'ask' },
 ];
 
 // First rule whose tool and pattern both match. An empty tool means any tool.
@@ -166,7 +172,11 @@ export function matchRule(rules, ev) {
   for (const r of rules || []) {
     if (r.tool && r.tool.toLowerCase() !== tool) continue;
     let re;
-    try { re = new RegExp(r.match, 'i'); } catch { continue; }   // a bad pattern must not break the check
+    try {
+      re = new RegExp(r.match, 'i');
+    } catch {
+      continue;
+    } // a bad pattern must not break the check
     if (re.test(text)) return r;
   }
   return null;
@@ -182,8 +192,10 @@ export function matchRule(rules, ev) {
 // work, which costs more than the money it saves, so the rule is: only speak
 // up on a clear mechanical signal with NO reasoning signal, and stay silent on
 // anything ambiguous. Silence is the safe default here, not a guess.
-const MECHANICAL = /\b(?:re-?)?run(?:ning)? (?:the |all |every )?(?:\w+ )?(?:tests?|suite|build|linter)|npm (?:test|run build)|pytest|go test|cargo test|\blint(?:ing|er)?\b|prettier|gofmt|\btypos?\b|rename (?:the |this )?(?:variable|file|function|method)|bump the version|update the (?:changelog|readme|docs)|add a test for|fix the (?:formatting|indentation|imports?)/i;
-const REASONING  = /\b(?:why|design|architect(?:ure)?|debug|investigate|figure out|root cause|refactor|re-?architect|plan|approach|trade-?offs?|decide|strategy|should we|compare|evaluate|migrate)\b/i;
+const MECHANICAL =
+  /\b(?:re-?)?run(?:ning)? (?:the |all |every )?(?:\w+ )?(?:tests?|suite|build|linter)|npm (?:test|run build)|pytest|go test|cargo test|\blint(?:ing|er)?\b|prettier|gofmt|\btypos?\b|rename (?:the |this )?(?:variable|file|function|method)|bump the version|update the (?:changelog|readme|docs)|add a test for|fix the (?:formatting|indentation|imports?)/i;
+const REASONING =
+  /\b(?:why|design|architect(?:ure)?|debug|investigate|figure out|root cause|refactor|re-?architect|plan|approach|trade-?offs?|decide|strategy|should we|compare|evaluate|migrate)\b/i;
 
 // 'reasoning' | 'mechanical' | null (unknown -> say nothing)
 // Which client is this work for?
@@ -202,10 +214,14 @@ const REASONING  = /\b(?:why|design|architect(?:ure)?|debug|investigate|figure o
 export function clientFor(cwd, clients) {
   const path = String(cwd || '');
   if (!path) return '';
-  let best = '', bestLen = -1;
+  let best = '',
+    bestLen = -1;
   for (const [prefix, name] of Object.entries(clients || {})) {
     if (path === prefix || path.startsWith(prefix.replace(/\/+$/, '') + '/')) {
-      if (prefix.length > bestLen) { best = name; bestLen = prefix.length; }
+      if (prefix.length > bestLen) {
+        best = name;
+        bestLen = prefix.length;
+      }
     }
   }
   if (best) return best;
@@ -219,7 +235,7 @@ export function clientFor(cwd, clients) {
 export function taskShape(task = '') {
   const t = String(task || '');
   if (!t.trim()) return null;
-  if (REASONING.test(t)) return 'reasoning';       // reasoning wins ties
+  if (REASONING.test(t)) return 'reasoning'; // reasoning wins ties
   if (MECHANICAL.test(t)) return 'mechanical';
   return null;
 }
@@ -229,10 +245,10 @@ export function taskShape(task = '') {
 // practice, because nano cannot carry multi-step work. Advice moves ONE step,
 // to a model that can actually do the job.
 const TIERS = {
-  anthropic: { top: 'claude-opus-5',   mid: 'claude-sonnet-5',    low: 'claude-haiku-4-5' },
-  openai:    { top: 'gpt-5.6-sol',     mid: 'gpt-5.4',            low: 'gpt-5-mini' },
-  google:    { top: 'gemini-3.1-pro',  mid: 'gemini-3.5-flash',   low: 'gemini-2.5-flash-lite' },
-  xai:       { top: 'grok-4.6',        mid: 'grok-4.3',           low: 'grok-build-0.1' },
+  anthropic: { top: 'claude-opus-5', mid: 'claude-sonnet-5', low: 'claude-haiku-4-5' },
+  openai: { top: 'gpt-5.6-sol', mid: 'gpt-5.4', low: 'gpt-5-mini' },
+  google: { top: 'gemini-3.1-pro', mid: 'gemini-3.5-flash', low: 'gemini-2.5-flash-lite' },
+  xai: { top: 'grok-4.6', mid: 'grok-4.3', low: 'grok-build-0.1' },
 };
 const tierOf = (key, t) => (t.top === key ? 'top' : t.mid === key ? 'mid' : t.low === key ? 'low' : null);
 
@@ -265,7 +281,8 @@ export function modelAdvice(model, shape) {
   const to = MODELS[suggest];
   const cheaper = to.in < me.in;
   return {
-    suggest, label: to.label,
+    suggest,
+    label: to.label,
     ratio: +(cheaper ? me.in / to.in : to.in / me.in).toFixed(1),
     cheaper,
     why: cheaper
@@ -278,10 +295,10 @@ export const DEFAULTS = {
   // Budgets are COST-WEIGHTED effective tokens (input=1, output 5x,
   // cache-create 1.25x, cache-read 0.1x), so long cached sessions are
   // measured by what they cost, not by raw context re-reads.
-  dollars: 20,                // what the human actually sets: spend cap per agent, USD
-  model: 'claude-opus-5',     // which model's prices convert dollars -> tokens
-  budget: 4000000,            // == $20 at Opus 5 rates. Derived from dollars+model.
-  soft: 0.75,         // escalate / warn at this fraction of budget
+  dollars: 20, // what the human actually sets: spend cap per agent, USD
+  model: 'claude-opus-5', // which model's prices convert dollars -> tokens
+  budget: 4000000, // == $20 at Opus 5 rates. Derived from dollars+model.
+  soft: 0.75, // escalate / warn at this fraction of budget
   // Total spend caps across ALL agents, in dollars. 0 means off. These are what
   // bound a team; the per-agent limit only bounds one session.
   dailyLimit: 0,
@@ -292,8 +309,8 @@ export const DEFAULTS = {
   // control that ships switched off prevents nothing. A normal single session
   // runs around $0.10 to $0.25 a minute, so these sit roughly 8x above
   // ordinary work and only a genuine runaway reaches them.
-  burnLimit: 2,        // per agent
-  fleetBurnLimit: 10,  // everything at once
+  burnLimit: 2, // per agent
+  fleetBurnLimit: 10, // everything at once
   // New agents appearing per minute. An orchestrator spawning spawners is
   // exponential, so this is about the shape of the arrival, not the count.
   fanoutLimit: 8,
@@ -306,15 +323,15 @@ export const DEFAULTS = {
   // instead of stopping. Off by default, because moving someone's work to
   // another model is not a decision to take without being asked.
   rerouteOn: false,
-  fallbackUrl: '',        // e.g. http://localhost:1234/v1/chat/completions
-  fallbackModel: '',      // e.g. qwen3.8-27b-mlx
+  fallbackUrl: '', // e.g. http://localhost:1234/v1/chat/completions
+  fallbackModel: '', // e.g. qwen3.8-27b-mlx
   fallbackHeaders: {},
   // Decisioning is OFF by default: a fresh install reports data first (cost
   // records and receipts for every call) and only checks spend, capability
   // rules or the tenant policy once someone turns them on. An organisation's
   // managed `on` still wins over these (managed.mjs onWins).
   budgetOn: false,
-  rulesOn: false,     // capability rules: what it may DO
+  rulesOn: false, // capability rules: what it may DO
   // With rulesOn false, still evaluate the capability rules and record what
   // they would have decided on the receipt as `would` (shadow.mjs). Never blocks.
   shadow: true,
@@ -327,38 +344,45 @@ export const DEFAULTS = {
   // Ship receipts to the control plane (src/ship.mjs), in the background,
   // with the Enforcer sign-in. Inert when signed out.
   shipOn: true,
-  ingestUrl: '',   // empty: centralUrl
-  adviseModel: true,  // say when the model looks mismatched to the task
+  ingestUrl: '', // empty: centralUrl
+  adviseModel: true, // say when the model looks mismatched to the task
   // Days a finished session's scratch files (cost-*/cursor-*) are kept before
   // the SessionEnd sweep removes them (src/sweep.mjs). 0 keeps them forever.
   sweepDays: 7,
-  enforceModel: false,// rewrite the model on the proxy. Off by default: silently
-                      // changing someone's model is a big deal, and we can only
-                      // do it where we own the request (never for Claude Code).
+  enforceModel: false, // rewrite the model on the proxy. Off by default: silently
+  // changing someone's model is a big deal, and we can only
+  // do it where we own the request (never for Claude Code).
   // Directory prefix -> client name. Map a folder once and every session in it
   // is attributed automatically. { "/Users/me/work/acme": "Acme Corp" }
   clients: {},
   // Per-client spend caps in dollars, by the same names. 0 or absent is off.
   clientLimits: {},
-  rules: null,        // null = DEFAULT_RULES; set your own to override
-  operator: '',       // the human this agent acts for; stamped on every receipt
+  rules: null, // null = DEFAULT_RULES; set your own to override
+  operator: '', // the human this agent acts for; stamped on every receipt
   softAction: 'escalate', // 'escalate' -> ask a human; 'deny' -> auto-block
 };
 
 // Period keys double as the reset mechanism: when the key changes, the total
 // starts again. No scheduler, no cron, correct across restarts and time zones.
-export const dayKey   = t => new Date(t).toISOString().slice(0, 10);
-const monthKey = t => new Date(t).toISOString().slice(0, 7);
-const weekKey  = t => {           // ISO-ish: week identified by its Monday
+export const dayKey = (t) => new Date(t).toISOString().slice(0, 10);
+const monthKey = (t) => new Date(t).toISOString().slice(0, 7);
+const weekKey = (t) => {
+  // ISO-ish: week identified by its Monday
   const d = new Date(t);
   d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
   return d.toISOString().slice(0, 10);
 };
-export const PERIODS = [['day', dayKey], ['week', weekKey], ['month', monthKey]];
+export const PERIODS = [
+  ['day', dayKey],
+  ['week', weekKey],
+  ['month', monthKey],
+];
 
 export function makeState() {
   return {
-    agents: {}, chain: [], prevHash: 'genesis',
+    agents: {},
+    chain: [],
+    prevHash: 'genesis',
     // Total spend across EVERY agent. A per-agent cap cannot bound a team:
     // Claude Code agent teams run each teammate as its own session, so seven
     // teammates on a $20 per-agent cap can spend $140. These totals are the
@@ -381,7 +405,7 @@ export function makeState() {
   };
 }
 
-export const BURN_WINDOW = 60000;   // one minute, so the sum IS dollars per minute
+export const BURN_WINDOW = 60000; // one minute, so the sum IS dollars per minute
 
 // Dollars per minute, for one agent or for everything at once. Needs a few
 // samples across a few seconds before it will answer, because one big charge
@@ -389,7 +413,7 @@ export const BURN_WINDOW = 60000;   // one minute, so the sum IS dollars per min
 export function burnRate(state, now = Date.now(), agent = null) {
   if (!state.burn || !state.burn.length) return 0;
   const from = now - BURN_WINDOW;
-  const rows = state.burn.filter(b => b.t > from && (!agent || b.agent === agent));
+  const rows = state.burn.filter((b) => b.t > from && (!agent || b.agent === agent));
   if (rows.length < 3) return 0;
   const span = now - rows[0].t;
   // Per minute, measured over however much of the minute has actually
@@ -409,11 +433,18 @@ export function burnRate(state, now = Date.now(), agent = null) {
 export function rollPeriods(state, now = Date.now()) {
   if (!state.periods) return;
   for (const [name, keyFn] of PERIODS) {
-    const p = state.periods[name], k = keyFn(now);
-    if (p.k !== k) { p.k = k; p.usd = 0; }
+    const p = state.periods[name],
+      k = keyFn(now);
+    if (p.k !== k) {
+      p.k = k;
+      p.usd = 0;
+    }
     if (state.clients) {
       const c = state.clients[name];
-      if (c.k !== k) { c.k = k; c.by = {}; }
+      if (c.k !== k) {
+        c.k = k;
+        c.by = {};
+      }
     }
   }
 }
@@ -444,8 +475,9 @@ export function addSpend(state, a, deltaTokens, now = Date.now()) {
 // rare; the model-matching feature makes it deliberate, so it has to be right.
 export function setModel(a, model) {
   if (!model || model === a.model) return;
-  const from = priceOf(a.model, model).in, to = priceOf(model).in;
-  if (a.model && a.tokens > 0 && from !== to) a.tokens = Math.round(a.tokens * from / to);
+  const from = priceOf(a.model, model).in,
+    to = priceOf(model).in;
+  if (a.model && a.tokens > 0 && from !== to) a.tokens = Math.round((a.tokens * from) / to);
   a.model = model;
 }
 
@@ -457,8 +489,13 @@ export function getAgent(state, id, cfg, now = Date.now()) {
       while (state.spawns.length && state.spawns[0].t <= from) state.spawns.shift();
     }
     state.agents[id] = {
-      id, tokens: 0, escalated: false, status: 'active',
-      budget: cfg.budget, soft: cfg.soft, cost: 0,
+      id,
+      tokens: 0,
+      escalated: false,
+      status: 'active',
+      budget: cfg.budget,
+      soft: cfg.soft,
+      cost: 0,
     };
   }
   return state.agents[id];
@@ -499,7 +536,8 @@ export function decide(state, ev, config = {}) {
   // governor off in the dashboard has to actually let work through, otherwise
   // there is no way back and the user is stuck.
   if (checksOff(cfg)) {
-    a.status = 'active'; a.escalated = false;
+    a.status = 'active';
+    a.escalated = false;
     return record(state, a, 'allow', 'checks are switched off', a.tokens, 'human');
   }
 
@@ -519,11 +557,12 @@ export function decide(state, ev, config = {}) {
   // file with no reason recorded is treated as re-derivable, so upgrading
   // unsticks anyone already stuck.
   if (a.status === 'grounded' && a.groundedBy === 'human') {
-    return record(state, a, 'deny',
-      'you stopped this agent. Resume it with /enforcer-governor:resume',
-      a.tokens);
+    return record(state, a, 'deny', 'you stopped this agent. Resume it with /enforcer-governor:resume', a.tokens);
   }
-  if (a.status === 'grounded') { a.status = 'active'; a.groundedBy = undefined; }
+  if (a.status === 'grounded') {
+    a.status = 'active';
+    a.groundedBy = undefined;
+  }
 
   // Capability first. "You may not do this" outranks "you have budget left",
   // and a cheap command can still be the destructive one.
@@ -548,9 +587,10 @@ export function decide(state, ev, config = {}) {
   // comparison against the budget silently evaluates false and the agent is
   // never stopped at all. Infinity poisons the running totals permanently, and
   // a negative lets a caller rewind its own spend.
-  const clean = n => (typeof n === 'number' && Number.isFinite(n) && n >= 0) ? n : null;
+  const clean = (n) => (typeof n === 'number' && Number.isFinite(n) && n >= 0 ? n : null);
   const wasTokens = a.tokens;
-  const abs = clean(ev.tokens), delta = clean(ev.deltaTokens);
+  const abs = clean(ev.tokens),
+    delta = clean(ev.deltaTokens);
   // Cumulative totals only ever move forward; a lower figure means a restarted
   // or re-read transcript, not spend that un-happened.
   if (abs !== null) a.tokens = Math.max(a.tokens, abs);
@@ -564,12 +604,12 @@ export function decide(state, ev, config = {}) {
     const caps = { day: cfg.dailyLimit, week: cfg.weeklyLimit, month: cfg.monthlyLimit };
     const word = { day: 'today', week: 'this week', month: 'this month' };
     for (const [name] of PERIODS) {
-      const cap = caps[name], spent = state.periods[name].usd;
+      const cap = caps[name],
+        spent = state.periods[name].usd;
       if (cap > 0 && spent >= cap) {
-        a.status = 'grounded'; a.groundedBy = name;
-        return record(state, a, 'deny',
-          `your agents have spent $${spent.toFixed(2)} ${word[name]}, which is your $${cap} limit`,
-          a.tokens);
+        a.status = 'grounded';
+        a.groundedBy = name;
+        return record(state, a, 'deny', `your agents have spent $${spent.toFixed(2)} ${word[name]}, which is your $${cap} limit`, a.tokens);
       }
     }
   }
@@ -580,16 +620,18 @@ export function decide(state, ev, config = {}) {
   // deliberate: an overnight run stops and waits for a human, which is exactly
   // what should have happened in every one of these incidents.
   if (cfg.budgetOn && !a.burnFlagged) {
-    const mine = burnRate(state, now, a.id), all = burnRate(state, now);
-    const hit = cfg.burnLimit > 0 && mine >= cfg.burnLimit
-      ? ['this agent is spending', mine, cfg.burnLimit]
-      : cfg.fleetBurnLimit > 0 && all >= cfg.fleetBurnLimit
-      ? ['your agents together are spending', all, cfg.fleetBurnLimit] : null;
+    const mine = burnRate(state, now, a.id),
+      all = burnRate(state, now);
+    const hit =
+      cfg.burnLimit > 0 && mine >= cfg.burnLimit
+        ? ['this agent is spending', mine, cfg.burnLimit]
+        : cfg.fleetBurnLimit > 0 && all >= cfg.fleetBurnLimit
+          ? ['your agents together are spending', all, cfg.fleetBurnLimit]
+          : null;
     if (hit) {
       a.burnFlagged = true;
       a.status = 'paused';
-      return record(state, a, 'escalate',
-        `${hit[0]} $${hit[1].toFixed(2)} a minute, over your $${hit[2]} a minute mark`, a.tokens);
+      return record(state, a, 'escalate', `${hit[0]} $${hit[1].toFixed(2)} a minute, over your $${hit[2]} a minute mark`, a.tokens);
     }
   }
 
@@ -600,9 +642,7 @@ export function decide(state, ev, config = {}) {
     if (spawned >= cfg.fanoutLimit) {
       state.fanoutFlagged = true;
       a.status = 'paused';
-      return record(state, a, 'escalate',
-        `${spawned} new agents started in the last minute, and you asked to be told past ${cfg.fanoutLimit}`,
-        a.tokens);
+      return record(state, a, 'escalate', `${spawned} new agents started in the last minute, and you asked to be told past ${cfg.fanoutLimit}`, a.tokens);
     }
   }
 
@@ -612,9 +652,7 @@ export function decide(state, ev, config = {}) {
     if (recent >= cfg.retryLimit) {
       a.retryFlagged = true;
       a.status = 'paused';
-      return record(state, a, 'escalate',
-        `it hit ${recent} errors in a minute and kept going, which is a retry loop, not progress`,
-        a.tokens);
+      return record(state, a, 'escalate', `it hit ${recent} errors in a minute and kept going, which is a retry loop, not progress`, a.tokens);
     }
   }
 
@@ -622,15 +660,15 @@ export function decide(state, ev, config = {}) {
     const cap = (cfg.clientLimits || {})[a.client];
     const spent = state.clients.month.by[a.client] || 0;
     if (cap > 0 && spent >= cap) {
-      a.status = 'grounded'; a.groundedBy = 'client';
-      return record(state, a, 'deny',
-        `work for ${a.client} has cost $${spent.toFixed(2)} this month, which is its $${cap} limit`,
-        a.tokens);
+      a.status = 'grounded';
+      a.groundedBy = 'client';
+      return record(state, a, 'deny', `work for ${a.client} has cost $${spent.toFixed(2)} this month, which is its $${cap} limit`, a.tokens);
     }
   }
 
   if (cfg.budgetOn && a.tokens >= a.budget) {
-    a.status = 'grounded'; a.groundedBy = 'limit';
+    a.status = 'grounded';
+    a.groundedBy = 'limit';
     return record(state, a, 'deny', 'it reached your spend limit', a.tokens);
   }
   if (cfg.budgetOn && !a.escalated && a.tokens >= a.budget * a.soft) {
@@ -639,7 +677,8 @@ export function decide(state, ev, config = {}) {
       a.status = 'paused';
       return record(state, a, 'escalate', `it has used ${Math.round(a.soft * 100)}% of your spend limit`, a.tokens);
     }
-    a.status = 'grounded'; a.groundedBy = 'soft';
+    a.status = 'grounded';
+    a.groundedBy = 'soft';
     return record(state, a, 'deny', 'it passed the warn-me mark, and you set that to stop it', a.tokens);
   }
   const r = record(state, a, 'allow', 'inside the limit, doing new work', a.tokens);
@@ -665,9 +704,10 @@ export function resolve(state, agentId, approve, config = {}) {
     a.groundedBy = undefined;
     a.escalated = false;
     a.burnFlagged = a.retryFlagged = state.fanoutFlagged = false;
-  return record(state, a, 'allow', 'you approved it, limit raised by half', a.tokens, 'human');
+    return record(state, a, 'allow', 'you approved it, limit raised by half', a.tokens, 'human');
   }
-  a.status = 'grounded'; a.groundedBy = 'human';
+  a.status = 'grounded';
+  a.groundedBy = 'human';
   return record(state, a, 'deny', 'you said no', a.tokens, 'human');
 }
 
@@ -688,7 +728,8 @@ export function release(state, agentId, extra = 1.5) {
 export function kill(state, agentId) {
   const a = state.agents[agentId];
   if (!a) return null;
-  a.status = 'grounded'; a.groundedBy = 'human';
+  a.status = 'grounded';
+  a.groundedBy = 'human';
   return record(state, a, 'deny', 'you stopped it', a.tokens, 'human');
 }
 
@@ -722,10 +763,15 @@ export function record(state, a, verdict, reason, tokens, authority, operator, e
   // The file is the record; memory only holds a recent tail. A daemon left
   // running for weeks used to grow this array forever. Dropping the oldest
   // links means the in-memory check now starts from the oldest one KEPT.
-  if (state.chain.length > 5000) { state.chainStart = state.chain.shift().hash; }
+  if (state.chain.length > 5000) {
+    state.chainStart = state.chain.shift().hash;
+  }
   state.prevHash = hash;
   return {
-    verdict, reason, receipt: 'rcpt_' + hash.slice(0, 12), hash,
+    verdict,
+    reason,
+    receipt: 'rcpt_' + hash.slice(0, 12),
+    hash,
     agent: { id: a.id, tokens: Math.round(a.tokens), budget: a.budget, status: a.status },
     entry,
   };

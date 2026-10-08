@@ -14,11 +14,14 @@ assert.ok(existsSync(shim) && (process.platform === 'win32' || statSync(shim).mo
 assert.ok(lines.some((l) => /export PATH=/.test(l)));
 // the shim is a POSIX sh script: Windows runs bin/enforcer through node instead, so there is nothing to spawn
 if (process.platform !== 'win32') {
-const r = spawnSync(shim, ['governor'], { encoding: 'utf8', env: { ...process.env, HOME: home, ENFORCER_HOME: home, GOVERNOR_HOME: join(home, 'g') } });
-assert.match(r.stderr, /usage: enforcer/);
-assert.match(r.stderr, /login/);
+  const r = spawnSync(shim, ['governor'], { encoding: 'utf8', env: { ...process.env, HOME: home, ENFORCER_HOME: home, GOVERNOR_HOME: join(home, 'g') } });
+  assert.match(r.stderr, /usage: enforcer/);
+  assert.match(r.stderr, /login/);
 }
 ok('shim resolves the stable runtime');
-const s = spawnSync(process.execPath, [fileURLToPath(new URL('../bin/enforcer', import.meta.url)), 'login', 'status'], { encoding: 'utf8', env: { ...process.env, HOME: home, ENFORCER_HOME: home } });
+const s = spawnSync(process.execPath, [fileURLToPath(new URL('../bin/enforcer', import.meta.url)), 'login', 'status'], {
+  encoding: 'utf8',
+  env: { ...process.env, HOME: home, ENFORCER_HOME: home },
+});
 assert.equal(s.status === null, false);
 ok('enforcer login status runs');

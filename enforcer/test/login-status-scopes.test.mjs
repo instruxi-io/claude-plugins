@@ -15,12 +15,20 @@ function runStatus(doc) {
       mkdirSync(join(home, '.enforcer'), { recursive: true });
       writeFileSync(join(home, '.enforcer', 'credentials.json'), JSON.stringify(doc));
     }
-    const env = { ...process.env, HOME: home, USERPROFILE: home, ENFORCER_HOME: join(home, '.enforcer'),
-      ENFORCER_BASE_URL: 'http://127.0.0.1:9', ENFORCER_API_KEY: '' };
+    const env = {
+      ...process.env,
+      HOME: home,
+      USERPROFILE: home,
+      ENFORCER_HOME: join(home, '.enforcer'),
+      ENFORCER_BASE_URL: 'http://127.0.0.1:9',
+      ENFORCER_API_KEY: '',
+    };
     delete env.ENFORCER_API_KEY;
     const r = spawnSync(process.execPath, [LOGIN, 'status'], { env, encoding: 'utf8', timeout: 20000 });
     return r.stdout + r.stderr;
-  } finally { rmSync(home, { recursive: true, force: true }); }
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
 }
 
 test('status lists granted scopes and the families they cover', () => {

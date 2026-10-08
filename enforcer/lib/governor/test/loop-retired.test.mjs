@@ -19,10 +19,11 @@ function withHome(config, fn) {
   const home = mkdtempSync(join(tmpdir(), 'gov-loop-'));
   try {
     writeFileSync(join(home, 'config.json'), JSON.stringify(config));
-    const env = { ...process.env, HOME: home, USERPROFILE: home, GOVERNOR_HOME: home, ENFORCER_HOME: home,
-      ENFORCER_CONFIG_HOME: home, ENFORCER_API_KEY: '' };
+    const env = { ...process.env, HOME: home, USERPROFILE: home, GOVERNOR_HOME: home, ENFORCER_HOME: home, ENFORCER_CONFIG_HOME: home, ENFORCER_API_KEY: '' };
     return fn(home, env);
-  } finally { rmSync(home, { recursive: true, force: true }); }
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
 }
 
 test('loopOn, loopLimit and loopWindow are retired settings', () => {

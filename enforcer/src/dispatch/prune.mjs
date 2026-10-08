@@ -33,8 +33,7 @@ export function ghPrState(branch, src) {
   if (!head) return null;
   let prs;
   try {
-    const r = spawnSync('gh', ['pr', 'list', '--head', branch, '--state', 'all', '--json', 'state,headRefOid'],
-      { cwd: src, encoding: 'utf8', timeout: 30000 });
+    const r = spawnSync('gh', ['pr', 'list', '--head', branch, '--state', 'all', '--json', 'state,headRefOid'], { cwd: src, encoding: 'utf8', timeout: 30000 });
     if (r.error) return null;
     prs = r.status === 0 ? JSON.parse(r.stdout) : [];
   } catch {
@@ -54,8 +53,8 @@ export function worktreeSafeToRemove(path, branch, src, baseRef = null, prState 
   const h = git(['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'], src).stdout.trim();
   for (const r of [baseRef, h]) if (r && !refs.includes(r)) refs.push(r);
   for (const r of refs) {
-    if (git(['rev-parse', '--verify', '-q', r], src).returncode === 0 &&
-        git(['merge-base', '--is-ancestor', branch, r], src).returncode === 0) return [true, 'merged into ' + r];
+    if (git(['rev-parse', '--verify', '-q', r], src).returncode === 0 && git(['merge-base', '--is-ancestor', branch, r], src).returncode === 0)
+      return [true, 'merged into ' + r];
   }
   const state = (prState || ghPrState)(branch, src);
   if (state === 'MERGED') return [true, 'PR merged'];
@@ -65,29 +64,48 @@ export function worktreeSafeToRemove(path, branch, src, baseRef = null, prState 
 
 const pidAlive = (pid) => {
   if (!Number.isInteger(pid) || pid <= 0) return false;
-  try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; }
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return e.code === 'EPERM';
+  }
 };
 
 /** Node keys of workers recorded in any <stateRoot>/*\/pids.json whose pid is still alive. */
 export function liveWorkerKeys(stateRoot) {
   const keys = new Set();
   let names;
-  try { names = readdirSync(stateRoot); } catch { return keys; }
+  try {
+    names = readdirSync(stateRoot);
+  } catch {
+    return keys;
+  }
   for (const n of names) {
     try {
       const d = JSON.parse(readFileSync(join(stateRoot, n, 'pids.json'), 'utf8'));
       for (const [k, pid] of Object.entries((d && d.workers) || {})) if (pidAlive(pid)) keys.add(k);
-    } catch { /* skip */ }
+    } catch {
+      /* skip */
+    }
   }
   return keys;
 }
 
-const real = (p) => { try { return realpathSync(p); } catch { return p; } };
+const real = (p) => {
+  try {
+    return realpathSync(p);
+  } catch {
+    return p;
+  }
+};
 
 /** Remove each <repo>-<key> worktree (branch graph/<key>) that is safe to remove (with yes; else only
  *  say so) and list the rest. Returns {removed, kept} as [path, why] pairs. `out` is a write function. */
-export function pruneWorktrees(repoRoot, { yes = false, registry = null, prState = null, out = (s) => process.stdout.write(s),
-                                           liveKeys = null, minAge = 3600 } = {}) {
+export function pruneWorktrees(
+  repoRoot,
+  { yes = false, registry = null, prState = null, out = (s) => process.stdout.write(s), liveKeys = null, minAge = 3600 } = {},
+) {
   registry = registry === null ? loadRepoBases() : registry;
   const removed = [];
   const kept = [];
@@ -112,7 +130,11 @@ export function pruneWorktrees(repoRoot, { yes = false, registry = null, prState
         continue;
       }
       let young = false;
-      try { young = Date.now() / 1000 - statSync(path).mtimeMs / 1000 < minAge; } catch { /* gone */ }
+      try {
+        young = Date.now() / 1000 - statSync(path).mtimeMs / 1000 < minAge;
+      } catch {
+        /* gone */
+      }
       if (young) {
         kept.push([path, `modified within the last ${minAge} s`]);
         continue;
@@ -141,6 +163,15 @@ export function pruneWorktrees(repoRoot, { yes = false, registry = null, prState
     say(`Review ${kept.length} branches:`);
     for (const [path, why] of kept) say(`  ${path}: ${why}`);
   }
-  if (yes) git(['worktree', 'prune'], join(repoRoot, readdirSync(repoRoot).sort().find((r) => existsSync(join(repoRoot, r, '.git'))) || '.'));
+  if (yes)
+    git(
+      ['worktree', 'prune'],
+      join(
+        repoRoot,
+        readdirSync(repoRoot)
+          .sort()
+          .find((r) => existsSync(join(repoRoot, r, '.git'))) || '.',
+      ),
+    );
   return { removed, kept };
 }

@@ -22,7 +22,8 @@ const root = resolve(new URL('..', import.meta.url).pathname);
 const governorDir = resolve(process.env.GOVERNOR_DIR || join(root, 'enforcer/lib/governor'));
 const home = mkdtempSync(join(tmpdir(), 'cred-format-'));
 Object.assign(process.env, { HOME: home, ENFORCER_HOME: join(home, '.enforcer'), GOVERNOR_HOME: join(home, '.g') });
-delete process.env.ENFORCER_API_KEY; delete process.env.GRAPH_API_KEY;
+delete process.env.ENFORCER_API_KEY;
+delete process.env.GRAPH_API_KEY;
 
 const E = await import(pathToFileURL(join(root, 'enforcer/src/credentials.mjs')).href);
 const G = await import(pathToFileURL(join(governorDir, 'src/credentials.mjs')).href);
@@ -30,14 +31,20 @@ const G = await import(pathToFileURL(join(governorDir, 'src/credentials.mjs')).h
 // The headers helper, as Claude Code runs it for the MCP server and as files uses it: a separate
 // process, no key configured, so it uses the sign-in. ASYNC on purpose: the token endpoint below
 // lives in this process, and a synchronous child would block the event loop it needs to answer.
-const py = async () => JSON.parse((await promisify(execFile)(process.execPath, [join(root, 'enforcer/bin/enforcer-headers.mjs')], { env: process.env })).stdout);
+const py = async () =>
+  JSON.parse((await promisify(execFile)(process.execPath, [join(root, 'enforcer/bin/enforcer-headers.mjs')], { env: process.env })).stdout);
 
 let pass = 0;
-const ok = async (label, fn) => { await fn(); pass++; console.log('  ok  ' + label); };
+const ok = async (label, fn) => {
+  await fn();
+  pass++;
+  console.log('  ok  ' + label);
+};
 
 // A token endpoint for the refresh cases: rt-1 -> (at-2, rt-2), rt-2 -> (at-3, rt-3).
 const srv = createServer(async (req, res) => {
-  let b = ''; for await (const c of req) b += c;
+  let b = '';
+  for await (const c of req) b += c;
   const f = Object.fromEntries(new URLSearchParams(b));
   const next = { 'rt-1': ['at-2', 'rt-2'], 'rt-2': ['at-3', 'rt-3'] }[f.refresh_token];
   res.writeHead(next ? 200 : 400, { 'Content-Type': 'application/json' });
@@ -48,9 +55,19 @@ const tokenEndpoint = `http://127.0.0.1:${srv.address().port}/token`;
 process.env.ENFORCER_BASE_URL = new URL(tokenEndpoint).origin; // the operator names the one origin refresh may talk to
 
 const oauth = (access, expiresAt, refresh = 'rt-1') => ({
-  enforcer: { base_url: 'https://api.example.test', oauth: {
-    access_token: access, refresh_token: refresh, expires_at: expiresAt,
-    token_endpoint: tokenEndpoint, client_id: 'mcp_x', scope: 'enforcer:read', resources: ['https://api.example.test'] } } });
+  enforcer: {
+    base_url: 'https://api.example.test',
+    oauth: {
+      access_token: access,
+      refresh_token: refresh,
+      expires_at: expiresAt,
+      token_endpoint: tokenEndpoint,
+      client_id: 'mcp_x',
+      scope: 'enforcer:read',
+      resources: ['https://api.example.test'],
+    },
+  },
+});
 const future = new Date(Date.now() + 3600e3).toISOString();
 const past = new Date(Date.now() - 60e3).toISOString();
 const file = () => JSON.parse(readFileSync(E.SHARED_FILE(), 'utf8'));
@@ -64,7 +81,8 @@ await ok('a sign-in written by the enforcer plugin is read the same by the gover
 });
 
 await ok('a saved API key wins over a sign-in, in all three readers', async () => {
-  const d = oauth('at-1', future); d.enforcer.api_key = 'env3_' + 'k'.repeat(43);
+  const d = oauth('at-1', future);
+  d.enforcer.api_key = 'env3_' + 'k'.repeat(43);
   G.saveCredentials(d); // written by the governor this time
   const want = { 'X-API-Key': d.enforcer.api_key };
   assert.deepEqual(await E.authHeaders(), want);
@@ -83,10 +101,12 @@ await ok('a token the headers helper refresh is written back in a shape Node rea
 });
 
 await ok('a token Node refreshes is read by the headers helper without refreshing again', async () => {
-  const d = file(); d.enforcer.oauth.expires_at = past; E.saveCredentials(d); // at-2 expired; refresh token rt-2
+  const d = file();
+  d.enforcer.oauth.expires_at = past;
+  E.saveCredentials(d); // at-2 expired; refresh token rt-2
   assert.deepEqual(await G.authHeaders(), { Authorization: 'Bearer at-3' }, 'governor refreshed rt-2');
   assert.equal(file().enforcer.oauth.refresh_token, 'rt-3');
-  assert.deepEqual(await py(), { Authorization: 'Bearer at-3' }, 'helper reads the governor\'s write-back');
+  assert.deepEqual(await py(), { Authorization: 'Bearer at-3' }, "helper reads the governor's write-back");
 });
 
 await ok('the file stays private (0600) whoever wrote it last', () => {

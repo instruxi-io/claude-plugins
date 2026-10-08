@@ -13,5 +13,9 @@
 import { authHeaders } from '../src/credentials.mjs';
 
 let headers = {};
-try { headers = await authHeaders(); } catch { headers = {}; }
+try {
+  headers = await authHeaders();
+} catch {
+  headers = {};
+}
 process.stdout.write(JSON.stringify(headers));

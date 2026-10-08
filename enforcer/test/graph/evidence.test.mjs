@@ -30,7 +30,10 @@ test('jsonl: one JSON object per line, in order, and read back whole', () => {
   for (const r of FIXTURE) appendEvidence('sess', r);
   const lines = readFileSync(evidencePath('sess'), 'utf8').split('\n').filter(Boolean);
   assert.equal(lines.length, FIXTURE.length);
-  assert.deepEqual(lines.map((l) => JSON.parse(l)), FIXTURE);
+  assert.deepEqual(
+    lines.map((l) => JSON.parse(l)),
+    FIXTURE,
+  );
   assert.deepEqual(loadEvidence('sess'), FIXTURE);
 });
 
@@ -38,12 +41,20 @@ test('concurrent appends do not interleave', async () => {
   const root = fresh();
   const big = 'x'.repeat(60000);
   const script = join(root, 'w.mjs');
-  writeFileSync(script, `import { appendEvidence } from ${JSON.stringify(join(here, '../../src/graph/evidence.mjs'))};
-for (let i = 0; i < 15; i++) appendEvidence('c', { kind: 'command', cmd: 'w' + process.argv[2], exit: 0, output: ${JSON.stringify(big)}, i });`);
-  await Promise.all([0, 1, 2, 3, 4, 5].map((n) => new Promise((res, rej) => {
-    const p = spawn(process.execPath, [script, String(n)], { env: process.env, stdio: 'ignore' });
-    p.on('exit', (c) => (c === 0 ? res() : rej(new Error('exit ' + c))));
-  })));
+  writeFileSync(
+    script,
+    `import { appendEvidence } from ${JSON.stringify(join(here, '../../src/graph/evidence.mjs'))};
+for (let i = 0; i < 15; i++) appendEvidence('c', { kind: 'command', cmd: 'w' + process.argv[2], exit: 0, output: ${JSON.stringify(big)}, i });`,
+  );
+  await Promise.all(
+    [0, 1, 2, 3, 4, 5].map(
+      (n) =>
+        new Promise((res, rej) => {
+          const p = spawn(process.execPath, [script, String(n)], { env: process.env, stdio: 'ignore' });
+          p.on('exit', (c) => (c === 0 ? res() : rej(new Error('exit ' + c))));
+        }),
+    ),
+  );
   const lines = readFileSync(evidencePath('c'), 'utf8').split('\n').filter(Boolean);
   assert.equal(lines.length, 90);
   for (const l of lines) assert.equal(JSON.parse(l).output.length, 60000);
@@ -55,43 +66,64 @@ test('cap holds at 50 MB', () => {
   writeFileSync(p, '');
   truncateSync(p, RAW_RUN_CAP - 300);
   appendEvidence('big', { kind: 'command', cmd: 'a', exit: 0, raw: 'y'.repeat(500) });
-  const marked = readFileSync(p).subarray(RAW_RUN_CAP - 300).toString();
+  const marked = readFileSync(p)
+    .subarray(RAW_RUN_CAP - 300)
+    .toString();
   assert.match(marked, /raw_truncated/);
   assert.ok(statSync(p).size <= RAW_RUN_CAP);
   appendEvidence('big', { kind: 'command', cmd: 'b', exit: 0, output: 'z'.repeat(5000) });
   assert.ok(statSync(p).size <= RAW_RUN_CAP);
-  assert.ok(!readFileSync(p).subarray(RAW_RUN_CAP - 300).toString().includes('zzzz'));
+  assert.ok(
+    !readFileSync(p)
+      .subarray(RAW_RUN_CAP - 300)
+      .toString()
+      .includes('zzzz'),
+  );
 });
 
 test('sweep removes sessions older than 7 days', () => {
   fresh();
-  appendEvidence('old', cmd('a')); appendEvidence('new', cmd('b'));
+  appendEvidence('old', cmd('a'));
+  appendEvidence('new', cmd('b'));
   const old = Date.now() / 1000 - 8 * 86400;
   utimesSync(evidencePath('old'), old, old);
-  writeFileSync(join(dataDir(), 'o.json'), '{}'); utimesSync(join(dataDir(), 'o.json'), old, old);
+  writeFileSync(join(dataDir(), 'o.json'), '{}');
+  utimesSync(join(dataDir(), 'o.json'), old, old);
   assert.equal(sweepSessions(), 2);
   assert.ok(existsSync(evidencePath('new')) && !existsSync(evidencePath('old')));
 });
 
 test('load scopes by run tag', () => {
   fresh();
-  appendEvidence('s', cmd('a', 0, { _run: 'r1' })); appendEvidence('s', cmd('b', 0, { _run: 'r2' })); appendEvidence('s', cmd('c'));
-  assert.deepEqual(loadEvidence('s', 'r1').map((r) => r.cmd), ['a', 'c']);
+  appendEvidence('s', cmd('a', 0, { _run: 'r1' }));
+  appendEvidence('s', cmd('b', 0, { _run: 'r2' }));
+  appendEvidence('s', cmd('c'));
+  assert.deepEqual(
+    loadEvidence('s', 'r1').map((r) => r.cmd),
+    ['a', 'c'],
+  );
 });
 
 test('selection keeps failures first', () => {
   const recs = [];
   for (let i = 0; i < 30; i++) recs.push(cmd('ls ' + i));
-  recs.splice(5, 0, cmd('bad', 2)); recs.splice(10, 0, cmd('npm test', 0));
+  recs.splice(5, 0, cmd('bad', 2));
+  recs.splice(10, 0, cmd('npm test', 0));
   const out = selectEvidence(recs);
   assert.equal(out.length, 20);
   assert.equal(out[0].cmd, 'bad');
   assert.ok(out.some((r) => r.cmd === 'npm test'));
-  assert.deepEqual(selectEvidence([cmd('a'), cmd('b', 1)]).map((r) => r.cmd), ['b', 'a']);
+  assert.deepEqual(
+    selectEvidence([cmd('a'), cmd('b', 1)]).map((r) => r.cmd),
+    ['b', 'a'],
+  );
 });
 
 test('merge: captured first, worker non-duplicates after', () => {
   const cap = [cmd('a'), cmd('b', 1)];
   const out = mergeEvidence(cap, [cmd('a'), { kind: 'note', text: 'x' }, cmd('c'), { kind: 'command' }]);
-  assert.deepEqual(out.map((r) => r.cmd), ['b', 'a', 'c']);
+  assert.deepEqual(
+    out.map((r) => r.cmd),
+    ['b', 'a', 'c'],
+  );
 });

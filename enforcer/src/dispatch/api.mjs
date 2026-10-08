@@ -17,7 +17,9 @@ export class APIError extends Error {
       const e = j && typeof j === 'object' ? j.error : null;
       const d = j?.detail || (e && typeof e === 'object' ? e.detail : null);
       if (d) return `HTTP ${this.status}: ${clip(typeof d === 'string' ? d : JSON.stringify(d), 600)}`;
-    } catch { /* not json */ }
+    } catch {
+      /* not json */
+    }
     return this.message;
   }
 }
@@ -34,25 +36,42 @@ export class API {
 
   async call(method, path, body) {
     let h;
-    try { h = await this.headers(); } catch (e) { throw new APIError('auth', `auth failed: ${e.message}`); }
+    try {
+      h = await this.headers();
+    } catch (e) {
+      throw new APIError('auth', `auth failed: ${e.message}`);
+    }
     let res;
     try {
-      res = await apiFetch(this.base + path, {
-        method, headers: { 'Content-Type': 'application/json', 'User-Agent': 'graph-dispatch/2.0 (enforcer plugin)', ...h },
-        ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-      }, this.o);
+      res = await apiFetch(
+        this.base + path,
+        {
+          method,
+          headers: { 'Content-Type': 'application/json', 'User-Agent': 'graph-dispatch/2.0 (enforcer plugin)', ...h },
+          ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+        },
+        this.o,
+      );
     } catch (e) {
       throw new APIError('network', `${e?.name || 'Error'}: ${e?.message || e}`);
     }
     const text = await res.text();
     if (!res.ok) throw new APIError(res.status, text);
-    try { return JSON.parse(text || '{}'); } catch { throw new APIError('network', 'truncated body'); }
+    try {
+      return JSON.parse(text || '{}');
+    } catch {
+      throw new APIError('network', 'truncated body');
+    }
   }
 
   // api-used: reads data
-  async graph(g) { return (await this.call('GET', `/graphs/${g}`)).data || {}; }
+  async graph(g) {
+    return (await this.call('GET', `/graphs/${g}`)).data || {};
+  }
   // api-used: reads data
-  async frontier(g) { return (await this.call('GET', `/graphs/${g}/frontier`)).data || []; }
+  async frontier(g) {
+    return (await this.call('GET', `/graphs/${g}/frontier`)).data || [];
+  }
   async nodes(g) {
     const out = [];
     for (let off = 0; ; off += 200) {
@@ -63,26 +82,42 @@ export class API {
     }
   }
   // api-used: sends runner; reads data; headers X-Graph-Client
-  async claim(g, n, runner) { return one((await this.call('POST', `/graphs/${g}/nodes/${n}/claim`, { runner })).data); }
+  async claim(g, n, runner) {
+    return one((await this.call('POST', `/graphs/${g}/nodes/${n}/claim`, { runner })).data);
+  }
   /** The run's control channel: the answer's `state` is the instruction (ok, cancel_requested, reclaimed, finished). */
   async heartbeat(g, n, r) {
     const d = await this.call('POST', `/graphs/${g}/nodes/${n}/runs/${r}/heartbeat`, {}); // api-used: reads state,data.state; headers X-Graph-Client
     return { ...d, state: d.state ?? d.data?.state };
   }
   // api-used: sends status,evidence,data,error,pr
-  complete(g, n, r, body) { return this.call('POST', `/graphs/${g}/nodes/${n}/runs/${r}/complete`, body); }
+  complete(g, n, r, body) {
+    return this.call('POST', `/graphs/${g}/nodes/${n}/runs/${r}/complete`, body);
+  }
   // api-used: sends key,type,status,title,description,data; reads data
-  async createNode(g, body) { return one((await this.call('POST', `/graphs/${g}/nodes`, body)).data); }
+  async createNode(g, body) {
+    return one((await this.call('POST', `/graphs/${g}/nodes`, body)).data);
+  }
   // api-used: reads data
-  async createEdge(g, body) { return (await this.call('POST', `/graphs/${g}/edges`, body)).data; }
+  async createEdge(g, body) {
+    return (await this.call('POST', `/graphs/${g}/edges`, body)).data;
+  }
   // api-used: sends data; reads data
-  async patchNode(g, n, body) { return (await this.call('PATCH', `/graphs/${g}/nodes/${n}`, body)).data; }
+  async patchNode(g, n, body) {
+    return (await this.call('PATCH', `/graphs/${g}/nodes/${n}`, body)).data;
+  }
   // api-used: reads data
-  async runs(g, n) { return (await this.call('GET', `/graphs/${g}/nodes/${n}/runs`)).data || []; }
+  async runs(g, n) {
+    return (await this.call('GET', `/graphs/${g}/nodes/${n}/runs`)).data || [];
+  }
   // api-used: reads data
-  async node(g, n) { return one((await this.call('GET', `/graphs/${g}/nodes/${n}`)).data); }
+  async node(g, n) {
+    return one((await this.call('GET', `/graphs/${g}/nodes/${n}`)).data);
+  }
   // api-used: reads data
-  async observations(g, n) { return (await this.call('GET', `/graphs/${g}/nodes/${n}/observations`)).data || []; }
+  async observations(g, n) {
+    return (await this.call('GET', `/graphs/${g}/nodes/${n}/observations`)).data || [];
+  }
 }
 
 export { ApiError };

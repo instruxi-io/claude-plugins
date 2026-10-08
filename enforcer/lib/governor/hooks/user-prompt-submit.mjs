@@ -11,12 +11,11 @@ import { guard, input, emit } from './lib.mjs';
 import { agentOf } from '../adapters/claude-code/events.mjs';
 import { governor } from '../adapters/claude-code/index.mjs';
 await guard(async () => {
+  const EVENT = 'UserPromptSubmit';
+  const ev = input('UserPromptSubmit');
 
-const EVENT = 'UserPromptSubmit';
-const ev = input('UserPromptSubmit');
-
-// Fails open and silent, like everything else on this path: a governor that
-// cannot read its own state has nothing useful to tell the agent.
-const b = governor().brief(agentOf(ev));
-emit(EVENT, b ? { additionalContext: b.text } : {});
+  // Fails open and silent, like everything else on this path: a governor that
+  // cannot read its own state has nothing useful to tell the agent.
+  const b = governor().brief(agentOf(ev));
+  emit(EVENT, b ? { additionalContext: b.text } : {});
 });

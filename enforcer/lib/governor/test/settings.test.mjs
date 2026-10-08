@@ -4,7 +4,11 @@ import { SETTINGS, RETIRED, GROUPS, validate, parseValue } from '../src/settings
 import { DEFAULTS } from '../src/policy.mjs';
 
 let pass = 0;
-const ok = (label, fn) => { fn(); pass++; console.log('  ok  ' + label); };
+const ok = (label, fn) => {
+  fn();
+  pass++;
+  console.log('  ok  ' + label);
+};
 
 ok('every described setting is one the policy actually reads', () => {
   for (const k of Object.keys(SETTINGS)) {

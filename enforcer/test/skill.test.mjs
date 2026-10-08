@@ -21,15 +21,37 @@ const TOOLS = {
   graph_heartbeat: ['graph', 'node_id', 'run_id'],
   graph_report: ['graph', 'node_id', 'run_id', 'status', 'report', 'error', 'pr', 'data', 'outputs', 'evidence'],
   graph_remember: ['graph', 'node_id', 'body', 'source', 'data', 'evidence'],
-  graph_plan_status: null, graph_review: null, graph_reset: null, graph_query: null, graph_access: null,
-  graph_epochs: null, graph_lifecycle: null, graph_my_validations: null, graph_judge: null, graph_share: null, graph_unshare: null,
+  graph_plan_status: null,
+  graph_review: null,
+  graph_reset: null,
+  graph_query: null,
+  graph_access: null,
+  graph_epochs: null,
+  graph_lifecycle: null,
+  graph_my_validations: null,
+  graph_judge: null,
+  graph_share: null,
+  graph_unshare: null,
 };
 
 const RULES = [
-  '## The worker rule', 'Claim your own node with `graph_next_work`', 'Never claim by id', 'Report before you return',
-  'Never report a node you did not claim', 'Evidence is captured, not written', 'files_base_url', 'NOT MET — STALE',
-  '## Done means merged', '## Coordinating subagents', '## Following the route', 'override reason', '`node` parameter',
-  'MCP 0.9.5', 'user` beats `planner` beats `rule` beats `jev`', 'Load the `enforcer:graph`', 'Never call `graph_report` for a worker',
+  '## The worker rule',
+  'Claim your own node with `graph_next_work`',
+  'Never claim by id',
+  'Report before you return',
+  'Never report a node you did not claim',
+  'Evidence is captured, not written',
+  'files_base_url',
+  'NOT MET — STALE',
+  '## Done means merged',
+  '## Coordinating subagents',
+  '## Following the route',
+  'override reason',
+  '`node` parameter',
+  'MCP 0.9.5',
+  'user` beats `planner` beats `rule` beats `jev`',
+  'Load the `enforcer:graph`',
+  'Never call `graph_report` for a worker',
 ];
 
 test('skill: frontmatter names the skill, description within 1024 chars', () => {
@@ -42,7 +64,11 @@ test('skill: frontmatter names the skill, description within 1024 chars', () => 
 
 test('skill: names only real graph tools, with their real params', () => {
   const named = new Set(skill.match(/\bgraph_[a-z_]+\b/g));
-  assert.deepEqual([...named].filter((n) => !(n in TOOLS)), [], 'not real tools');
+  assert.deepEqual(
+    [...named].filter((n) => !(n in TOOLS)),
+    [],
+    'not real tools',
+  );
   const documented = [...skill.matchAll(/\*\*`(graph_[a-z_]+)`\*\* \(([^)]*)\)/g)];
   assert.ok(documented.length >= 4, "the loop no longer lists each tool's params");
   for (const [, tool, params] of documented) {
@@ -53,7 +79,10 @@ test('skill: names only real graph tools, with their real params', () => {
 });
 
 test('skill: keeps the worker rule, evidence, stale-acceptance, merge and coordinator rules', () => {
-  assert.deepEqual(RULES.filter((r) => !skill.includes(r)), []);
+  assert.deepEqual(
+    RULES.filter((r) => !skill.includes(r)),
+    [],
+  );
 });
 
 test('skill: the enforcer-files upload command it gives exists and takes --dir', () => {
@@ -74,7 +103,11 @@ test('agent: graph-worker has name, sonnet, tool allowlist for all three server 
   for (const tool of ['graph_next_work', 'graph_heartbeat', 'graph_report']) {
     for (const pre of ['plugin_enforcer_enforcer', 'enforcer', 'enforcer-graph']) assert.ok(names.includes(`mcp__${pre}__${tool}`), `missing ${pre} ${tool}`);
   }
-  assert.deepEqual(names.filter((n) => n.includes('api_write')), [], 'agent must not be allowed enforcer_api_write');
+  assert.deepEqual(
+    names.filter((n) => n.includes('api_write')),
+    [],
+    'agent must not be allowed enforcer_api_write',
+  );
   const body = agentText.slice(m[0].length);
   for (const pat of ['gh pr create', 'land-pr', 'git push']) assert.ok(!body.includes(pat), `agent must not carry delivery commands: ${pat}`);
   assert.match(body, /Deliver as your skills say/);
@@ -91,7 +124,8 @@ const POINTER = /\b(see|per|as in|refer to|read)\b[^.\n]{0,30}\b(plan|contract)\
 function planProblems(nodes, size) {
   const out = [];
   for (const n of nodes) {
-    const key = n.key || '?', d = n.description || '';
+    const key = n.key || '?',
+      d = n.description || '';
     if (POINTER.test(d) || /\bplan section\b|§\s*\d/i.test(d)) out.push(`${key}: description points at a plan section; the description is the spec`);
     const brief = n.data?.brief || [];
     if (brief.length > MAX_BRIEF_FILES) out.push(`${key}: brief names ${brief.length} files (max ${MAX_BRIEF_FILES})`);
@@ -119,7 +153,8 @@ test("plan: a node that says 'see plan section' or a brief over 5 files / 30 KB 
   };
   for (const [name, node] of Object.entries(bad)) assert.ok(planProblems([node], size).length > 0, `sample node ${name} was not rejected`);
   assert.deepEqual(planProblems([{ key: 'five', description: 'ok', data: { brief: six.slice(0, 5) } }], size), []);
-  for (const need of ['at most 5 files and 30 KB', '`scout`', 'WORKER_BRIEF.md', '8 KB', 'description IS its spec']) assert.ok(skill.includes(need), `SKILL.md missing: ${need}`);
+  for (const need of ['at most 5 files and 30 KB', '`scout`', 'WORKER_BRIEF.md', '8 KB', 'description IS its spec'])
+    assert.ok(skill.includes(need), `SKILL.md missing: ${need}`);
   for (const need of ['maxTurns: 80', 'WORKER_BRIEF.md', 'turn 12', 'turn 20', 'ONLY']) assert.ok(agentText.includes(need), `graph-worker.md missing: ${need}`);
   assert.ok(skill.includes('`git push -u origin graph/<key>`'), 'SKILL.md must say to push alone');
   assert.match(skill, /never chained/);

@@ -16,9 +16,10 @@ import { readUsage } from './usage.mjs';
 export const cost = {
   // A subagent is metered from its own transcript, never the parent's: the
   // session's status-line figure and transcript are the parent's spend.
-  read: (event, cfg) => event.subagent
-    ? { ...readUsage('agent-' + event.subagent.id, event.subagent.transcript), usd: null, source: TRANSCRIPT }
-    : read(event.session, event.transcript, cfg),
+  read: (event, cfg) =>
+    event.subagent
+      ? { ...readUsage('agent-' + event.subagent.id, event.subagent.transcript), usd: null, source: TRANSCRIPT }
+      : read(event.session, event.transcript, cfg),
   total: (event) => {
     const { tokens, model } = readUsage(event.session, event.transcript);
     const usd = harnessUsd(event.session);
@@ -31,8 +32,11 @@ export const cost = {
 // be read costs the receipts a label, never a decision.
 export const HARNESS_NAME = 'claude-code';
 export const ADAPTER_VERSION = (() => {
-  try { return String(JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).version || ''); }
-  catch { return ''; }
+  try {
+    return String(JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).version || '');
+  } catch {
+    return '';
+  }
 })();
 
 // The plugin's own shipper, as it has always been: it reports the plugin

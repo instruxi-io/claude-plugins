@@ -29,31 +29,45 @@ const srv = createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({ success: true, data: { settings: {} } }));
   }
-  res.writeHead(401); res.end('{}');
+  res.writeHead(401);
+  res.end('{}');
 });
 await new Promise((r) => srv.listen(0, '127.0.0.1', r));
 const base = `http://127.0.0.1:${srv.address().port}`;
 
-const signIn = (clientId) => writeFileSync(join(process.env.ENFORCER_HOME, 'credentials.json'), JSON.stringify({
-  enforcer: { base_url: base, oauth: { client_id: clientId, access_token: 'at-1', expires_at: '2999-01-01T00:00:00Z' } },
-}));
+const signIn = (clientId) =>
+  writeFileSync(
+    join(process.env.ENFORCER_HOME, 'credentials.json'),
+    JSON.stringify({
+      enforcer: { base_url: base, oauth: { client_id: clientId, access_token: 'at-1', expires_at: '2999-01-01T00:00:00Z' } },
+    }),
+  );
 const signOut = () => writeFileSync(join(process.env.ENFORCER_HOME, 'credentials.json'), JSON.stringify({ enforcer: {} }));
-const setConfig = (c) => writeFileSync(join(process.env.GOVERNOR_HOME, 'config.json'), JSON.stringify({ shipOn: false, budgetOn: true, rulesOn: true, policyOn: true, ...c }));
+const setConfig = (c) =>
+  writeFileSync(join(process.env.GOVERNOR_HOME, 'config.json'), JSON.stringify({ shipOn: false, budgetOn: true, rulesOn: true, policyOn: true, ...c }));
 
 const { createGovernor, NO_COST } = await import('../core/index.mjs');
 const { signedInOperator } = await import('../core/identity.mjs');
 const receipts = () => readFileSync(join(process.env.GOVERNOR_HOME, 'receipts.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
 
 let tokens = 2_000_000;
-const cost = { read: () => ({ tokens, model: 'claude-sonnet-5', usd: null, source: 'stub' }), total: () => ({ tokens, model: 'claude-sonnet-5', usd: 1.5, source: 'stub' }) };
+const cost = {
+  read: () => ({ tokens, model: 'claude-sonnet-5', usd: null, source: 'stub' }),
+  total: () => ({ tokens, model: 'claude-sonnet-5', usd: 1.5, source: 'stub' }),
+};
 const gov = createGovernor({ harness: 'test', cost });
 const ev = (n) => ({ agent: 'h:1', kind: 'read', name: 'Read', tool: 'Read', action: `Read:/w/acme/${n}.ts`, input: {}, cwd: '/w/acme' });
 
 let pass = 0;
-const ok = async (label, fn) => { await fn(); pass++; console.log('  ok  ' + label); };
+const ok = async (label, fn) => {
+  await fn();
+  pass++;
+  console.log('  ok  ' + label);
+};
 
 await ok('signed out: no operator, and nothing is fetched', async () => {
-  signOut(); setConfig({});
+  signOut();
+  setConfig({});
   await gov.session.start();
   await gov.before(ev('a'));
   assert.equal(receipts().at(-1).operator, undefined);
@@ -88,14 +102,20 @@ await ok('a different sign-in does not inherit the previous person', async () =>
   assert.equal(signedInOperator(), '', 'signed out names no one');
 });
 
-await ok('decision receipts carry spent_usd, the agent\'s spend in dollars when decided', async () => {
-  signOut(); setConfig({});
+await ok("decision receipts carry spent_usd, the agent's spend in dollars when decided", async () => {
+  signOut();
+  setConfig({});
   await gov.before(ev('d'));
   const r = receipts().at(-1);
   assert.equal(typeof r.spent_usd, 'number');
   assert.ok(r.spent_usd > 0, `spent_usd=${r.spent_usd}`);
-  assert.deepEqual(Object.keys(r).filter((k) => k !== 'hash').slice(-2), ['spent_usd', 'decision'],
-    'it is the last field before the decision record, which 2.9 appended');
+  assert.deepEqual(
+    Object.keys(r)
+      .filter((k) => k !== 'hash')
+      .slice(-2),
+    ['spent_usd', 'decision'],
+    'it is the last field before the decision record, which 2.9 appended',
+  );
 });
 
 await ok('a harness that reports no spend gets no spent_usd (a zero would be invented)', async () => {

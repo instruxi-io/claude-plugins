@@ -32,11 +32,14 @@ assert.equal(existsSync(join(h2, '.grok')), false);
 assert.equal(existsSync(join(h2, '.config')), false);
 
 // differing section refused with a diff; user keys / array lines survive an unchanged merge
-const h3 = mk(); mkdirSync(join(h3, '.grok'), { recursive: true });
+const h3 = mk();
+mkdirSync(join(h3, '.grok'), { recursive: true });
 const mine = '[mcp_servers.enforcer]\nurl = "https://other.example/mcp"\n';
 writeFileSync(join(h3, '.grok/config.toml'), mine);
-const lines = []; const r = await install({ home: h3, yes: true, out: (s) => lines.push(s) });
-assert.equal(r.ok, false); assert.match(r.diff, /other\.example/);
+const lines = [];
+const r = await install({ home: h3, yes: true, out: (s) => lines.push(s) });
+assert.equal(r.ok, false);
+assert.match(r.diff, /other\.example/);
 assert.equal(readFileSync(join(h3, '.grok/config.toml'), 'utf8'), mine);
 assert.ok(lines.join('\n').includes('+ url'));
 const same = '[mcp_servers.enforcer]\nurl = "https://api.instruxi.dev/mcp"\nargs = [\n  "a",\n[1]\n]\n[other]\nx = 1\n';
@@ -44,7 +47,8 @@ assert.equal(mergeMcp(same, readFileSync(new URL('../harness/grok/config.toml.sn
 ok('existing differing section is refused with a diff');
 
 // uninstall removes only manifest paths
-const h4 = mk(); mkdirSync(join(h4, '.grok/agents'), { recursive: true });
+const h4 = mk();
+mkdirSync(join(h4, '.grok/agents'), { recursive: true });
 writeFileSync(join(h4, '.grok/agents/mine.md'), 'keep');
 writeFileSync(join(h4, '.grok/config.toml'), '[model]\nname = "x"\n');
 await install({ home: h4, yes: true, ...quiet });
@@ -58,5 +62,6 @@ ok('uninstall removes only manifest paths');
 
 const a = grokAgent(readFileSync(new URL('../agents/graph-worker.md', import.meta.url), 'utf8'));
 assert.ok(a.includes('enforcer__graph_next_work') && !/mcp__/.test(a));
-assert.match(a, /^model: /m); assert.match(a, /^tools: /m);
+assert.match(a, /^model: /m);
+assert.match(a, /^tools: /m);
 ok('agent body uses enforcer__graph_ names');

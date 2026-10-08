@@ -11,6 +11,9 @@ process.env.ENFORCER_HOME = home;
 const { recordPluginRoot } = await import('../adapters/claude-code/telemetry.mjs');
 recordPluginRoot();
 const root = readFileSync(join(home, 'plugin-root'), 'utf8').trim();
-const fail = (m) => { console.error('FAIL: ' + m); process.exit(1); };
+const fail = (m) => {
+  console.error('FAIL: ' + m);
+  process.exit(1);
+};
 if (!existsSync(join(root, 'statusline', 'spend.mjs'))) fail(`plugin-root ${root} has no statusline/spend.mjs, which the status line command runs`);
 console.log('plugin-root names the plugin root, where the status line lives ok');

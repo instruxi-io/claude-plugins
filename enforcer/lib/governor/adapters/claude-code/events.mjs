@@ -79,15 +79,21 @@ export function matchText(tool, toolInput) {
   if (typeof toolInput !== 'object') return `${name}:${String(toolInput).slice(0, CAP)}`;
   const front = [];
   for (const k of FIELDS) if (typeof toolInput[k] === 'string' && toolInput[k]) front.push(toolInput[k]);
-  let rest = ''; try { rest = JSON.stringify(toolInput); } catch {}
+  let rest = '';
+  try {
+    rest = JSON.stringify(toolInput);
+  } catch {}
   return `${name}:${[...front, rest].join('\n').slice(0, CAP)}`;
 }
 
 // A subagent's hooks carry agent_id next to the parent's session_id. Key by it
 // so parallel subagents each get their own budget and burn; the
 // parent keeps the bare session key (as src/graph/state.mjs actorKey does).
-const idPart = v => String(v).replace(/[^\w-]/g, '').slice(0, 8);
-export const agentOf = ev => {
+const idPart = (v) =>
+  String(v)
+    .replace(/[^\w-]/g, '')
+    .slice(0, 8);
+export const agentOf = (ev) => {
   const base = ev.session_id ? 'claude:' + String(ev.session_id).slice(0, 8) : 'claude-code';
   return ev.agent_id && idPart(ev.agent_id) ? base + ':' + idPart(ev.agent_id) : base;
 };
@@ -104,8 +110,7 @@ export function subagentTranscript(ev) {
 // environment moves the same work onto per-token billing, which is where the
 // nastiest surprise bills come from. We can see the key is set, not that it was
 // used, so this is reported and never acted on.
-export const billing = () =>
-  (process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN) ? 'api' : 'plan';
+export const billing = () => (process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN ? 'api' : 'plan');
 
 /**
  * A PreToolUse payload as the core's event (core/governor.mjs before()).

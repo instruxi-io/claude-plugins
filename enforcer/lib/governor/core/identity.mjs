@@ -22,7 +22,11 @@ const MAX_AGE_MS = 24 * 3600 * 1000;
 const PATH = '/api/v1/enforcer/auth/me';
 
 function read() {
-  try { return JSON.parse(readFileSync(FILE(), 'utf8')); } catch { return null; }
+  try {
+    return JSON.parse(readFileSync(FILE(), 'utf8'));
+  } catch {
+    return null;
+  }
 }
 
 /** Whether the cached identity is missing, old, or belongs to another credential. */
@@ -58,8 +62,7 @@ export async function refreshIdentity(cfg = {}, { fetchImpl = hookFetch, now = D
     writeFileSync(FILE(), JSON.stringify({ credential: id, email, account_id: me.account_id || '', fetched_at: now() }));
     return { ok: true, email };
   } catch (e) {
-    const detail = e?.name === 'TimeoutError' || e?.name === 'AbortError'
-      ? `no answer within ${timeoutMs}ms` : 'Enforcer could not be reached';
+    const detail = e?.name === 'TimeoutError' || e?.name === 'AbortError' ? `no answer within ${timeoutMs}ms` : 'Enforcer could not be reached';
     return { ok: false, detail };
   }
 }

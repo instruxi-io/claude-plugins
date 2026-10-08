@@ -100,5 +100,5 @@ export function toolMatches(ruleTool, ev) {
  * which is what a rule written before this vocabulary meant by it.
  */
 export function nativeField(field, ev) {
-  return (ev?.fields && typeof ev.fields[field] === 'string') ? ev.fields[field] : field;
+  return ev?.fields && typeof ev.fields[field] === 'string' ? ev.fields[field] : field;
 }

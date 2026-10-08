@@ -18,7 +18,11 @@ const CORE = join(ROOT, 'core');
 const pkg = JSON.parse(readFileSync(join(CORE, 'package.json'), 'utf8'));
 
 let pass = 0;
-const ok = async (label, fn) => { await fn(); pass++; console.log('  ok  ' + label); };
+const ok = async (label, fn) => {
+  await fn();
+  pass++;
+  console.log('  ok  ' + label);
+};
 
 await ok('the manifest names the package, its licence and its runtime', () => {
   assert.equal(pkg.name, '@instruxi-io/governor-core');
@@ -33,13 +37,21 @@ await ok('the manifest names the package, its licence and its runtime', () => {
 
 // What a publish would contain. --ignore-scripts: the listing must not write
 // the LICENSE copy into the working tree (prepack does that at publish time).
-const packed = JSON.parse(execFileSync('npm', ['pack', '--dry-run', '--json', '--ignore-scripts'], { cwd: CORE, encoding: 'utf8' }))[0]
-  .files.map((f) => f.path);
+const packed = JSON.parse(execFileSync('npm', ['pack', '--dry-run', '--json', '--ignore-scripts'], { cwd: CORE, encoding: 'utf8' }))[0].files.map(
+  (f) => f.path,
+);
 
 await ok('the packed files are the core, its shipper and the contract -- no plugin, no tests', () => {
-  for (const f of ['index.mjs', 'governor.mjs', 'tools.mjs', 'bin/ship.mjs', 'test/contract.mjs', 'package.json']) assert.ok(packed.includes(f), `${f} is packed`);
-  assert.ok(packed.every((f) => !f.startsWith('..') && !/^(hooks|adapters|commands|statusline)\//.test(f)), packed.join(', '));
-  assert.deepEqual(packed.filter((f) => f.startsWith('test/')), ['test/contract.mjs']);
+  for (const f of ['index.mjs', 'governor.mjs', 'tools.mjs', 'bin/ship.mjs', 'test/contract.mjs', 'package.json'])
+    assert.ok(packed.includes(f), `${f} is packed`);
+  assert.ok(
+    packed.every((f) => !f.startsWith('..') && !/^(hooks|adapters|commands|statusline)\//.test(f)),
+    packed.join(', '),
+  );
+  assert.deepEqual(
+    packed.filter((f) => f.startsWith('test/')),
+    ['test/contract.mjs'],
+  );
 });
 
 await ok('nothing packed reaches a file that is not packed', () => {
@@ -58,7 +70,7 @@ await ok('nothing packed reaches a file that is not packed', () => {
   assert.deepEqual(missing, []);
 });
 
-await ok('the default shipper is the core\'s own; the Claude Code plugin keeps the plugin\'s', async () => {
+await ok("the default shipper is the core's own; the Claude Code plugin keeps the plugin's", async () => {
   const { SHIPPER } = await import('../core/ship.mjs');
   assert.equal(relative(CORE, SHIPPER), join('bin', 'ship.mjs'));
   assert.ok(packed.includes('bin/ship.mjs'));
@@ -69,7 +81,7 @@ await ok('the default shipper is the core\'s own; the Claude Code plugin keeps t
   assert.equal(governor().shipper, join(ROOT, 'bin', 'ship.mjs'));
 });
 
-await ok('the core\'s shipper runs on its own', () => {
+await ok("the core's shipper runs on its own", () => {
   const home = mkdtempSync(join(tmpdir(), 'gov-pkg-ship-'));
   const env = { ...process.env, HOME: home, GOVERNOR_HOME: join(home, 'g'), ENFORCER_HOME: join(home, 'e') };
   delete env.ENFORCER_API_KEY;
@@ -82,18 +94,26 @@ await ok('it resolves by its package name, through its exports', () => {
   const app = mkdtempSync(join(tmpdir(), 'gov-pkg-app-'));
   mkdirSync(join(app, 'node_modules', '@instruxi-io'), { recursive: true });
   symlinkSync(CORE, join(app, 'node_modules', '@instruxi-io', 'governor-core'), 'dir');
-  writeFileSync(join(app, 'probe.mjs'), `
+  writeFileSync(
+    join(app, 'probe.mjs'),
+    `
     const core = await import('@instruxi-io/governor-core');
     const { runContract } = await import('@instruxi-io/governor-core/contract');
     const { toolMatches } = await import('@instruxi-io/governor-core/tools');
     let report = 'exported';
     try { await import('@instruxi-io/governor-core/report'); } catch (e) { report = e.code; }
     console.log(JSON.stringify({ api: typeof core.createGovernor, contract: typeof runContract, tools: typeof toolMatches, report }));
-  `);
+  `,
+  );
   const home = mkdtempSync(join(tmpdir(), 'gov-pkg-home-'));
-  const out = JSON.parse(execFileSync(process.execPath, [join(app, 'probe.mjs')], { cwd: app, env: { ...process.env, GOVERNOR_HOME: home }, encoding: 'utf8' }));
-  assert.deepEqual(out, { api: 'function', contract: 'function', tools: 'function', report: 'ERR_PACKAGE_PATH_NOT_EXPORTED' },
-    'the API, the contract and the modules resolve; the plugin report CLI is not an export');
+  const out = JSON.parse(
+    execFileSync(process.execPath, [join(app, 'probe.mjs')], { cwd: app, env: { ...process.env, GOVERNOR_HOME: home }, encoding: 'utf8' }),
+  );
+  assert.deepEqual(
+    out,
+    { api: 'function', contract: 'function', tools: 'function', report: 'ERR_PACKAGE_PATH_NOT_EXPORTED' },
+    'the API, the contract and the modules resolve; the plugin report CLI is not an export',
+  );
 });
 
 console.log(`\n  ${pass} passed`);

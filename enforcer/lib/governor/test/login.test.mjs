@@ -8,11 +8,17 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const home = mkdtempSync(join(tmpdir(), 'gov-login-'));
-process.env.HOME = home; process.env.ENFORCER_HOME = join(home, '.enforcer'); process.env.GOVERNOR_HOME = join(home, '.g');
+process.env.HOME = home;
+process.env.ENFORCER_HOME = join(home, '.enforcer');
+process.env.GOVERNOR_HOME = join(home, '.g');
 
 const { browserSignIn, pkce, resourcesFor, requestedScope, parseLoginArgs, isWorkspaceCode } = await import('../bin/login.mjs');
 let pass = 0;
-const ok = async (label, fn) => { await fn(); pass++; console.log('  ok  ' + label); };
+const ok = async (label, fn) => {
+  await fn();
+  pass++;
+  console.log('  ok  ' + label);
+};
 const b64url = (b) => b.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 
 await ok('the verifier hashes to the challenge (S256)', () => {
@@ -27,17 +33,30 @@ await ok('the verifier hashes to the challenge (S256)', () => {
 const issued = {};
 const as = createServer(async (req, res) => {
   const u = new URL(req.url, 'http://x');
-  const body = await new Promise((r) => { let d = ''; req.on('data', (c) => d += c); req.on('end', () => r(d)); });
-  const json = (s, o) => { res.writeHead(s, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(o)); };
+  const body = await new Promise((r) => {
+    let d = '';
+    req.on('data', (c) => (d += c));
+    req.on('end', () => r(d));
+  });
+  const json = (s, o) => {
+    res.writeHead(s, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(o));
+  };
   const base = `http://127.0.0.1:${as.address().port}`;
   if (u.pathname === '/.well-known/oauth-authorization-server') {
     return json(200, { issuer: base, authorization_endpoint: base + '/authorize', token_endpoint: base + '/token', registration_endpoint: base + '/register' });
   }
-  if (u.pathname === '/register') { const b = JSON.parse(body); issued.redirect = b.redirect_uris[0]; return json(201, { client_id: 'mcp_test' }); }
+  if (u.pathname === '/register') {
+    const b = JSON.parse(body);
+    issued.redirect = b.redirect_uris[0];
+    return json(201, { client_id: 'mcp_test' });
+  }
   if (u.pathname === '/token') {
     const p = new URLSearchParams(body);
-    const good = p.get('code') === 'the-code' && b64url(createHash('sha256').update(p.get('code_verifier')).digest()) === issued.challenge
-      && p.get('redirect_uri') === issued.redirect;
+    const good =
+      p.get('code') === 'the-code' &&
+      b64url(createHash('sha256').update(p.get('code_verifier')).digest()) === issued.challenge &&
+      p.get('redirect_uri') === issued.redirect;
     return good ? json(200, { access_token: 'at', refresh_token: 'rt', expires_in: 900, scope: 'enforcer:read' }) : json(400, { error: 'invalid_grant' });
   }
   json(404, {});
@@ -65,57 +84,90 @@ await ok('a workspace code: `login CODE` is a browser sign-in into it; commands 
 await ok('a workspace code rides on the authorize URL; without one it is absent', async () => {
   const seen = [];
   for (const tenantCode of ['ACME-1234-ABCD', undefined]) {
-    await browserSignIn({ base, resources: ['https://api.example.test'], tenantCode, timeoutMs: 5000, onUrl: async (url) => {
-      const a = new URL(url);
-      seen.push(a.searchParams.get('tenant_code'));
-      issued.challenge = a.searchParams.get('code_challenge');
-      const cb = new URL(a.searchParams.get('redirect_uri'));
-      cb.searchParams.set('code', 'the-code'); cb.searchParams.set('state', a.searchParams.get('state'));
-      await fetch(cb);
-    } });
+    await browserSignIn({
+      base,
+      resources: ['https://api.example.test'],
+      tenantCode,
+      timeoutMs: 5000,
+      onUrl: async (url) => {
+        const a = new URL(url);
+        seen.push(a.searchParams.get('tenant_code'));
+        issued.challenge = a.searchParams.get('code_challenge');
+        const cb = new URL(a.searchParams.get('redirect_uri'));
+        cb.searchParams.set('code', 'the-code');
+        cb.searchParams.set('state', a.searchParams.get('state'));
+        await fetch(cb);
+      },
+    });
   }
   assert.deepEqual(seen, ['ACME-1234-ABCD', null]);
 });
 
 await ok('signs in: register, authorize, loopback redirect, redeem with the verifier', async () => {
   const want = ['https://api.example.test', 'https://api.example.test/mcp'];
-  const tok = await browserSignIn({ base, resources: want, timeoutMs: 5000, onUrl: async (url) => {
-    const a = new URL(url);
-    assert.equal(a.searchParams.get('code_challenge_method'), 'S256');
-    assert.deepEqual(a.searchParams.getAll('resource'), want, 'one sign-in names the API and the MCP server (RFC 8707)');
-    issued.challenge = a.searchParams.get('code_challenge');
-    // The "browser": the AS would redirect here after the user signs in.
-    const cb = new URL(a.searchParams.get('redirect_uri'));
-    cb.searchParams.set('code', 'the-code'); cb.searchParams.set('state', a.searchParams.get('state'));
-    const r = await fetch(cb); assert.equal(r.status, 200);
-  } });
+  const tok = await browserSignIn({
+    base,
+    resources: want,
+    timeoutMs: 5000,
+    onUrl: async (url) => {
+      const a = new URL(url);
+      assert.equal(a.searchParams.get('code_challenge_method'), 'S256');
+      assert.deepEqual(a.searchParams.getAll('resource'), want, 'one sign-in names the API and the MCP server (RFC 8707)');
+      issued.challenge = a.searchParams.get('code_challenge');
+      // The "browser": the AS would redirect here after the user signs in.
+      const cb = new URL(a.searchParams.get('redirect_uri'));
+      cb.searchParams.set('code', 'the-code');
+      cb.searchParams.set('state', a.searchParams.get('state'));
+      const r = await fetch(cb);
+      assert.equal(r.status, 200);
+    },
+  });
   assert.deepEqual([tok.access_token, tok.refresh_token, tok.client_id], ['at', 'rt', 'mcp_test']);
   assert.deepEqual(tok.resources, want);
   assert.ok(Date.parse(tok.expires_at) > Date.now());
 });
 
 await ok('a redirect with the wrong state is refused', async () => {
-  await assert.rejects(browserSignIn({ base, timeoutMs: 5000, onUrl: async (url) => {
-    const cb = new URL(new URL(url).searchParams.get('redirect_uri'));
-    cb.searchParams.set('code', 'the-code'); cb.searchParams.set('state', 'forged');
-    await fetch(cb);
-  } }), /state mismatch/);
+  await assert.rejects(
+    browserSignIn({
+      base,
+      timeoutMs: 5000,
+      onUrl: async (url) => {
+        const cb = new URL(new URL(url).searchParams.get('redirect_uri'));
+        cb.searchParams.set('code', 'the-code');
+        cb.searchParams.set('state', 'forged');
+        await fetch(cb);
+      },
+    }),
+    /state mismatch/,
+  );
 });
 
 await ok('a refusal at the authorization server is reported, not hung on', async () => {
-  await assert.rejects(browserSignIn({ base, timeoutMs: 5000, onUrl: async (url) => {
-    const cb = new URL(new URL(url).searchParams.get('redirect_uri'));
-    cb.searchParams.set('error', 'access_denied'); cb.searchParams.set('state', new URL(url).searchParams.get('state'));
-    await fetch(cb);
-  } }), /access_denied/);
+  await assert.rejects(
+    browserSignIn({
+      base,
+      timeoutMs: 5000,
+      onUrl: async (url) => {
+        const cb = new URL(new URL(url).searchParams.get('redirect_uri'));
+        cb.searchParams.set('error', 'access_denied');
+        cb.searchParams.set('state', new URL(url).searchParams.get('state'));
+        await fetch(cb);
+      },
+    }),
+    /access_denied/,
+  );
 });
 
 await ok('resources come from what the MCP server publishes about itself', async () => {
-  const fake = async (url) => url.endsWith('/.well-known/oauth-protected-resource/mcp')
-    ? { ok: true, json: async () => ({ resource: 'https://api.example.test/mcp' }) }
-    : { ok: false, json: async () => ({}) };
+  const fake = async (url) =>
+    url.endsWith('/.well-known/oauth-protected-resource/mcp')
+      ? { ok: true, json: async () => ({ resource: 'https://api.example.test/mcp' }) }
+      : { ok: false, json: async () => ({}) };
   assert.deepEqual(await resourcesFor('https://api.example.test', fake), ['https://api.example.test', 'https://api.example.test/mcp']);
-  const down = async () => { throw new Error('offline'); };
+  const down = async () => {
+    throw new Error('offline');
+  };
   assert.deepEqual(await resourcesFor('https://api.example.test', down), ['https://api.example.test'], 'no MCP metadata still signs the governor in');
 });
 
@@ -126,8 +178,10 @@ await ok('one credential at a time: a sign-in replaces a key and a key replaces 
   // The browser path, driven through the CLI entry point's save logic by importing it is not
   // possible without a browser, so exercise the same rule on the api-key path in reverse.
   saveCredentials({ enforcer: { base_url: base, oauth: { access_token: 'at', client_id: 'c' } } });
-  execFileSync(process.execPath, [new URL('../bin/login.mjs', import.meta.url).pathname, 'api-key', 'env3_' + 'z'.repeat(43)],
-    { env: { ...process.env, ENFORCER_API_KEY: '' }, encoding: 'utf8' });
+  execFileSync(process.execPath, [new URL('../bin/login.mjs', import.meta.url).pathname, 'api-key', 'env3_' + 'z'.repeat(43)], {
+    env: { ...process.env, ENFORCER_API_KEY: '' },
+    encoding: 'utf8',
+  });
   const e = readCredentials().enforcer;
   assert.equal(e.api_key, 'env3_' + 'z'.repeat(43));
   assert.equal(e.oauth, undefined, 'saving a key must drop the browser sign-in, or the two identities disagree');

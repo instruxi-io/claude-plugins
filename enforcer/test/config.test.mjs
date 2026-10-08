@@ -17,7 +17,10 @@ const saved = { enforcer: { base_url: 'https://saved.example/' } };
 
 test('precedence flag > env > saved > default', () => {
   const env = { ENFORCER_BASE_URL: 'https://env.example' };
-  assert.deepEqual([resolveConfig({ flag: 'https://flag.example', env, saved }).baseUrl, resolveConfig({ flag: 'https://flag.example', env, saved }).source], ['https://flag.example', 'flag']);
+  assert.deepEqual(
+    [resolveConfig({ flag: 'https://flag.example', env, saved }).baseUrl, resolveConfig({ flag: 'https://flag.example', env, saved }).source],
+    ['https://flag.example', 'flag'],
+  );
   assert.equal(resolveConfig({ env, saved }).baseUrl, 'https://env.example');
   assert.equal(resolveConfig({ env, saved }).source, 'ENFORCER_BASE_URL');
   assert.equal(resolveConfig({ env: {}, saved }).baseUrl, 'https://saved.example');
@@ -66,7 +69,10 @@ test('with ENFORCER_BASE_URL set no component contacts api.instruxi.dev', async 
   const seen = [];
   const srv = http.createServer((req, res) => {
     seen.push(`${req.method} ${req.url}`);
-    const send = (b) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(b)); };
+    const send = (b) => {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify(b));
+    };
     if (req.url.includes('/auth/me')) return send({ data: { id: 'u1', email: 'a@b.c', role: { slug: 'member' }, tenant: { id: 't1', name: 'T' } } });
     if (req.url.includes('/heartbeat')) return send({ data: { state: 'ok' } });
     if (req.url.includes('/nodes')) return send({ data: [], meta: { total: 0 } });
@@ -83,38 +89,76 @@ test('with ENFORCER_BASE_URL set no component contacts api.instruxi.dev', async 
   // The saved sign-in points at production: the env var must still win.
   writeFileSync(join(home, '.enforcer', 'credentials.json'), JSON.stringify({ enforcer: { base_url: DEFAULT_BASE_URL, api_key: 'good' } }));
   const env = {
-    ...process.env, HOME: home, ENFORCER_HOME: join(home, '.enforcer'), GOVERNOR_HOME: join(home, '.g'),
-    ENFORCER_BASE_URL: base, ENFORCER_API_KEY: 'good', ENFORCER_STATE_DIR: join(tmp, 'state'),
-    NOPROD_LOG: log, NODE_OPTIONS: `--import ${pathToFileURL(join(ROOT, 'test/fixtures/noprod/guard.mjs')).href}`,
+    ...process.env,
+    HOME: home,
+    ENFORCER_HOME: join(home, '.enforcer'),
+    GOVERNOR_HOME: join(home, '.g'),
+    ENFORCER_BASE_URL: base,
+    ENFORCER_API_KEY: 'good',
+    ENFORCER_STATE_DIR: join(tmp, 'state'),
+    NOPROD_LOG: log,
+    NODE_OPTIONS: `--import ${pathToFileURL(join(ROOT, 'test/fixtures/noprod/guard.mjs')).href}`,
   };
-  delete env.GRAPH_BASE_URL; delete env.CLAUDE_PLUGIN_DATA;
+  delete env.GRAPH_BASE_URL;
+  delete env.CLAUDE_PLUGIN_DATA;
   // Async: the stub lives in this process, so a blocking spawn would deadlock it.
-  const run = (cmd, args, extra = {}) => new Promise((resolve) => {
-    const c = spawn(cmd, args, { cwd: ROOT, env: { ...env, ...extra }, stdio: ['ignore', 'pipe', 'pipe'] });
-    let stdout = '', stderr = '';
-    c.stdout.on('data', (d) => stdout += d); c.stderr.on('data', (d) => stderr += d);
-    const t = setTimeout(() => c.kill('SIGKILL'), 30_000);
-    c.on('close', () => { clearTimeout(t); resolve({ stdout, stderr }); });
-  });
+  const run = (cmd, args, extra = {}) =>
+    new Promise((resolve) => {
+      const c = spawn(cmd, args, { cwd: ROOT, env: { ...env, ...extra }, stdio: ['ignore', 'pipe', 'pipe'] });
+      let stdout = '',
+        stderr = '';
+      c.stdout.on('data', (d) => (stdout += d));
+      c.stderr.on('data', (d) => (stderr += d));
+      const t = setTimeout(() => c.kill('SIGKILL'), 30_000);
+      c.on('close', () => {
+        clearTimeout(t);
+        resolve({ stdout, stderr });
+      });
+    });
   const mark = () => seen.length;
   const hit = (since) => seen.slice(since).length > 0;
 
   try {
-  let m = mark();
-  const st = await run('node', ['bin/login.mjs', 'status']);
-  assert.match(st.stdout, new RegExp(`Signed in to ${base.replace(/[.]/g, '\\.')}`), st.stdout + st.stderr);
-  assert.ok(hit(m), 'login status hit the stub');
+    let m = mark();
+    const st = await run('node', ['bin/login.mjs', 'status']);
+    assert.match(st.stdout, new RegExp(`Signed in to ${base.replace(/[.]/g, '\\.')}`), st.stdout + st.stderr);
+    assert.ok(hit(m), 'login status hit the stub');
 
-  m = mark();
-  const dr = await run('node', ['bin/enforcer', 'doctor']);
-  assert.match(dr.stdout, new RegExp(`${base.replace(/[.]/g, '\\.')}/mcp answered`), dr.stdout + dr.stderr);
-  assert.ok(hit(m), 'doctor hit the stub');
+    m = mark();
+    const dr = await run('node', ['bin/enforcer', 'doctor']);
+    assert.match(dr.stdout, new RegExp(`${base.replace(/[.]/g, '\\.')}/mcp answered`), dr.stdout + dr.stderr);
+    assert.ok(hit(m), 'doctor hit the stub');
 
-  m = mark();
-  const dp = await run('node', ['bin/enforcer', 'dispatch', 'run', '--graph', 'g1', '--dry-run', '--exit-when-idle', '--no-lease', '--workers', '1', '--repo-root', tmp, '--state-dir', join(tmp, 'ds')], { GRAPH_API_KEY: 'good', GRAPH_AUTH_HELPER: '' });
-  assert.ok(hit(m), 'dispatcher dry-run hit the stub: ' + dp.stdout + dp.stderr);
-  assert.ok(seen.slice(m).every((l) => l.includes('/api/v1/graph/')), seen.slice(m).join('\n'));
+    m = mark();
+    const dp = await run(
+      'node',
+      [
+        'bin/enforcer',
+        'dispatch',
+        'run',
+        '--graph',
+        'g1',
+        '--dry-run',
+        '--exit-when-idle',
+        '--no-lease',
+        '--workers',
+        '1',
+        '--repo-root',
+        tmp,
+        '--state-dir',
+        join(tmp, 'ds'),
+      ],
+      { GRAPH_API_KEY: 'good', GRAPH_AUTH_HELPER: '' },
+    );
+    assert.ok(hit(m), 'dispatcher dry-run hit the stub: ' + dp.stdout + dp.stderr);
+    assert.ok(
+      seen.slice(m).every((l) => l.includes('/api/v1/graph/')),
+      seen.slice(m).join('\n'),
+    );
 
-  assert.equal(readFileSync(log, 'utf8'), '', 'nothing tried to reach production');
-  } finally { srv.closeAllConnections?.(); srv.close(); }
+    assert.equal(readFileSync(log, 'utf8'), '', 'nothing tried to reach production');
+  } finally {
+    srv.closeAllConnections?.();
+    srv.close();
+  }
 });

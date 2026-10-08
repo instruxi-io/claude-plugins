@@ -5,7 +5,8 @@ import { openSync, closeSync, statSync } from 'node:fs';
 import { clip } from './util.mjs';
 
 export const ATTRIBUTION = '\u{1F916} Generated with [Claude Code](https://claude.com/claude-code)';
-export const TRANSIENT_RE = /temporary failure in name resolution|could not resolve host|connection (reset|refused|timed out)|timed? ?out|network is unreachable|tls handshake|unexpected eof|http (502|503|504)|error connecting to|name or service not known/i;
+export const TRANSIENT_RE =
+  /temporary failure in name resolution|could not resolve host|connection (reset|refused|timed out)|timed? ?out|network is unreachable|tls handshake|unexpected eof|http (502|503|504)|error connecting to|name or service not known/i;
 export const PUSH_DENIAL_RE = /git\s+push|gh\s+pr\b|\bpush(ed|ing)?\b[\s\S]*\bdenied|\bdenied\b[\s\S]*\b(push|pull request)/i;
 
 /** Worker text as a quoted block: `Fixes #N` no longer closes issues, @mentions no longer ping. */
@@ -17,14 +18,27 @@ export function quoteBody(text) {
   return lines.map((l) => '> ' + l).join('\n') || '> ';
 }
 
-const isDir = (p) => { try { return statSync(p).isDirectory(); } catch { return false; } };
+const isDir = (p) => {
+  try {
+    return statSync(p).isDirectory();
+  } catch {
+    return false;
+  }
+};
 
 /** Run a command, retrying a transient network failure with backoff; never throws. -> [rc, out] */
 export function sh(cmd, cwd, { timeout = 300000, sleepMs = 1000, run = spawnSync } = {}) {
-  let rc = 127, out = '';
+  let rc = 127,
+    out = '';
   for (let i = 0; i < 3; i++) {
     const r = run(cmd[0], cmd.slice(1), { cwd, stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8', timeout });
-    if (r.error) { rc = 127; out = String(r.error.message); } else { rc = r.status ?? 1; out = ((r.stdout || '') + (r.stderr || '')).trim(); }
+    if (r.error) {
+      rc = 127;
+      out = String(r.error.message);
+    } else {
+      rc = r.status ?? 1;
+      out = ((r.stdout || '') + (r.stderr || '')).trim();
+    }
     if (rc === 0 || !TRANSIENT_RE.test(out) || i === 2) break;
     if (sleepMs) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, sleepMs * 2 ** i);
   }
@@ -74,9 +88,20 @@ export function landWithHeartbeat({ cmd, cwd, logPath, heartbeat, everyMs = 1200
   return new Promise((resolve) => {
     const fd = openSync(logPath, 'w');
     let proc;
-    try { proc = spawnImpl(cmd[0], cmd.slice(1), { cwd, stdio: ['ignore', fd, fd], detached: true }); } catch { closeSync(fd); return resolve({ rc: 127 }); }
-    const timer = setInterval(() => { Promise.resolve(heartbeat()).catch(() => {}); }, everyMs);
-    const done = (rc) => { clearInterval(timer); closeSync(fd); resolve({ rc }); };
+    try {
+      proc = spawnImpl(cmd[0], cmd.slice(1), { cwd, stdio: ['ignore', fd, fd], detached: true });
+    } catch {
+      closeSync(fd);
+      return resolve({ rc: 127 });
+    }
+    const timer = setInterval(() => {
+      Promise.resolve(heartbeat()).catch(() => {});
+    }, everyMs);
+    const done = (rc) => {
+      clearInterval(timer);
+      closeSync(fd);
+      resolve({ rc });
+    };
     proc.on('error', () => done(127));
     proc.on('close', (code) => done(code ?? 1));
   });

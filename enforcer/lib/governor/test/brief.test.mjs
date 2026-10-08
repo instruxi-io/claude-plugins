@@ -3,7 +3,11 @@ import assert from 'node:assert/strict';
 import { brief, markTold } from '../src/brief.mjs';
 
 let pass = 0;
-const ok = (label, fn) => { fn(); pass++; console.log('  ok  ' + label); };
+const ok = (label, fn) => {
+  fn();
+  pass++;
+  console.log('  ok  ' + label);
+};
 const cfg = { budgetOn: true, soft: 0.75 };
 const agent = (over) => ({ tokens: 0, budget: 1000, status: 'active', ...over });
 

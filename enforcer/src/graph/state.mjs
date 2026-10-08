@@ -9,7 +9,9 @@ export { migrateDir } from '../../lib/governor/core/migrate.mjs';
 
 // mkdir -p that cannot spin: Node's recursive mkdir loops forever on an unwritable tree such as /proc/nonexistent/x.
 function mkdirp(d) {
-  try { mkdirSync(d, { mode: 0o700 }); } catch (e) {
+  try {
+    mkdirSync(d, { mode: 0o700 });
+  } catch (e) {
     if (e.code === 'EEXIST') return;
     const up = dirname(d);
     if (e.code !== 'ENOENT' || up === d) throw e;
@@ -20,25 +22,36 @@ function mkdirp(d) {
 
 export function privateDir(d) {
   mkdirp(d);
-  try { if ((statSync(d).mode & 0o777) !== 0o700) chmodSync(d, 0o700); } catch {}
+  try {
+    if ((statSync(d).mode & 0o777) !== 0o700) chmodSync(d, 0o700);
+  } catch {}
   return d;
 }
 
 /** Write a file created 0600 (an existing one is tightened). flag 'w' or 'a'. */
 export function privateWrite(path, data, flag = 'w') {
   const fd = openSync(path, flag === 'a' ? 'a' : 'w', 0o600);
-  try { try { fchmodSync(fd, 0o600); } catch {} writeSync(fd, data); } finally { closeSync(fd); }
+  try {
+    try {
+      fchmodSync(fd, 0o600);
+    } catch {}
+    writeSync(fd, data);
+  } finally {
+    closeSync(fd);
+  }
 }
 
 export function dataDir() {
   const d = join(stateBase(), 'runs');
-  privateDir(dirname(d)); privateDir(d);
+  privateDir(dirname(d));
+  privateDir(d);
   return d;
 }
 
 export function evidenceDir() {
   const d = join(stateBase(), 'evidence');
-  privateDir(dirname(d)); privateDir(d);
+  privateDir(dirname(d));
+  privateDir(d);
   return d;
 }
 

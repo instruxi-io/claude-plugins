@@ -47,8 +47,14 @@ const SHIM = () => join(SHARED_DIR(), 'otel-headers.mjs');
 const ROOT = () => join(SHARED_DIR(), 'plugin-root');
 export const OTLP_PATH = '/api/v1/governance/otlp';
 
-const ENV_KEYS = ['CLAUDE_CODE_ENABLE_TELEMETRY', 'OTEL_METRICS_EXPORTER', 'OTEL_LOGS_EXPORTER',
-  'OTEL_EXPORTER_OTLP_PROTOCOL', 'OTEL_EXPORTER_OTLP_ENDPOINT', 'CLAUDE_CODE_OTEL_HEADERS_HELPER_DEBOUNCE_MS'];
+const ENV_KEYS = [
+  'CLAUDE_CODE_ENABLE_TELEMETRY',
+  'OTEL_METRICS_EXPORTER',
+  'OTEL_LOGS_EXPORTER',
+  'OTEL_EXPORTER_OTLP_PROTOCOL',
+  'OTEL_EXPORTER_OTLP_ENDPOINT',
+  'CLAUDE_CODE_OTEL_HEADERS_HELPER_DEBOUNCE_MS',
+];
 
 /** How long Claude Code may reuse the helper's headers: under an OAuth token's 15-minute life. */
 export const HEADERS_REFRESH_MS = '600000';
@@ -62,32 +68,40 @@ export function recordPluginRoot() {
     mkdirSync(SHARED_DIR(), { recursive: true, mode: 0o700 });
     const root = pluginRoot();
     let current = '';
-    try { current = readFileSync(ROOT(), 'utf8').trim(); } catch {}
+    try {
+      current = readFileSync(ROOT(), 'utf8').trim();
+    } catch {}
     if (current !== root) writeFileSync(ROOT(), root + '\n');
-  } catch { /* telemetry headers will be empty until the next session */ }
+  } catch {
+    /* telemetry headers will be empty until the next session */
+  }
 }
 
 function writeShim() {
   mkdirSync(SHARED_DIR(), { recursive: true, mode: 0o700 });
-  writeFileSync(SHIM(), [
-    '#!/usr/bin/env node',
-    '// Written by /enforcer-governor:telemetry. Prints Enforcer auth headers for',
-    "// Claude Code's otelHeadersHelper from the plugin version recorded in plugin-root.",
-    "import { readFileSync } from 'node:fs';",
-    "import { join } from 'node:path';",
-    "import { homedir } from 'node:os';",
-    "import { pathToFileURL } from 'node:url';",
-    "const dir = process.env.ENFORCER_HOME || join(process.env.HOME || homedir(), '.enforcer');",
-    "try { await import(pathToFileURL(join(readFileSync(join(dir, 'plugin-root'), 'utf8').trim(), 'bin', 'enforcer-headers.mjs')).href); }",
-    "catch { process.stdout.write('{}'); }",
-    '',
-  ].join('\n'), { mode: 0o700 });
+  writeFileSync(
+    SHIM(),
+    [
+      '#!/usr/bin/env node',
+      '// Written by /enforcer-governor:telemetry. Prints Enforcer auth headers for',
+      "// Claude Code's otelHeadersHelper from the plugin version recorded in plugin-root.",
+      "import { readFileSync } from 'node:fs';",
+      "import { join } from 'node:path';",
+      "import { homedir } from 'node:os';",
+      "import { pathToFileURL } from 'node:url';",
+      "const dir = process.env.ENFORCER_HOME || join(process.env.HOME || homedir(), '.enforcer');",
+      "try { await import(pathToFileURL(join(readFileSync(join(dir, 'plugin-root'), 'utf8').trim(), 'bin', 'enforcer-headers.mjs')).href); }",
+      "catch { process.stdout.write('{}'); }",
+      '',
+    ].join('\n'),
+    { mode: 0o700 },
+  );
 }
 
 const readSettings = () => {
   const p = CLAUDE_SETTINGS();
   if (!existsSync(p)) return {};
-  return JSON.parse(readFileSync(p, 'utf8'));   // a malformed file throws: never overwrite what we cannot read
+  return JSON.parse(readFileSync(p, 'utf8')); // a malformed file throws: never overwrite what we cannot read
 };
 
 function writeSettings(s) {
@@ -105,7 +119,8 @@ export function enable(cfg = {}) {
   recordPluginRoot();
   writeShim();
   const s = readSettings();
-  s.env = { ...(s.env || {}),
+  s.env = {
+    ...(s.env || {}),
     CLAUDE_CODE_ENABLE_TELEMETRY: '1',
     OTEL_METRICS_EXPORTER: 'otlp',
     OTEL_LOGS_EXPORTER: 'otlp',
@@ -132,7 +147,11 @@ export function disable() {
 
 export function status() {
   let s = {};
-  try { s = readSettings(); } catch { return { on: false, error: 'settings.json is not valid JSON' }; }
+  try {
+    s = readSettings();
+  } catch {
+    return { on: false, error: 'settings.json is not valid JSON' };
+  }
   const env = s.env || {};
   return {
     on: env.CLAUDE_CODE_ENABLE_TELEMETRY === '1' && !!env.OTEL_EXPORTER_OTLP_ENDPOINT,

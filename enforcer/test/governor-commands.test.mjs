@@ -11,7 +11,10 @@ const home = mkdtempSync(join(tmpdir(), 'gov-cmd-'));
 const env = { ...process.env, HOME: home, USERPROFILE: home, ENFORCER_CONFIG_HOME: join(home, 'cfg'), GOVERNOR_HOME: join(home, 'gov') };
 for (const k of ['ENFORCER_GOVERNOR_RULES', 'ENFORCER_GOVERNOR_BUDGET', 'ENFORCER_GOVERNOR_POLICY']) delete env[k];
 const gov = (...a) => spawnSync(process.execPath, [bin, 'governor', ...a], { env, encoding: 'utf8' });
-const cfg = () => { const f = join(home, 'gov', 'config.json'); return existsSync(f) ? JSON.parse(readFileSync(f, 'utf8')) : {}; };
+const cfg = () => {
+  const f = join(home, 'gov', 'config.json');
+  return existsSync(f) ? JSON.parse(readFileSync(f, 'utf8')) : {};
+};
 
 test('governor set writes a valid value', () => {
   const r = gov('set', 'dollars', '12');

@@ -8,7 +8,8 @@ import { createHash } from 'node:crypto';
 import { DOT } from '../../../hooks/claude/paths.mjs';
 
 const home = mkdtempSync(join(tmpdir(), 'gov-ship-'));
-process.env.HOME = home; process.env.USERPROFILE = home;
+process.env.HOME = home;
+process.env.USERPROFILE = home;
 process.env.GOVERNOR_HOME = join(home, '.enforcer-governor');
 process.env.ENFORCER_HOME = join(home, '.enforcer');
 process.env.CLAUDE_SETTINGS_PATH = join(home, DOT, 'settings.json');
@@ -22,7 +23,11 @@ const { stats } = await import('../src/outbox.mjs');
 const telemetry = await import('../adapters/claude-code/telemetry.mjs');
 
 let pass = 0;
-const ok = async (label, fn) => { await fn(); pass++; console.log('  ok  ' + label); };
+const ok = async (label, fn) => {
+  await fn();
+  pass++;
+  console.log('  ok  ' + label);
+};
 const sha = (s) => createHash('sha256').update(s).digest('hex');
 
 // Receipts exactly as writeReceipt writes them: {...entry, hash}, hash last.
@@ -33,7 +38,16 @@ function chainLines(prev, entries) {
     return { ...entry, hash };
   });
 }
-const entry = (n, verdict = 'deny') => ({ ts: `2026-09-14T12:00:0${n}.000Z`, agent: 'claude:abcd1234', verdict, reason: `r${n}`, source: 'capability', tool: 'Bash', model: 'claude-opus-5', tokens: n });
+const entry = (n, verdict = 'deny') => ({
+  ts: `2026-09-14T12:00:0${n}.000Z`,
+  agent: 'claude:abcd1234',
+  verdict,
+  reason: `r${n}`,
+  source: 'capability',
+  tool: 'Bash',
+  model: 'claude-opus-5',
+  tokens: n,
+});
 const attrs = (rec) => Object.fromEntries(rec.attributes.map((a) => [a.key, a.value.stringValue ?? a.value.boolValue]));
 
 await ok('the shipped body is exactly the text that was hashed, chained to its predecessor', () => {
@@ -54,7 +68,7 @@ await ok('the shipped body is exactly the text that was hashed, chained to its p
 
 await ok('a record re-chained from genesis after a state reset is sent so it verifies (the server flags a break, not tampering)', () => {
   const before = chainLines('genesis', [entry(1)]);
-  const after = chainLines('genesis', [entry(2)]);   // state was reset: chained from genesis again
+  const after = chainLines('genesis', [entry(2)]); // state was reset: chained from genesis again
   const recs = toOtlp([...before, ...after], 'genesis', 'i').body.resourceLogs[0].scopeLogs[0].logRecords;
   const a = attrs(recs[1]);
   assert.equal(a['enforcer.receipt.prev'], 'genesis');
@@ -63,7 +77,7 @@ await ok('a record re-chained from genesis after a state reset is sent so it ver
 
 await ok('an altered record is still sent as-is, so the server refuses it', () => {
   const [line] = chainLines('genesis', [entry(1)]);
-  line.verdict = 'allow';   // edited after the fact
+  line.verdict = 'allow'; // edited after the fact
   const r = toOtlp([line], 'genesis', 'i').body.resourceLogs[0].scopeLogs[0].logRecords[0];
   const a = attrs(r);
   assert.notEqual(sha(a['enforcer.receipt.prev'] + r.body.stringValue), a['enforcer.receipt.hash']);
@@ -80,7 +94,8 @@ await ok('an unhashed blind-path record is marked unchained and does not move th
 });
 
 await ok('the install id is created once and kept', () => {
-  const a = installId(), b = installId();
+  const a = installId(),
+    b = installId();
   assert.match(a, /^[0-9a-f-]{36}$/);
   assert.equal(a, b);
 });
@@ -88,7 +103,14 @@ await ok('the install id is created once and kept', () => {
 // ── shipOnce: the network path ─────────────────────────────────────────────
 await ok('signed out: nothing is sent', async () => {
   let calls = 0;
-  const r = await shipOnce({}, { fetchImpl: async () => { calls++; } });
+  const r = await shipOnce(
+    {},
+    {
+      fetchImpl: async () => {
+        calls++;
+      },
+    },
+  );
   assert.match(r.skipped, /not signed in/);
   assert.equal(calls, 0);
 });
@@ -105,10 +127,15 @@ await ok('a refused credential does not advance the queue', async () => {
 
 let captured;
 await ok('ships pending receipts as OTLP/JSON with the Enforcer credential, then advances', async () => {
-  const r = await shipOnce({}, { fetchImpl: async (url, init) => {
-    captured = { url, init, body: JSON.parse(init.body) };
-    return { status: 200, json: async () => ({}) };
-  } });
+  const r = await shipOnce(
+    {},
+    {
+      fetchImpl: async (url, init) => {
+        captured = { url, init, body: JSON.parse(init.body) };
+        return { status: 200, json: async () => ({}) };
+      },
+    },
+  );
   assert.equal(r.shipped, 3);
   assert.equal(captured.url, 'https://api.example.test/api/v1/governance/otlp/v1/logs');
   assert.equal(captured.init.headers['Content-Type'], 'application/json');
@@ -121,9 +148,17 @@ await ok('the next batch continues the chain from where the last one stopped', a
   const [next] = chainLines(lines[2].hash, [entry(4)]);
   appendFileSync(RECEIPTS, JSON.stringify(next) + '\n');
   let body;
-  await shipOnce({}, { fetchImpl: async (u, init) => { body = JSON.parse(init.body); return { status: 200, json: async () => ({}) }; } });
+  await shipOnce(
+    {},
+    {
+      fetchImpl: async (u, init) => {
+        body = JSON.parse(init.body);
+        return { status: 200, json: async () => ({}) };
+      },
+    },
+  );
   const a = attrs(body.resourceLogs[0].scopeLogs[0].logRecords[0]);
-  assert.equal(a['enforcer.receipt.prev'], lines[2].hash, 'the first record of a later batch must carry the previous batch\'s last hash');
+  assert.equal(a['enforcer.receipt.prev'], lines[2].hash, "the first record of a later batch must carry the previous batch's last hash");
 });
 
 await ok('a partial success advances past refused records and says so', async () => {
@@ -155,8 +190,10 @@ await ok('telemetry on writes the export settings and a helper, and keeps everyt
   assert.equal(s.env.OTEL_EXPORTER_OTLP_ENDPOINT, r.endpoint);
   // Claude Code caches the helper's headers for 29 minutes by default and an
   // OAuth token lives 15: without this, half of every cycle sent an expired token.
-  assert.ok(Number(s.env.CLAUDE_CODE_OTEL_HEADERS_HELPER_DEBOUNCE_MS) > 0 && Number(s.env.CLAUDE_CODE_OTEL_HEADERS_HELPER_DEBOUNCE_MS) < 15 * 60_000,
-    'the header cache must refresh within an OAuth token\'s 15-minute life');
+  assert.ok(
+    Number(s.env.CLAUDE_CODE_OTEL_HEADERS_HELPER_DEBOUNCE_MS) > 0 && Number(s.env.CLAUDE_CODE_OTEL_HEADERS_HELPER_DEBOUNCE_MS) < 15 * 60_000,
+    "the header cache must refresh within an OAuth token's 15-minute life",
+  );
   assert.equal(s.env.KEEP_ME, '1');
   assert.deepEqual(s.statusLine, { type: 'command', command: 'x' });
   assert.match(s.otelHeadersHelper, /otel-headers\.mjs/);

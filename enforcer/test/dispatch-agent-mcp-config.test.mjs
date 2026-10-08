@@ -11,7 +11,14 @@ import { jsonLine, addSecret, redactFile } from '../src/dispatch/logs.mjs';
 const KEY = 'ag_test0123456789abcdefSECRETvalue';
 const URL = 'http://127.0.0.1:9/mcp';
 // spawnWorker unrefs the child (the dispatcher keeps its own loop alive): hold the test's loop open until it exits.
-const settle = async (p) => { const keep = setInterval(() => {}, 50); try { return await p.done; } finally { clearInterval(keep); } };
+const settle = async (p) => {
+  const keep = setInterval(() => {}, 50);
+  try {
+    return await p.done;
+  } finally {
+    clearInterval(keep);
+  }
+};
 const tmp = () => mkdtempSync(join(tmpdir(), 'enf-mcpcfg-'));
 
 test('launchCmd adds a strict mcp config only when an agent is set', () => {

@@ -6,10 +6,35 @@ import { git, originRef, ghPrState } from './prune.mjs';
 
 export class BaseMissing extends Error {}
 
-const isDir = (p) => { try { return statSync(p).isDirectory(); } catch { return false; } };
-const isFile = (p) => { try { return statSync(p).isFile(); } catch { return false; } };
-const lexists = (p) => { try { lstatSync(p); return true; } catch { return false; } };
-const real = (p) => { try { return realpathSync(p); } catch { return resolve(p); } };
+const isDir = (p) => {
+  try {
+    return statSync(p).isDirectory();
+  } catch {
+    return false;
+  }
+};
+const isFile = (p) => {
+  try {
+    return statSync(p).isFile();
+  } catch {
+    return false;
+  }
+};
+const lexists = (p) => {
+  try {
+    lstatSync(p);
+    return true;
+  } catch {
+    return false;
+  }
+};
+const real = (p) => {
+  try {
+    return realpathSync(p);
+  } catch {
+    return resolve(p);
+  }
+};
 
 /** origin's default branch as an origin/<name> ref: origin/HEAD, else gh, else origin/main|master; null when none. */
 export function defaultBranch(src) {
@@ -17,10 +42,11 @@ export function defaultBranch(src) {
   if (h) return h;
   let name = '';
   try {
-    const r = spawnSync('gh', ['repo', 'view', '--json', 'defaultBranchRef', '--jq', '.defaultBranchRef.name'],
-      { cwd: src, encoding: 'utf8', timeout: 60000 });
+    const r = spawnSync('gh', ['repo', 'view', '--json', 'defaultBranchRef', '--jq', '.defaultBranchRef.name'], { cwd: src, encoding: 'utf8', timeout: 60000 });
     name = r.status === 0 ? (r.stdout || '').trim() : '';
-  } catch { /* no gh */ }
+  } catch {
+    /* no gh */
+  }
   if (name) return 'origin/' + name;
   for (const c of ['origin/main', 'origin/master']) if (git(['rev-parse', '--verify', '-q', c], src).returncode === 0) return c;
   return null;
@@ -31,7 +57,10 @@ export function resolveBase(node, graphBases = null, registry = null, originHead
   const data = node.data || {};
   const repo = data.repo;
   if (String(data.base || '').trim()) return [originRef(data.base), 'data.base'];
-  for (const [src, table] of [['graph bases', graphBases], ['repo-bases.json', registry]]) {
+  for (const [src, table] of [
+    ['graph bases', graphBases],
+    ['repo-bases.json', registry],
+  ]) {
     const b = repo && table ? table[repo] : null;
     if (typeof b === 'string' && b.trim()) return [originRef(b), src];
   }
@@ -78,8 +107,10 @@ export function worktreeFor(node, repoRoot, stateDir, { dry = false, graphBases 
   } else {
     r = git(['worktree', 'add', path, branch], src);
     if (r.returncode === 0) {
-      if (git(['rebase', base], path).returncode !== 0) { git(['rebase', '--abort'], path); note = `reused branch (rebase onto ${base} failed)`; }
-      else note = 'reused branch, rebased onto ' + base;
+      if (git(['rebase', base], path).returncode !== 0) {
+        git(['rebase', '--abort'], path);
+        note = `reused branch (rebase onto ${base} failed)`;
+      } else note = 'reused branch, rebased onto ' + base;
     }
   }
   if (r.returncode !== 0) throw new Error('worktree add failed: ' + (r.stderr || r.stdout).trim().slice(0, 300));
@@ -87,12 +118,21 @@ export function worktreeFor(node, repoRoot, stateDir, { dry = false, graphBases 
 }
 
 function manifest(path) {
-  try { return readFileSync(path, 'utf8').split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith('#')); } catch { return []; }
+  try {
+    return readFileSync(path, 'utf8')
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => l && !l.startsWith('#'));
+  } catch {
+    return [];
+  }
 }
 
 /** Apply <src>/.worktreeinclude (ignored files to COPY) and .worktreeshare (dirs to SYMLINK). {copied, linked, notes}. */
 export function worktreeSetup(src, path, { dry = false } = {}) {
-  let copied = 0; let linked = 0; const notes = [];
+  let copied = 0;
+  let linked = 0;
+  const notes = [];
   const root = real(src);
   const includes = [];
   for (let pat of manifest(join(src, '.worktreeinclude'))) {
@@ -110,11 +150,23 @@ export function worktreeSetup(src, path, { dry = false } = {}) {
   }
   for (const rel of includes) {
     const f = real(join(src, rel));
-    if (!f.startsWith(root + sep) || !isFile(f)) { notes.push(`skip ${rel} (missing or outside repo)`); continue; }
-    if (git(['ls-files', '--error-unmatch', '--', rel], src).returncode === 0) { notes.push(`skip ${rel} (tracked by git)`); continue; }
+    if (!f.startsWith(root + sep) || !isFile(f)) {
+      notes.push(`skip ${rel} (missing or outside repo)`);
+      continue;
+    }
+    if (git(['ls-files', '--error-unmatch', '--', rel], src).returncode === 0) {
+      notes.push(`skip ${rel} (tracked by git)`);
+      continue;
+    }
     const dest = join(path, rel);
-    if (lexists(dest)) { notes.push(`skip ${rel} (already in worktree)`); continue; }
-    if (!dry) { mkdirSync(dirname(dest), { recursive: true }); copyFileSync(f, dest); }
+    if (lexists(dest)) {
+      notes.push(`skip ${rel} (already in worktree)`);
+      continue;
+    }
+    if (!dry) {
+      mkdirSync(dirname(dest), { recursive: true });
+      copyFileSync(f, dest);
+    }
     copied++;
   }
   for (const rel of manifest(join(src, '.worktreeshare'))) {
@@ -124,16 +176,33 @@ export function worktreeSetup(src, path, { dry = false } = {}) {
     let lead = 0;
     while (lead < parts.length && parts[lead] === '..') lead++;
     const inside = real(target).startsWith(root + sep);
-    if (isAbsolute(rel) || parts.slice(lead).includes('..') || lead > 1 || (lead === 0 && !inside)) { notes.push(`skip ${rel} (share escapes the source root)`); continue; }
-    if (!isDir(target)) { notes.push(`skip ${rel} (not a directory in the main checkout)`); continue; }
-    if (rel.startsWith('..') && dirname(normalize(path)) !== dirname(root)) { notes.push(`skip ${rel} (sibling share needs worktree beside checkout)`); continue; }
-    if (lexists(dest)) { notes.push(`skip ${rel} (already in worktree)`); continue; }
+    if (isAbsolute(rel) || parts.slice(lead).includes('..') || lead > 1 || (lead === 0 && !inside)) {
+      notes.push(`skip ${rel} (share escapes the source root)`);
+      continue;
+    }
+    if (!isDir(target)) {
+      notes.push(`skip ${rel} (not a directory in the main checkout)`);
+      continue;
+    }
+    if (rel.startsWith('..') && dirname(normalize(path)) !== dirname(root)) {
+      notes.push(`skip ${rel} (sibling share needs worktree beside checkout)`);
+      continue;
+    }
+    if (lexists(dest)) {
+      notes.push(`skip ${rel} (already in worktree)`);
+      continue;
+    }
     if (!dry) {
       mkdirSync(dirname(dest), { recursive: true });
       symlinkSync(target, dest);
-      if (lead === 0) { // keep the share out of `git status`: .git/info/exclude of the worktree
+      if (lead === 0) {
+        // keep the share out of `git status`: .git/info/exclude of the worktree
         const ex = git(['rev-parse', '--git-path', 'info/exclude'], path).stdout.trim();
-        if (ex) { const p = resolve(path, ex); mkdirSync(dirname(p), { recursive: true }); appendFileSync(p, '/' + rel.replace(/\/+$/, '') + '\n'); }
+        if (ex) {
+          const p = resolve(path, ex);
+          mkdirSync(dirname(p), { recursive: true });
+          appendFileSync(p, '/' + rel.replace(/\/+$/, '') + '\n');
+        }
       }
     }
     linked++;
