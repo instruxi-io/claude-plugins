@@ -2,7 +2,7 @@
 import { defaultFetch } from '../lib/api/client.mjs';
 import { existsSync, readFileSync, statSync, mkdirSync, chmodSync, accessSync, constants } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { join } from 'node:path';
+import { join, normalize } from 'node:path';
 import { homedir } from 'node:os';
 import { readdirSync } from 'node:fs';
 import { stateBase } from './state.mjs';
@@ -38,7 +38,7 @@ export function scriptPaths(cmd, home) {
     p = p.replace(/^(~|\$HOME|\$\{HOME\})/, () => home);
     if (p.includes('$')) continue; // an unresolved variable (${CLAUDE_PLUGIN_ROOT}) is checked elsewhere
     if (/^[\\/]/.test(p) && m.index > 0 && /[\w.}]/.test(String(cmd)[m.index - 1])) continue; // part of a relative path
-    found.push(p);
+    found.push(normalize(p)); // `~/x` expands to the native home plus a `/` tail: normalise so Windows gets one separator style
   }
   return found;
 }
