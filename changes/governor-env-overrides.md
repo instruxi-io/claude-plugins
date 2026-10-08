@@ -1,0 +1,1 @@
+ENFORCER_GOVERNOR_RULES, ENFORCER_GOVERNOR_BUDGET and ENFORCER_GOVERNOR_POLICY (`on` or `off`) turn a governor check on or off for one process tree over config.json, under any organisation floor; `governor config` marks them with `~` and `governor status` names them.
