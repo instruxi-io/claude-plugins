@@ -2,7 +2,7 @@
 // Everything the slash commands print. Plain text on stdout -- these are read
 // by a person mid-session, so money first and jargon never.
 import { loadState, loadConfig, saveConfig, saveState, verify, withLock, commit, RECEIPTS } from './store.mjs';
-import { readManaged, merge } from './managed.mjs';
+import { readManaged, merge, envOverrides, ENV_OVERRIDES } from './managed.mjs';
 import { DEFAULTS, priceOf, dollarsForTokens, burnRate, release } from './policy.mjs';
 import { SETTINGS, GROUPS, RETIRED, validate, parseValue } from './settings.mjs';
 
@@ -14,6 +14,14 @@ const [, , cmd, ...rest] = process.argv;
 const arg = rest.join(' ').trim();
 const cfg = { ...DEFAULTS, ...loadConfig() };
 const state = loadState();
+// Checks this process's environment turns on or off (ENFORCER_GOVERNOR_RULES,
+// _BUDGET, _POLICY). They beat config.json for this process tree only, so both
+// `config` and `status` say where a value came from.
+const fromEnv = envOverrides();
+const envLine = () => Object.keys(fromEnv).length
+  ? 'Set by this process\'s environment: ' + Object.keys(fromEnv).map(k => `${ENV_OVERRIDES[k]}=${fromEnv[k] ? 'on' : 'off'}`).join(', ')
+    + '. These apply to this process and its children, not to the machine-wide config.'
+  : '';
 const usd = (t, m) => '$' + dollarsForTokens(t, priceOf(m, cfg.model).in).toFixed(2);
 
 if (cmd === 'verify') {
@@ -34,7 +42,8 @@ if (cmd === 'config') {
   // free to TIGHTEN. Showing the local value alone would be a lie on any
   // setting the tenant floors (src/managed.mjs).
   const managed = readManaged();
-  const applied = merge(cfg, managed);
+  const local = { ...cfg, ...fromEnv };
+  const applied = merge(local, managed);
   const width = Math.max(...Object.keys(SETTINGS).map(k => k.length));
   for (const g of GROUPS) {
     const keys = Object.keys(SETTINGS).filter(k => SETTINGS[k].group === g);
@@ -52,9 +61,11 @@ if (cmd === 'config') {
       // A managed setting is marked, and the local value is shown beside it
       // when the two differ -- otherwise "it says $150 but I set $400" has no
       // visible explanation.
-      const floored = k in managed && applied[k] !== live[k] && live[k] !== undefined;
-      console.log(`  ${k.padEnd(width)}  ${shown.padEnd(12)}${k in managed ? '!' : set ? '*' : ' '} ${spec.describe}`
-        + (floored ? `  [your organisation's setting; yours was ${String(live[k])}]` : ''));
+      const mine = k in fromEnv ? fromEnv[k] : live[k];
+      const floored = k in managed && applied[k] !== mine && mine !== undefined;
+      const env = k in fromEnv ? `  [from the environment: ${ENV_OVERRIDES[k]}=${fromEnv[k] ? 'on' : 'off'}]` : '';
+      console.log(`  ${k.padEnd(width)}  ${shown.padEnd(12)}${k in managed ? '!' : k in fromEnv ? '~' : set ? '*' : ' '} ${spec.describe}`
+        + env + (floored ? `  [your organisation's setting; yours was ${String(mine)}]` : ''));
       if (arg === '--why' && spec.hint) console.log(`  ${' '.repeat(width)}  ${' '.repeat(13)}${spec.hint}`);
     }
   }
@@ -62,6 +73,7 @@ if (cmd === 'config') {
   if (Object.keys(managed).length) {
     console.log(`  ! set by your organisation (${Object.keys(managed).length} setting(s)). You can make these stricter, not looser.`);
   }
+  if (Object.keys(fromEnv).length) console.log(`  ~ set by this process's environment. ${envLine()}`);
   console.log('  Change one with /enforcer-governor:set <name> <value>.');
   const dead = Object.keys(RETIRED).filter(k => k in live);
   if (dead.length) {
@@ -96,6 +108,9 @@ if (cmd === 'set') {
     if (applied !== value) {
       console.log(`Your organisation sets ${key} to ${show2(managed[key])}, and a local value can only be stricter, so ${show2(applied)} is what applies.`);
     }
+  }
+  if (key in fromEnv) {
+    console.log(`${ENV_OVERRIDES[key]}=${fromEnv[key] ? 'on' : 'off'} is set in this process's environment and beats config.json here and in its children.`);
   }
   console.log('Agents already running pick this up on their next action.');
   process.exit(0);
@@ -138,6 +153,7 @@ if (cmd === 'resume') {
   process.exit(0);
 }
 
+if (Object.keys(fromEnv).length) console.log(envLine() + '\n');
 const agents = Object.values(state.agents || {});
 if (!agents.length) { console.log('No agents seen yet.'); process.exit(0); }
 
