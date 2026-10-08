@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // enforcer CLI.
-//   enforcer governor <decide|status|config|limit|verify>   the governor core
+//   enforcer governor <decide|status|config|limit|verify|set|enable|disable|telemetry>   the governor core
 //   enforcer login|logout|status|workspace                   sign in (wraps bin/login.mjs, bin/enforcer-workspace.mjs)
 //   enforcer event <name>                                    one process per hook event: governor + graph handlers, merged
 //   enforcer hook <event> [handler]                          graph worker hooks (self-gated)
@@ -17,7 +17,8 @@ import { graphContextLive, native, runEvent, EVENT_NAMES } from '../src/event.mj
 const here = (p) => fileURLToPath(new URL(p, import.meta.url));
 const [area, sub, ...rest] = process.argv.slice(2);
 
-const GOV = ['decide', 'status', 'config', 'limit', 'verify'];
+const GOV = ['decide', 'status', 'config', 'limit', 'verify', 'set', 'enable', 'disable', 'telemetry'];
+const CHECKS = { rules: 'rulesOn', budget: 'budgetOn', policy: 'policyOn' };
 // event -> graph handlers (src/graph/hooks), run in order
 const HOOKS = {
   'session-start': ['session_start'],
@@ -99,8 +100,17 @@ if (area === 'uninstall') {
 }
 
 if (area === 'governor' && GOV.includes(sub)) {
-  const script = sub === 'decide' ? here('../lib/governor/bin/governor') : here('../lib/governor/core/report.mjs');
-  const r = spawnSync(process.execPath, [script, sub, ...rest], { stdio: 'inherit' });
+  let script = sub === 'decide' ? here('../lib/governor/bin/governor') : here('../lib/governor/core/report.mjs');
+  let args = [sub, ...rest];
+  if (sub === 'enable' || sub === 'disable') {
+    const key = CHECKS[rest[0]];
+    if (!key || rest.length !== 1) { process.stderr.write(`usage: enforcer governor ${sub} <${Object.keys(CHECKS).join('|')}>\n`); process.exit(1); }
+    args = ['set', key, sub === 'enable' ? 'on' : 'off'];
+  } else if (sub === 'telemetry') {
+    script = here('../lib/governor/bin/telemetry.mjs');
+    args = rest;
+  }
+  const r = spawnSync(process.execPath, [script, ...args], { stdio: 'inherit' });
   process.exit(r.status ?? 1);
 }
 
@@ -118,5 +128,5 @@ if (area === 'harness' && (sub === 'install' || sub === 'uninstall') && rest[0] 
   process.exit(r.ok ? 0 : 1);
 }
 
-process.stderr.write(`usage: enforcer doctor\n       enforcer uninstall [--purge] [--yes]\n       enforcer login [args] | logout | status | workspace <list|switch|current>\n       enforcer event <${EVENT_NAMES.join('|')}>\n       enforcer governor <${GOV.join('|')}> [args]\n       enforcer harness <install|uninstall> <grok|codex> [--dry-run] [--yes]\n       enforcer hook <${Object.keys(HOOKS).join('|')}> [handler]\n`);
+process.stderr.write(`usage: enforcer doctor\n       enforcer uninstall [--purge] [--yes]\n       enforcer login [args] | logout | status | workspace <list|switch|current>\n       enforcer event <${EVENT_NAMES.join('|')}>\n       enforcer governor <${GOV.join('|')}> [args]\n         set <name> <value> | enable|disable <${Object.keys(CHECKS).join('|')}> | telemetry [on|off|status]\n       enforcer harness <install|uninstall> <grok|codex> [--dry-run] [--yes]\n       enforcer hook <${Object.keys(HOOKS).join('|')}> [handler]\n`);
 process.exit(2);

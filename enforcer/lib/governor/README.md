@@ -104,7 +104,7 @@ Run from the plugin root:
 | `node bin/enforcer governor config [--why]` | every setting, what it does, and which you have changed |
 | `/enforcer:login [<WORKSPACE-CODE> \| api-key <key> \| status \| logout]` | sign in to Enforcer; no argument opens a browser, a workspace code skips asking for it |
 
-**Not exposed in the `enforcer` plugin today:** `resume` (run a stopped agent again), `set <name> <value>` (change one setting with validation) and `telemetry` (send Claude Code's OpenTelemetry to your workspace). Their definitions are still in `lib/governor/commands/`, but the plugin does not register them. Until it does, change settings by editing the config file, below.
+**Not exposed in the `enforcer` plugin today:** `resume` (run a stopped agent again). `set <name> <value>` (validated), `enable|disable <rules|budget|policy>` and `telemetry [on|off|status]` are exposed through `enforcer governor` and `/enforcer:governor`.
 
 ### Getting out of the way
 
@@ -139,7 +139,7 @@ Once you sign in to an Enforcer workspace, these can leave, each under a switch:
 | **Decision receipts** — the verdict, the rule that fired, the tool name, the model, token counts, a project name derived from the working directory, the `operator` you set, and which harness decided (`claude-code`) with its adapter version. Never the command text, never file contents, never prompts. | shipped in the background after each session, to your workspace's governance API | `shipOn` (default on) |
 | **A session's project** — at session start, the session id the receipts use (`claude:` + 8 characters) and the project name derived from the working directory, so the session is filed under its project even if it never makes a governed decision. Nothing else. | once per session start, one short request, never retried | `shipOn` (default on) |
 | **Your organisation's policy answers** — for an action a local rule matched, the governor asks your workspace whether to allow, ask or deny. The request names the rule, not the command. | only when a rule matches | `policyOn` (default on) |
-| **Claude Code's own telemetry** — cost, tokens and tool-use metrics from Claude Code's built-in OpenTelemetry exporter. Prompt text is not exported. | only if you turn it on | `telemetry on` (default off; not exposed in the `enforcer` plugin today) |
+| **Claude Code's own telemetry** — cost, tokens and tool-use metrics from Claude Code's built-in OpenTelemetry exporter. Prompt text is not exported. | only if you turn it on | `telemetry on` (default off; `enforcer governor telemetry on`) |
 
 Everything goes to the workspace you signed in to and nowhere else. `/enforcer:login logout` stops all of them on this machine; what has already been sent stays in your workspace's records, which is the point of a record.
 
