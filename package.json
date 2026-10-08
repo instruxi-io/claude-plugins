@@ -4,6 +4,8 @@
   "type": "module",
   "scripts": {
     "bump": "node scripts/release.mjs bump",
-    "sbom": "mkdir -p dist && cd enforcer && npm sbom --sbom-format cyclonedx > ../dist/sbom.cdx.json"
+    "sbom": "mkdir -p dist && cd enforcer && npm sbom --sbom-format cyclonedx > ../dist/sbom.cdx.json",
+    "lint": "npm --prefix enforcer run lint",
+    "format:check": "npm --prefix enforcer run format:check"
   }
 }

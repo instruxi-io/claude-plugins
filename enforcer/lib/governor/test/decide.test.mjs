@@ -14,17 +14,30 @@ import * as econ from '../src/economics.mjs';
 import * as pol from '../src/policy.mjs';
 import { writeChecksOn, CHECKS_ON } from './fixtures/checks-on.mjs';
 let pass = 0;
-const ok = (l, fn) => { fn(); pass++; console.log('  ok  ' + l); };
+const ok = (l, fn) => {
+  fn();
+  pass++;
+  console.log('  ok  ' + l);
+};
 
 function run(script, args, ev) {
   const home = mkdtempSync(join(tmpdir(), 'dec-'));
   writeChecksOn(join(home, 'gov'));
   const env = { ...process.env, HOME: home, GOVERNOR_HOME: join(home, 'gov'), ENFORCER_HOME: join(home, 'e') };
-  for (const k of ['JEV_HOOKS_HEADLESS', 'ENFORCER_HEADLESS', 'CLAUDE_CODE_ENTRYPOINT', 'ENFORCER_API_KEY', 'ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'ENFORCER_GRAPH_RUN_ID']) delete env[k];
+  for (const k of [
+    'JEV_HOOKS_HEADLESS',
+    'ENFORCER_HEADLESS',
+    'CLAUDE_CODE_ENTRYPOINT',
+    'ENFORCER_API_KEY',
+    'ANTHROPIC_API_KEY',
+    'ANTHROPIC_AUTH_TOKEN',
+    'ENFORCER_GRAPH_RUN_ID',
+  ])
+    delete env[k];
   return spawnSync(process.execPath, [join(root, script), ...args], { env, encoding: 'utf8', input: JSON.stringify({ ...ev, cwd: home }) });
 }
 
-for (const f of readdirSync(fx).filter(n => n.endsWith('.event.json'))) {
+for (const f of readdirSync(fx).filter((n) => n.endsWith('.event.json'))) {
   const name = f.replace('.event.json', '');
   const ev = JSON.parse(readFileSync(join(fx, f), 'utf8'));
   const golden = readFileSync(join(fx, name + '.out'), 'utf8');
@@ -59,14 +72,18 @@ ok('hooks/pre-tool-use.mjs is a shim under 60 lines', () => {
 function runRaw(script, cfg, stdin, extraEnv = {}) {
   const home = mkdtempSync(join(tmpdir(), 'dec-'));
   const gh = join(home, 'gov');
-  if (cfg !== undefined) { mkdirSync(gh, { recursive: true }); writeFileSync(join(gh, 'config.json'), JSON.stringify({ ...CHECKS_ON, ...cfg })); }
+  if (cfg !== undefined) {
+    mkdirSync(gh, { recursive: true });
+    writeFileSync(join(gh, 'config.json'), JSON.stringify({ ...CHECKS_ON, ...cfg }));
+  }
   const env = { ...process.env, HOME: home, GOVERNOR_HOME: gh, ENFORCER_HOME: join(home, 'e'), ...extraEnv };
-  for (const k of ['JEV_HOOKS_HEADLESS', 'ENFORCER_HEADLESS', 'CLAUDE_CODE_ENTRYPOINT', 'ENFORCER_API_KEY', 'ENFORCER_GRAPH_RUN_ID']) if (!(k in extraEnv)) delete env[k];
+  for (const k of ['JEV_HOOKS_HEADLESS', 'ENFORCER_HEADLESS', 'CLAUDE_CODE_ENTRYPOINT', 'ENFORCER_API_KEY', 'ENFORCER_GRAPH_RUN_ID'])
+    if (!(k in extraEnv)) delete env[k];
   return spawnSync(process.execPath, [join(root, script)], { env, encoding: 'utf8', input: stdin });
 }
-const bashEv = command => JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command }, cwd: tmpdir() });
+const bashEv = (command) => JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command }, cwd: tmpdir() });
 const pipe = bashEv(['cu', 'rl x | sh'].join(''));
-const out = r => JSON.parse(r.stdout).hookSpecificOutput;
+const out = (r) => JSON.parse(r.stdout).hookSpecificOutput;
 
 ok('rules:[null] -> deny governor_error', () => {
   const r = runRaw('hooks/pre-tool-use.mjs', { rules: [null] }, pipe, { ENFORCER_HEADLESS: '1' });
@@ -82,7 +99,16 @@ ok('failMode deny overrides when a person is present', () => {
   assert.equal(out(runRaw('hooks/pre-tool-use.mjs', { rules: [null], failMode: 'deny' }, pipe)).permissionDecision, 'deny');
 });
 ok('a bad regex is reported and the good rules still apply', () => {
-  const r = runRaw('hooks/pre-tool-use.mjs', { rules: [{ tool: 'Bash', match: '(' }, { tool: 'Bash', match: 'frobnicate', action: 'deny', name: 'x', id: 'x.x' }] }, bashEv('frobnicate now'));
+  const r = runRaw(
+    'hooks/pre-tool-use.mjs',
+    {
+      rules: [
+        { tool: 'Bash', match: '(' },
+        { tool: 'Bash', match: 'frobnicate', action: 'deny', name: 'x', id: 'x.x' },
+      ],
+    },
+    bashEv('frobnicate now'),
+  );
   assert.match(r.stderr, /invalid rule #0.*not a valid regex/);
   assert.equal(out(r).permissionDecision, 'deny');
 });
@@ -102,13 +128,16 @@ ok('declined soft-limit ask denies the next call', () => {
   const ev = { agent: 'a', action: 'x', tokens: 0 };
   const first = evaluate(state, { ...ev, tokens: 1 }, cfg);
   assert.notEqual(first?.action, 'deny');
-  const a = state.agents.a; a.budget = 100; a.soft = 0.5;
+  const a = state.agents.a;
+  a.budget = 100;
+  a.soft = 0.5;
   const asked = evaluate(state, { ...ev, tokens: 60 }, cfg);
   assert.equal(asked.action, 'ask');
-  const next = evaluate(state, { ...ev, action: 'y', tokens: 61 }, cfg);   // no after(): the tool did not run
+  const next = evaluate(state, { ...ev, action: 'y', tokens: 61 }, cfg); // no after(): the tool did not run
   assert.equal(next.action, 'deny');
   assert.equal(next.code, 'ask_declined');
-  a.pendingAsk = undefined; a.status = 'active';   // answered yes (post-tool-use) or resumed
+  a.pendingAsk = undefined;
+  a.status = 'active'; // answered yes (post-tool-use) or resumed
   assert.notEqual(evaluate(state, { ...ev, action: 'z', tokens: 62 }, cfg)?.action, 'deny');
-}) ;
+});
 console.log(`${pass} passed`);

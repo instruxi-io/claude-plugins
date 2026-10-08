@@ -23,11 +23,29 @@ test('run id present in request header, receipt, PR body and evidence', async ()
   try {
     // request header: X-Request-Id always, X-Enforcer-Run when a run is live
     let seen;
-    await apiFetch('http://x.invalid/a', {}, { fetchImpl: async (u, init) => { seen = init.headers; return { ok: true, status: 200 }; } });
+    await apiFetch(
+      'http://x.invalid/a',
+      {},
+      {
+        fetchImpl: async (u, init) => {
+          seen = init.headers;
+          return { ok: true, status: 200 };
+        },
+      },
+    );
     assert.equal(seen['X-Enforcer-Run'], RUN);
     assert.ok(seen['X-Request-Id']);
     delete process.env.GRAPH_RUN_ID;
-    await apiFetch('http://x.invalid/a', {}, { fetchImpl: async (u, init) => { seen = init.headers; return { ok: true, status: 200 }; } });
+    await apiFetch(
+      'http://x.invalid/a',
+      {},
+      {
+        fetchImpl: async (u, init) => {
+          seen = init.headers;
+          return { ok: true, status: 200 };
+        },
+      },
+    );
     assert.equal(seen['X-Enforcer-Run'], undefined, 'no run, no header');
     process.env.GRAPH_RUN_ID = RUN;
 
@@ -45,7 +63,13 @@ test('run id present in request header, receipt, PR body and evidence', async ()
 
     // evidence: captured under the held run, leaves with run_id
     saveRun('s1', { graph_id: 'g1', node_id: 'n1', run_id: RUN, key: 'k' });
-    await captureEvidence({ hook_event_name: 'PostToolUse', session_id: 's1', tool_name: 'Bash', tool_input: { command: 'npm test' }, tool_response: { stdout: 'ok' } });
+    await captureEvidence({
+      hook_event_name: 'PostToolUse',
+      session_id: 's1',
+      tool_name: 'Bash',
+      tool_input: { command: 'npm test' },
+      tool_response: { stdout: 'ok' },
+    });
     const recs = loadEvidence('s1', RUN);
     assert.ok(recs.length > 0);
     for (const r of recs) assert.equal(stripInternal(r).run_id, RUN);
@@ -54,5 +78,8 @@ test('run id present in request header, receipt, PR body and evidence', async ()
     logHook({ hook: 'capture', event: 'PostToolUse', actor: 's1', outcome: 'ok', ms: 1, code: 0 }, { force: true });
     const { logPath } = await import('../src/graph/hooklog.mjs');
     assert.equal(JSON.parse(readFileSync(logPath(), 'utf8').trim().split('\n').at(-1)).run_id, RUN);
-  } finally { for (const k of Object.keys(process.env)) if (!(k in saved)) delete process.env[k]; Object.assign(process.env, saved); }
+  } finally {
+    for (const k of Object.keys(process.env)) if (!(k in saved)) delete process.env[k];
+    Object.assign(process.env, saved);
+  }
 });

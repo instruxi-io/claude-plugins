@@ -16,7 +16,11 @@ export function hostUnit() {
 
 export function timeRuns(fn, runs = 30) {
   const out = [];
-  for (let i = 0; i < runs; i++) { const t = performance.now(); fn(); out.push(performance.now() - t); }
+  for (let i = 0; i < runs; i++) {
+    const t = performance.now();
+    fn();
+    out.push(performance.now() - t);
+  }
   return out;
 }
 

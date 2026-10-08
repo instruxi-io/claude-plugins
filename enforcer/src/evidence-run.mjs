@@ -21,11 +21,15 @@ import { headers, allNodes } from './preflight.mjs';
 import { resolveConfig } from './config.mjs';
 
 export const DEFAULT_RUNNERS = ['node', 'bash', 'sh', 'grep', 'ls', 'npm', 'npx', 'cat', 'test', 'wc', 'head', 'tail', 'go', 'make'];
-export const COLLISION = /EADDRINUSE|address already in use|database is locked|SQLITE_BUSY|deadlock detected|could not obtain lock|resource temporarily unavailable|text file busy|ETXTBSY|port is already allocated|being accessed by other users/i;
+export const COLLISION =
+  /EADDRINUSE|address already in use|database is locked|SQLITE_BUSY|deadlock detected|could not obtain lock|resource temporarily unavailable|text file busy|ETXTBSY|port is already allocated|being accessed by other users/i;
 const CLEAN_ENV = ['PATH', 'HOME', 'LANG', 'TMPDIR', 'GOPATH', 'GOCACHE', 'GOMODCACHE', 'GOFLAGS', 'GOROOT'];
 
 /** The node's acceptance lines as an array of strings. */
-export const acceptanceOf = (node) => { const a = node?.data?.acceptance; return (Array.isArray(a) ? a : a ? [a] : []).map(String); };
+export const acceptanceOf = (node) => {
+  const a = node?.data?.acceptance;
+  return (Array.isArray(a) ? a : a ? [a] : []).map(String);
+};
 
 /** Add the flags a Go test line needs for `--- PASS: <Name>` to appear. */
 export function goTestFlags(cmd, literals) {
@@ -36,7 +40,7 @@ export function goTestFlags(cmd, literals) {
   if (!/(^|\s)-tags[ =]/.test(cmd)) add.push('-tags integration');
   if (!/(^|\s)-(test\.)?v(\s|$)/.test(cmd)) add.push('-v');
   if (!/(^|\s)-run[ =]/.test(cmd)) add.push(`-run '^(${names.join('|')})$'`);
-  return add.length ? cmd.replace(/\bgo test\b/, () => `go test ${add.join(" ")}`) : cmd;
+  return add.length ? cmd.replace(/\bgo test\b/, () => `go test ${add.join(' ')}`) : cmd;
 }
 
 /** Substitute placeholders. Returns {cmd} or {skip: reason}. */
@@ -55,7 +59,8 @@ export function substitute(cmd, { graph, nodeKey, nodeId, testDb }) {
 /** Prepare one acceptance line: {cmd, cwd, literals, exit} to run, or {skip}. Pure. */
 export function prepareLine(line, { cwd, graph, nodeKey, nodeId, testDb, runners = DEFAULT_RUNNERS }) {
   let p = parseLine(line);
-  if (!p) { // `<command> prints the file` quotes nothing, but the command's output is still the evidence
+  if (!p) {
+    // `<command> prints the file` quotes nothing, but the command's output is still the evidence
     const m = /^(.*?)\s+prints\s+/s.exec(line.trim());
     if (!m) return { skip: 'no "prints|exits <literal>" form' };
     p = { cmd: m[1].trim().replace(/^`([^`]*)`$/, '$1'), exit: null, literals: [] };
@@ -68,8 +73,14 @@ export function prepareLine(line, { cwd, graph, nodeKey, nodeId, testDb, runners
   if (/(^|[\s;&|(])(gh|git)\s/.test(cmd) || /\bpull request\b/i.test(line)) return { skip: 'PR line: proved by the delivery step' };
   let dir = cwd;
   const cd = /^cd\s+(\S+)\s*&&\s*(.*)$/s.exec(cmd);
-  if (cd) { dir = resolve(cwd, cd[1].replace(/^['"]|['"]$/g, '')); cmd = cd[2].trim(); }
-  const parts = cmd.split(/\s*(?:&&|;|\|\|?)\s*/).map((s) => s.trim()).filter(Boolean);
+  if (cd) {
+    dir = resolve(cwd, cd[1].replace(/^['"]|['"]$/g, ''));
+    cmd = cd[2].trim();
+  }
+  const parts = cmd
+    .split(/\s*(?:&&|;|\|\|?)\s*/)
+    .map((s) => s.trim())
+    .filter(Boolean);
   for (const part of parts) {
     const w = part.split(/\s+/)[0];
     if (w === 'cd') continue;
@@ -79,7 +90,9 @@ export function prepareLine(line, { cwd, graph, nodeKey, nodeId, testDb, runners
   return { cmd: goTestFlags(cmd, p.literals), cwd: dir, literals: p.literals, exit: p.exit };
 }
 
-const sleep = (ms) => { if (ms > 0) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); };
+const sleep = (ms) => {
+  if (ms > 0) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+};
 
 /** Head and tail of the output, plus the line holding any quoted literal the clip dropped. */
 export function clipEvidence(out, literals = []) {
@@ -99,25 +112,59 @@ export function clipEvidence(out, literals = []) {
 export function runPrepared(p, { env = process.env, timeoutMs = 600000, retryDelayMs = 2000, run = spawnSync } = {}) {
   const clean = Object.fromEntries(Object.entries(env).filter(([k]) => CLEAN_ENV.includes(k)));
   const once = () => {
-    const r = run('bash', ['-c', p.cmd], { cwd: p.cwd, env: clean, stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8', timeout: timeoutMs, maxBuffer: 64 << 20 });
+    const r = run('bash', ['-c', p.cmd], {
+      cwd: p.cwd,
+      env: clean,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      encoding: 'utf8',
+      timeout: timeoutMs,
+      maxBuffer: 64 << 20,
+    });
     if (r.error?.code === 'ETIMEDOUT') return { exit: 124, out: `timed out after ${Math.round(timeoutMs / 1000)} s` };
     if (r.error) return { exit: 127, out: String(r.error.message) };
     return { exit: r.status ?? 1, out: (r.stdout || '') + (r.stderr || '') };
   };
-  let r = once(), retried = false;
-  if (r.exit !== 0 && COLLISION.test(r.out)) { retried = true; sleep(retryDelayMs); r = once(); }
+  let r = once(),
+    retried = false;
+  if (r.exit !== 0 && COLLISION.test(r.out)) {
+    retried = true;
+    sleep(retryDelayMs);
+    r = once();
+  }
   return { ...r, retried };
 }
 
 /** Run a node's acceptance lines. Returns {items, skipped, found, total, retried}. */
-export function runEvidence(node, { cwd = process.cwd(), graph = '', only = null, env = process.env, timeoutMs, retryDelayMs, testDb = env.ENFORCER_TEST_DB || env.TEST_DATABASE_URL || '', runners, run } = {}) {
-  const items = [], skipped = [], retried = [];
-  let found = 0, total = 0;
+export function runEvidence(
+  node,
+  {
+    cwd = process.cwd(),
+    graph = '',
+    only = null,
+    env = process.env,
+    timeoutMs,
+    retryDelayMs,
+    testDb = env.ENFORCER_TEST_DB || env.TEST_DATABASE_URL || '',
+    runners,
+    run,
+  } = {},
+) {
+  const items = [],
+    skipped = [],
+    retried = [];
+  let found = 0,
+    total = 0;
   acceptanceOf(node).forEach((line, i) => {
     if (only !== null && i !== only) return;
     const p = prepareLine(line, { cwd, graph, nodeKey: node.key, nodeId: node.node_id ?? node.id, testDb, runners });
-    if (p.skip) { skipped.push({ line_index: i, reason: p.skip }); return; }
-    if (!existsSync(p.cwd)) { skipped.push({ line_index: i, reason: `no directory ${p.cwd}` }); return; }
+    if (p.skip) {
+      skipped.push({ line_index: i, reason: p.skip });
+      return;
+    }
+    if (!existsSync(p.cwd)) {
+      skipped.push({ line_index: i, reason: `no directory ${p.cwd}` });
+      return;
+    }
     const r = runPrepared(p, { env, timeoutMs, retryDelayMs, run });
     if (r.retried) retried.push(i);
     total += p.literals.length;
@@ -139,26 +186,52 @@ export async function loadNode(graph, ref, env = process.env) {
 const USAGE = 'usage: enforcer evidence run <graph>:<node-key|id> [--graph <id>] [--cwd dir] [--only <index>] [--timeout <seconds>] [--test-db <url>]\n';
 
 export async function main(argv, env = process.env) {
-  if (argv[0] !== 'run') { process.stderr.write(USAGE); return 2; }
+  if (argv[0] !== 'run') {
+    process.stderr.write(USAGE);
+    return 2;
+  }
   const rest = argv.slice(1);
   const valued = new Set(['--graph', '--cwd', '--only', '--timeout', '--test-db']);
-  const opt = (n) => { const i = rest.indexOf(n); return i >= 0 ? rest[i + 1] : undefined; };
+  const opt = (n) => {
+    const i = rest.indexOf(n);
+    return i >= 0 ? rest[i + 1] : undefined;
+  };
   const target = rest.find((a, i) => !a.startsWith('-') && !valued.has(rest[i - 1]));
-  if (!target) { process.stderr.write(USAGE); return 2; }
-  let graph = opt('--graph'), ref = target;
+  if (!target) {
+    process.stderr.write(USAGE);
+    return 2;
+  }
+  let graph = opt('--graph'),
+    ref = target;
   const m = /^([^:]+):(.+)$/.exec(target);
   if (m && !graph) [, graph, ref] = m;
-  if (!graph) { process.stderr.write('enforcer evidence run: name the graph as <graph>:<node> or --graph <id>\n' + USAGE); return 2; }
+  if (!graph) {
+    process.stderr.write('enforcer evidence run: name the graph as <graph>:<node> or --graph <id>\n' + USAGE);
+    return 2;
+  }
   const secs = opt('--timeout') === undefined ? 600 : Number(opt('--timeout'));
   const only = opt('--only') === undefined ? null : Number(opt('--only'));
-  if (!(secs > 0) || (only !== null && !(Number.isInteger(only) && only >= 0))) { process.stderr.write(USAGE); return 2; }
+  if (!(secs > 0) || (only !== null && !(Number.isInteger(only) && only >= 0))) {
+    process.stderr.write(USAGE);
+    return 2;
+  }
   try {
     const node = await loadNode(graph, ref, env);
-    const r = runEvidence(node, { cwd: resolve(opt('--cwd') ?? '.'), graph, only, env, timeoutMs: secs * 1000, ...(opt('--test-db') ? { testDb: opt('--test-db') } : {}) });
+    const r = runEvidence(node, {
+      cwd: resolve(opt('--cwd') ?? '.'),
+      graph,
+      only,
+      env,
+      timeoutMs: secs * 1000,
+      ...(opt('--test-db') ? { testDb: opt('--test-db') } : {}),
+    });
     for (const it of r.items) process.stdout.write(JSON.stringify(it) + '\n');
     for (const s of r.skipped) process.stderr.write(`SKIPPED line ${s.line_index}: ${s.reason}\n`);
     for (const i of r.retried) process.stderr.write(`line ${i} collided with a concurrent run and was retried once\n`);
     process.stdout.write(`literals found: ${r.found}/${r.total}\n`);
     return r.found < r.total ? 1 : 0;
-  } catch (e) { process.stderr.write(`enforcer evidence run: ${e.message}\n`); return 2; }
+  } catch (e) {
+    process.stderr.write(`enforcer evidence run: ${e.message}\n`);
+    return 2;
+  }
 }

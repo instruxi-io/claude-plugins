@@ -29,5 +29,5 @@ export function parseTs(s) {
 }
 
 export const isObj = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
-export const truthy = (x) => !(x === undefined || x === null || x === false || x === 0 || x === '' ||
-  (Array.isArray(x) && x.length === 0) || (isObj(x) && Object.keys(x).length === 0));
+export const truthy = (x) =>
+  !(x === undefined || x === null || x === false || x === 0 || x === '' || (Array.isArray(x) && x.length === 0) || (isObj(x) && Object.keys(x).length === 0));

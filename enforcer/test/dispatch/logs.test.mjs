@@ -13,7 +13,10 @@ test('log lines are JSON with ts level event', () => {
   const d = tmp();
   writeLog(d, 'human\n', 'FAILED alpha (attempt 1): boom', { key: 'alpha', run: 'r1', fields: { n: 1 } });
   writeLog(d, 'human\n', 'launch beta pid=1');
-  const rows = readFileSync(join(d, 'dispatcher.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  const rows = readFileSync(join(d, 'dispatcher.jsonl'), 'utf8')
+    .trim()
+    .split('\n')
+    .map((l) => JSON.parse(l));
   assert.equal(rows.length, 2);
   assert.ok(!Number.isNaN(Date.parse(rows[0].ts)) && rows[0].ts.includes('T'));
   assert.equal(rows[0].level, 'error');
@@ -41,13 +44,16 @@ test('worker stream has no bearer token', async () => {
 
 test('prune removes streams older than the retention', () => {
   const d = tmp();
-  const old = join(d, 'old.1.jsonl'), fresh = join(d, 'new.1.jsonl'), big = join(d, 'big.1.jsonl');
+  const old = join(d, 'old.1.jsonl'),
+    fresh = join(d, 'new.1.jsonl'),
+    big = join(d, 'big.1.jsonl');
   for (const f of [old, fresh]) writeFileSync(f, 'x');
   const past = new Date(Date.now() - 20 * 86400e3);
   utimesSync(old, past, past);
   assert.deepEqual(pruneLogs(d, { days: 14 }), [old]);
   assert.ok(!existsSync(old) && existsSync(fresh));
   writeFileSync(big, 'y'.repeat(100));
-  const older = new Date(Date.now() - 3600e3); utimesSync(big, older, older);
+  const older = new Date(Date.now() - 3600e3);
+  utimesSync(big, older, older);
   assert.deepEqual(pruneLogs(d, { days: 14, maxBytes: 50 }), [big]);
 });

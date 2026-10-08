@@ -31,7 +31,11 @@ const decide = ({ env }, ev = RM_HOME, extra = {}) => {
   assert.equal(r.status, 0, r.stderr);
   return JSON.parse(r.stdout.trim().split('\n').pop());
 };
-const receipts = (gov) => readFileSync(join(gov, 'receipts.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+const receipts = (gov) =>
+  readFileSync(join(gov, 'receipts.jsonl'), 'utf8')
+    .trim()
+    .split('\n')
+    .map((l) => JSON.parse(l));
 
 test('fresh config has budgetOn, rulesOn and policyOn false', () => {
   assert.equal(DEFAULTS.budgetOn, false);

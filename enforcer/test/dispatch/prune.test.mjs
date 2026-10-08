@@ -21,7 +21,18 @@ function fixture(keys) {
   }
   return { root, src };
 }
-const run = (root, o) => { let out = ''; const r = pruneWorktrees(root, { registry: {}, minAge: 0, out: (s) => { out += s; }, ...o }); return { r, out }; };
+const run = (root, o) => {
+  let out = '';
+  const r = pruneWorktrees(root, {
+    registry: {},
+    minAge: 0,
+    out: (s) => {
+      out += s;
+    },
+    ...o,
+  });
+  return { r, out };
+};
 const merged = () => 'MERGED';
 
 test('dry run lists merged worktrees and removes nothing', () => {
@@ -37,7 +48,10 @@ test('--yes removes merged, keeps live and dirty', () => {
   writeFileSync(join(root, 'repo-dirty', 'x.txt'), 'x');
   g(join(root, 'repo-dirty'), 'add', 'x.txt');
   const { r } = run(root, { yes: true, liveKeys: new Set(['live']), prState: (b) => (b === 'graph/open' ? 'OPEN' : 'MERGED') });
-  assert.deepEqual(r.removed.map(([p]) => p.split('/').pop()), ['repo-gone']);
+  assert.deepEqual(
+    r.removed.map(([p]) => p.split('/').pop()),
+    ['repo-gone'],
+  );
   assert.ok(!existsSync(join(root, 'repo-gone')));
   for (const k of ['live', 'dirty', 'open']) assert.ok(existsSync(join(root, `repo-${k}`)), k);
   assert.ok(!g(src, 'branch', '--list', 'graph/gone').trim());

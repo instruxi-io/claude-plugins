@@ -12,7 +12,11 @@ cpSync(pkg, dest, { recursive: true, filter: (s) => !s.includes('node_modules') 
 try {
   const home = join(tmp, 'home');
   const env = { ...process.env, HOME: home, USERPROFILE: home, XDG_CONFIG_HOME: join(home, '.config') };
-  for (const [bin, args] of [['login.mjs', ['status']], ['enforcer-workspace.mjs', ['status']], ['files.mjs', []]]) {
+  for (const [bin, args] of [
+    ['login.mjs', ['status']],
+    ['enforcer-workspace.mjs', ['status']],
+    ['files.mjs', []],
+  ]) {
     const r = spawnSync(process.execPath, [join(dest, 'bin', bin), ...args], { env, encoding: 'utf8' });
     assert.ok((r.stdout + r.stderr).trim().length > 0, `${bin} printed nothing from a path with a space`);
     if (bin === 'login.mjs') console.log('ok - login.mjs status runs from a path with a space');

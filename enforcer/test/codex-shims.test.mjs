@@ -14,25 +14,37 @@ const fx = (n) => readFileSync(join(root, 'test/fixtures/codex', n), 'utf8');
 const home = mkdtempSync(join(tmpdir(), 'codex-shim-'));
 // Decisioning is off by default; the shims are tested against the checks, so turn them on.
 writeChecksOn(join(home, 'g'));
-const run = (shim, input) => spawnSync(process.execPath, [join(root, 'hooks/claude', shim)],
-  { input, encoding: 'utf8', env: { ...process.env, HOME: home, ENFORCER_HOME: home, GOVERNOR_HOME: join(home, 'g') } });
-let n = 0; const ok = (m) => { n++; console.log('  ok  ' + m); };
+const run = (shim, input) =>
+  spawnSync(process.execPath, [join(root, 'hooks/claude', shim)], {
+    input,
+    encoding: 'utf8',
+    env: { ...process.env, HOME: home, ENFORCER_HOME: home, GOVERNOR_HOME: join(home, 'g') },
+  });
+let n = 0;
+const ok = (m) => {
+  n++;
+  console.log('  ok  ' + m);
+};
 
 let r = run('governor-pre-tool-use.mjs', fx('pre-tool-use-allow.json'));
 assert.equal(r.status, 0, r.stderr);
 const allow = JSON.parse(r.stdout);
 assert.equal(allow.hookSpecificOutput.hookEventName, 'PreToolUse');
-assert.equal(allow.hookSpecificOutput.permissionDecision, undefined); ok('PreToolUse allow: exit 0, no objection');
+assert.equal(allow.hookSpecificOutput.permissionDecision, undefined);
+ok('PreToolUse allow: exit 0, no objection');
 
 r = run('governor-pre-tool-use.mjs', fx('pre-tool-use-deny.json'));
 assert.equal(r.status, 0, r.stderr);
 const deny = JSON.parse(r.stdout).hookSpecificOutput;
 assert.equal(deny.permissionDecision, 'deny');
-assert.match(deny.permissionDecisionReason, /pipe_to_shell/); ok('PreToolUse deny: permissionDecision deny, code pipe_to_shell');
+assert.match(deny.permissionDecisionReason, /pipe_to_shell/);
+ok('PreToolUse deny: permissionDecision deny, code pipe_to_shell');
 
-for (const [f, shims] of [['permission-request.json', ['governor-pre-tool-use.mjs', 'governor-post-tool-use.mjs']],
+for (const [f, shims] of [
+  ['permission-request.json', ['governor-pre-tool-use.mjs', 'governor-post-tool-use.mjs']],
   ['post-compact.json', ['governor-pre-tool-use.mjs', 'governor-session-start.mjs', 'governor-user-prompt-submit.mjs']],
-  ['interrupt.json', ['governor-pre-tool-use.mjs', 'governor-post-tool-use.mjs', 'governor-session-end.mjs', 'governor-subagent-stop.mjs']]]) {
+  ['interrupt.json', ['governor-pre-tool-use.mjs', 'governor-post-tool-use.mjs', 'governor-session-end.mjs', 'governor-subagent-stop.mjs']],
+]) {
   for (const s of shims) {
     r = run(s, fx(f));
     assert.equal(r.status, 0, `${s} ${f}: ${r.stderr}`);
@@ -43,7 +55,8 @@ for (const [f, shims] of [['permission-request.json', ['governor-pre-tool-use.mj
 
 const plugin = JSON.parse(readFileSync(join(root, 'plugin.json'), 'utf8'));
 assert.equal(plugin.extensions['com.openai'].hooks, './hooks/hooks.json');
-assert.ok(plugin.extensions['com.openai'].interface.displayName); ok('plugin.json carries extensions.com.openai');
+assert.ok(plugin.extensions['com.openai'].interface.displayName);
+ok('plugin.json carries extensions.com.openai');
 const mk = JSON.parse(readFileSync(join(root, '../.agents/plugins/marketplace.json'), 'utf8'));
 const me = mk.plugins.find((p) => p.name === 'enforcer');
 assert.deepEqual(me.source, { source: 'local', path: './enforcer' });
@@ -55,8 +68,13 @@ ok('marketplace source is {source:local,path} with version equal to plugin.json'
 
 const { codexNormalize } = await import('../lib/governor/hooks/lib.mjs');
 let e = codexNormalize({ tool_name: 'apply_patch', tool_input: { command: '*** Begin Patch\n*** Update File: /a/b.txt\n@@\n' } });
-assert.equal(e.tool_name, 'Edit'); assert.equal(e.tool_input.file_path, '/a/b.txt'); ok('apply_patch maps to Edit');
+assert.equal(e.tool_name, 'Edit');
+assert.equal(e.tool_input.file_path, '/a/b.txt');
+ok('apply_patch maps to Edit');
 e = codexNormalize({ tool_name: 'shell', tool_input: { command: ['bash', '-lc', 'ls -la /tmp'] } });
-assert.equal(e.tool_name, 'Bash'); assert.equal(e.tool_input.command, 'ls -la /tmp'); ok('shell maps to Bash');
-assert.ok(existsSync(join(root, 'harness/codex/mcp.json'))); ok('harness/codex ships inside the package');
+assert.equal(e.tool_name, 'Bash');
+assert.equal(e.tool_input.command, 'ls -la /tmp');
+ok('shell maps to Bash');
+assert.ok(existsSync(join(root, 'harness/codex/mcp.json')));
+ok('harness/codex ships inside the package');
 console.log(`\ncodex-shims: ${n} checks passed`);

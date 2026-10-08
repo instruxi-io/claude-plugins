@@ -14,7 +14,14 @@ import http from 'node:http';
 const BEARERS = ['Bearer stub-token', 'Bearer stub-token-2'];
 
 export async function startStub() {
-  const stub = { log: [], hb: 'ok', health: null, clear() { stub.log.length = 0; } };
+  const stub = {
+    log: [],
+    hb: 'ok',
+    health: null,
+    clear() {
+      stub.log.length = 0;
+    },
+  };
   const send = (res, code, body) => {
     const data = JSON.stringify(body);
     res.writeHead(code, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) });
@@ -38,17 +45,26 @@ export async function startStub() {
         if (path === '/api/v1/mcp/health') return stub.health ? send(res, 200, stub.health) : send(res, 404, { success: false });
         if (!authed(req, res)) return;
         if (path.endsWith('/frontier')) {
-          return send(res, 200, { success: true, data: [
-            { id: 'n1', key: 'api-contract', status: 'pending', type: 'task' },
-            { id: 'n2', key: 'legal-and-key', status: 'pending', type: 'human' }] });
+          return send(res, 200, {
+            success: true,
+            data: [
+              { id: 'n1', key: 'api-contract', status: 'pending', type: 'task' },
+              { id: 'n2', key: 'legal-and-key', status: 'pending', type: 'human' },
+            ],
+          });
         }
         if (path.includes('/nodes')) {
-          return send(res, 200, { success: true, data: [
-            { id: 'n1', key: 'api-contract', status: 'pending' },
-            { id: 'n2', key: 'legal-and-key', status: 'pending' },
-            { id: 'n3', key: 'schema-judgment', status: 'running' },
-            { id: 'n4', key: 'old-node', status: 'done' },
-            { id: 'n5', key: 'broken', status: 'failed' }], meta: { limit: 100, offset: 0, total: 5 } });
+          return send(res, 200, {
+            success: true,
+            data: [
+              { id: 'n1', key: 'api-contract', status: 'pending' },
+              { id: 'n2', key: 'legal-and-key', status: 'pending' },
+              { id: 'n3', key: 'schema-judgment', status: 'running' },
+              { id: 'n4', key: 'old-node', status: 'done' },
+              { id: 'n5', key: 'broken', status: 'failed' },
+            ],
+            meta: { limit: 100, offset: 0, total: 5 },
+          });
         }
         return send(res, 404, { success: false, error: 'not_found' });
       }
@@ -62,11 +78,16 @@ export async function startStub() {
           return send(res, 400, { error: 'invalid_grant' });
         }
         let body = {};
-        try { body = raw ? JSON.parse(raw) : {}; } catch {}
+        try {
+          body = raw ? JSON.parse(raw) : {};
+        } catch {}
         stub.log.push({ method: 'POST', path, body, client: req.headers['x-graph-client'] });
         if (!authed(req, res)) return;
         if (path.endsWith('/heartbeat')) {
-          return send(res, 200, { success: true, data: { state: stub.hb || 'ok', run_id: 'r1', attempt: 1, run_status: 'running', lease_expires_at: '2030-01-01T00:00:00Z' } });
+          return send(res, 200, {
+            success: true,
+            data: { state: stub.hb || 'ok', run_id: 'r1', attempt: 1, run_status: 'running', lease_expires_at: '2030-01-01T00:00:00Z' },
+          });
         }
         if (path.endsWith('/observations')) return send(res, 201, { success: true, data: { id: 'o1', body: body.body } });
       }
@@ -77,6 +98,10 @@ export async function startStub() {
   stub.port = server.address().port;
   stub.url = `http://127.0.0.1:${stub.port}`;
   stub.logText = () => stub.log.map((r) => JSON.stringify(r)).join('\n');
-  stub.close = () => new Promise((r) => { server.closeAllConnections?.(); server.close(r); });
+  stub.close = () =>
+    new Promise((r) => {
+      server.closeAllConnections?.();
+      server.close(r);
+    });
   return stub;
 }

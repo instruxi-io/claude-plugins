@@ -134,15 +134,24 @@ export function createGovernor({ harness = 'unknown', adapterVersion = '', cost 
         workerCentral,
       });
 
-      spend.model = a.model; spend.tokens = a.tokens; spend.budget = a.budget;
-      const entry = withWould(v.entry({ agent: event.agent, tool: recorded(event), model: a.model || '',
-        tokens: Math.round(a.tokens), ...acting(a),
-        meter: reading.source, ...st,
-        // What the agent had spent when this was decided, in dollars, so a
-        // receipt can be read without the price table. Omitted when the
-        // harness reports no spend at all (a zero there would be invented).
-        spentUsd: reading.source === 'none' ? undefined
-          : costUsd(dollarsForTokens(a.tokens, priceOf(a.model, cfg.model).in)) }));
+      spend.model = a.model;
+      spend.tokens = a.tokens;
+      spend.budget = a.budget;
+      const entry = withWould(
+        v.entry({
+          agent: event.agent,
+          tool: recorded(event),
+          model: a.model || '',
+          tokens: Math.round(a.tokens),
+          ...acting(a),
+          meter: reading.source,
+          ...st,
+          // What the agent had spent when this was decided, in dollars, so a
+          // receipt can be read without the price table. Omitted when the
+          // harness reports no spend at all (a zero there would be invented).
+          spentUsd: reading.source === 'none' ? undefined : costUsd(dollarsForTokens(a.tokens, priceOf(a.model, cfg.model).in)),
+        }),
+      );
       const hash = sha256(state.prevHash + JSON.stringify(entry));
       commit(state, entry, hash);
       return v;
@@ -164,19 +173,29 @@ export function createGovernor({ harness = 'unknown', adapterVersion = '', cost 
   function after(event, { failed = false } = {}) {
     // The common case (a call that worked, nothing pending) changes no state: peek without the lock.
     let pending = true;
-    if (!failed) { try { pending = !!((loadState().agents || {})[event.agent]?.pendingAsk); } catch { pending = true; } }
-    if (failed || pending) withLock(() => {
-      const state = loadState();
-      const a = getAgent(state, event.agent, { ...DEFAULTS, ...loadConfig() });
-      // The tool ran, so a pending ask was answered yes.
-      const answered = !!a.pendingAsk;
-      if (answered) { a.pendingAsk = undefined; if (a.status === 'paused') a.status = 'active'; }
-      if (failed) {
-        (a.fails ||= []).push(Date.now());
-        while (a.fails.length > 40) a.fails.shift();
+    if (!failed) {
+      try {
+        pending = !!(loadState().agents || {})[event.agent]?.pendingAsk;
+      } catch {
+        pending = true;
       }
-      if (failed || answered) saveState(state);
-    });
+    }
+    if (failed || pending)
+      withLock(() => {
+        const state = loadState();
+        const a = getAgent(state, event.agent, { ...DEFAULTS, ...loadConfig() });
+        // The tool ran, so a pending ask was answered yes.
+        const answered = !!a.pendingAsk;
+        if (answered) {
+          a.pendingAsk = undefined;
+          if (a.status === 'paused') a.status = 'active';
+        }
+        if (failed) {
+          (a.fails ||= []).push(Date.now());
+          while (a.fails.length > 40) a.fails.shift();
+        }
+        if (failed || answered) saveState(state);
+      });
     // Ship what has been decided, without waiting (at most every 30s).
     if (loadConfig().shipOn !== false) kick(30_000, shipper);
   }
@@ -189,7 +208,7 @@ export function createGovernor({ harness = 'unknown', adapterVersion = '', cost 
       (state.spawns ||= []).push({ t: now, id });
       // A minute is every rate check's window; keep a little more so a burst
       // spanning the boundary is still visible.
-      state.spawns = state.spawns.filter(s => s.t > now - 120000);
+      state.spawns = state.spawns.filter((s) => s.t > now - 120000);
       saveState(state);
     });
   }
@@ -205,7 +224,10 @@ export function createGovernor({ harness = 'unknown', adapterVersion = '', cost 
       const state = loadState();
       const a = (state.agents || {})[agent];
       const b = briefFor(a, cfg);
-      if (b) { markTold(a, b.situation); saveState(state); }
+      if (b) {
+        markTold(a, b.situation);
+        saveState(state);
+      }
       return b;
     });
     return held.ok ? held.value : null;
@@ -224,9 +246,17 @@ export function createGovernor({ harness = 'unknown', adapterVersion = '', cost 
      */
     async start(event = {}) {
       const cfg = { ...DEFAULTS, ...loadConfig() };
-      if (stale()) { try { await refresh(cfg); } catch {} }
+      if (stale()) {
+        try {
+          await refresh(cfg);
+        } catch {}
+      }
       // Who is signed in, cached so decisions can name them without a call.
-      if (identityStale()) { try { await refreshIdentity(cfg); } catch {} }
+      if (identityStale()) {
+        try {
+          await refreshIdentity(cfg);
+        } catch {}
+      }
       // AFTER the two refreshes, never beside them: all three read the OAuth
       // credential, and two concurrent refresh_token grants from one process
       // would race a single-use token. By now any refresh has been written back.
@@ -236,8 +266,11 @@ export function createGovernor({ harness = 'unknown', adapterVersion = '', cost 
       // effective config, so a managed shipOn is honoured too.
       if (!event.agent) return undefined;
       const eff = config();
-      try { return await attributeSession({ agent: event.agent, client: clientFor(event.cwd, eff.clients) }, eff); }
-      catch { return { sent: false, detail: 'attribution failed' }; }
+      try {
+        return await attributeSession({ agent: event.agent, client: clientFor(event.cwd, eff.clients) }, eff);
+      } catch {
+        return { sent: false, detail: 'attribution failed' };
+      }
     },
     /**
      * Close the record with what the session cost: a summary receipt an audit
@@ -254,16 +287,25 @@ export function createGovernor({ harness = 'unknown', adapterVersion = '', cost 
         const usd = harnessFigure ?? dollarsForTokens(tokens, priceOf(model).in);
         // ONE number, two readers: the sentence and the field a machine sums.
         const c = costUsd(usd);
-        const entry = { ts: new Date().toISOString(), agent, verdict: 'summary',
-          reason: `session ended after $${usd.toFixed(2)}`, tokens: Math.round(tokens),
-          ...(model ? { model } : {}), ...(a?.client ? { client: a.client } : {}),
-          ...((a?.operator || signedInOperator()) ? { operator: a?.operator || signedInOperator() } : {}),
+        const entry = {
+          ts: new Date().toISOString(),
+          agent,
+          verdict: 'summary',
+          reason: `session ended after $${usd.toFixed(2)}`,
+          tokens: Math.round(tokens),
+          ...(model ? { model } : {}),
+          ...(a?.client ? { client: a.client } : {}),
+          ...(a?.operator || signedInOperator() ? { operator: a?.operator || signedInOperator() } : {}),
           // Appended last so every field above keeps its position in the hash.
           meter: source,
           ...(c === undefined ? {} : { cost_usd: c }),
           // ...and these after it, for the same reason.
-          ...(harness ? { harness } : {}), ...(adapterVersion ? { adapter_version: adapterVersion } : {}) };
-        const hash = createHash('sha256').update(state.prevHash + JSON.stringify(entry)).digest('hex');
+          ...(harness ? { harness } : {}),
+          ...(adapterVersion ? { adapter_version: adapterVersion } : {}),
+        };
+        const hash = createHash('sha256')
+          .update(state.prevHash + JSON.stringify(entry))
+          .digest('hex');
         commit(state, entry, hash);
       });
     },

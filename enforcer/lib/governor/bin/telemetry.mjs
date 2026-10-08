@@ -24,9 +24,11 @@ try {
     const t = status();
     const q = stats();
     out(t.on ? `Claude Code telemetry: on, exporting to ${t.endpoint}.` : 'Claude Code telemetry: off. Turn it on with /enforcer-governor:telemetry on.');
-    out(cfg.shipOn === false
-      ? 'Receipt shipping: off (shipOn).'
-      : `Receipt shipping: on. ${q.behind ? `${q.unshippedBytes} bytes waiting` : 'caught up'}${q.shippedAt ? `, last shipped ${new Date(q.shippedAt).toISOString()}` : ', nothing shipped yet'}${q.lastError ? `. Last problem: ${q.lastError.message}` : ''}.`);
+    out(
+      cfg.shipOn === false
+        ? 'Receipt shipping: off (shipOn).'
+        : `Receipt shipping: on. ${q.behind ? `${q.unshippedBytes} bytes waiting` : 'caught up'}${q.shippedAt ? `, last shipped ${new Date(q.shippedAt).toISOString()}` : ', nothing shipped yet'}${q.lastError ? `. Last problem: ${q.lastError.message}` : ''}.`,
+    );
   } else {
     out('Usage: /enforcer-governor:telemetry [on | off | status]');
   }

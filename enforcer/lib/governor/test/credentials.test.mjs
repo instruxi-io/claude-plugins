@@ -5,13 +5,18 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const home = mkdtempSync(join(tmpdir(), 'gov-cred-'));
-process.env.HOME = home; process.env.USERPROFILE = home;
+process.env.HOME = home;
+process.env.USERPROFILE = home;
 process.env.GOVERNOR_HOME = join(home, '.enforcer-governor');
 delete process.env.ENFORCER_API_KEY;
 mkdirSync(join(home, '.enforcer-governor'), { recursive: true });
 
 let pass = 0;
-const ok = (label, fn) => { fn(); pass++; console.log('  ok  ' + label); };
+const ok = (label, fn) => {
+  fn();
+  pass++;
+  console.log('  ok  ' + label);
+};
 const KEY = 'env3_' + 'x'.repeat(43);
 
 const { enforcerKey, keyId, isFederated } = await import('../src/credentials.mjs');
@@ -25,8 +30,7 @@ ok('unauthenticated is a normal state, not an error', () => {
 });
 
 ok('reads a saved credential', () => {
-  writeFileSync(join(home, '.enforcer-governor', 'credentials.json'),
-    JSON.stringify({ enforcer: { api_key: KEY } }));
+  writeFileSync(join(home, '.enforcer-governor', 'credentials.json'), JSON.stringify({ enforcer: { api_key: KEY } }));
   assert.equal(enforcerKey(), KEY);
   assert.equal(isFederated(), true);
 });

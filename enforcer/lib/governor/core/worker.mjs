@@ -38,7 +38,7 @@ export const WORKER_RULES = Object.freeze([
   { id: 'graph.protected_paths', name: 'a headless worker editing CI workflows, release or deploy scripts, or secret files' },
   { id: 'fs.delete_tree', name: "delete a tree inside the worker's own worktree" },
 ]);
-const RULE = Object.fromEntries(WORKER_RULES.map(r => [r.id, r]));
+const RULE = Object.fromEntries(WORKER_RULES.map((r) => [r.id, r]));
 
 export const DEFAULT_BRANCHES = DENY.defaultBranches;
 const GRAPH = ALLOW.pushBranch;
@@ -55,7 +55,8 @@ export const SETTINGS = new RegExp('(^|[\\s"\'=\\/])(' + SETTINGS_PATHS + ')');
 // A shell command that changes a file, as opposed to reading it.
 // The only commands that may name a settings path: a single plain read.
 const PLAIN_READ = /^(cat|less|head|tail|jq|grep)(\s|$)/;
-const MUTATES = /(^|[^0-9&<])>{1,2}(?!&)|\btee\b|\bsed\s+(-[a-zA-Z]*i|--in-place)|\b(cp|mv|rm|ln|chmod|chown|truncate|install|unlink)\s|\bjq\b[^|]*>|\bwriteFile|\bperl\s+-[a-zA-Z]*i/;
+const MUTATES =
+  /(^|[^0-9&<])>{1,2}(?!&)|\btee\b|\bsed\s+(-[a-zA-Z]*i|--in-place)|\b(cp|mv|rm|ln|chmod|chown|truncate|install|unlink)\s|\bjq\b[^|]*>|\bwriteFile|\bperl\s+-[a-zA-Z]*i/;
 
 // The skill's own land-pr.sh invocation finds the script with a substitution;
 // it is one command, so it is folded to its name before the shape is checked.
@@ -68,15 +69,13 @@ const trustedLand = (path, root) => {
   if (typeof path !== 'string' || /\.\./.test(path)) return false;
   if (CACHE_LAND.test(path.replace(/\*/g, 'x')) || CACHE_ABS.test(path)) return true;
   const r = typeof root === 'string' && root ? root.replace(/\/+$/, '') : null;
-  return path === '$CLAUDE_PLUGIN_ROOT/bin/land-pr.sh' || path === '${CLAUDE_PLUGIN_ROOT}/bin/land-pr.sh' ||
-    (!!r && path === r + '/bin/land-pr.sh');
+  return path === '$CLAUDE_PLUGIN_ROOT/bin/land-pr.sh' || path === '${CLAUDE_PLUGIN_ROOT}/bin/land-pr.sh' || (!!r && path === r + '/bin/land-pr.sh');
 };
 const META = /[;&|`\n<>]|\$\(/;
 
 const verdict = (action, ruleId, code, reason) => {
   const of = { source: CAPABILITY, rule: RULE[ruleId].name, ruleId, checked: [CAPABILITY], code };
-  return action === 'allow' ? Verdict.allow(reason, of)
-    : action === 'deny' ? Verdict.deny(reason, of) : Verdict.ask(reason, of);
+  return action === 'allow' ? Verdict.allow(reason, of) : action === 'deny' ? Verdict.deny(reason, of) : Verdict.ask(reason, of);
 };
 
 function commandOf(ev) {
@@ -86,12 +85,14 @@ function commandOf(ev) {
   return a.replace(/^Bash:/, '').split('\n')[0];
 }
 const isShell = (ev) => ev.tool === 'shell' || ev.tool === 'Bash' || ev.name === 'Bash';
-const isFileWrite = (ev) => ['edit', 'write', 'Edit', 'Write', 'MultiEdit', 'NotebookEdit'].includes(ev.tool) ||
-  ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'].includes(ev.name);
+const isFileWrite = (ev) =>
+  ['edit', 'write', 'Edit', 'Write', 'MultiEdit', 'NotebookEdit'].includes(ev.tool) || ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'].includes(ev.name);
 
 /** Split a command into words; quotes group, nothing is expanded. */
 export function words(cmd) {
-  const out = []; const re = /"([^"]*)"|'([^']*)'|(\S+)/g; let m;
+  const out = [];
+  const re = /"([^"]*)"|'([^']*)'|(\S+)/g;
+  let m;
   while ((m = re.exec(cmd))) out.push(m[1] ?? m[2] ?? m[3]);
   return out;
 }
@@ -117,8 +118,7 @@ const mentionsDelivery = (cmd) => /\bgit\s+(-C\s+\S+\s+)?push\b|\bgh\s+pr\s+crea
 const mentionsDeliveryWide = (cmd) =>
   /(^|[^\w.-])git\b[^|;&\n]*?\s(push|remote)\b|(^|[^\w.-])gh\b[^|;&\n]*?\b(pr\s+(create|merge)|api)\b|land-pr\.sh|(^|\s)enforcer\s+land\b/.test(cmd) ||
   mentionsDelivery(cmd);
-const shape = (why) => verdict('deny', 'graph.push', 'delivery_shape',
-  `a headless worker may only run the exact recognised delivery commands: ${why}`);
+const shape = (why) => verdict('deny', 'graph.push', 'delivery_shape', `a headless worker may only run the exact recognised delivery commands: ${why}`);
 
 const PR_FLAGS = new Set(ALLOW.prCreateFlags);
 const prShapeOk = (args) => {
@@ -126,7 +126,10 @@ const prShapeOk = (args) => {
     const a = args[i];
     if (a === '--fill') continue;
     const eq = a.indexOf('=');
-    if (a.startsWith('--') && eq > 0) { if (!PR_FLAGS.has(a.slice(0, eq))) return false; continue; }
+    if (a.startsWith('--') && eq > 0) {
+      if (!PR_FLAGS.has(a.slice(0, eq))) return false;
+      continue;
+    }
     if (!PR_FLAGS.has(a)) return false;
     if (i + 1 >= args.length) return false;
     i++;
@@ -138,8 +141,14 @@ const landShapeOk = (args) => {
     const a = args[i];
     if (/^\d+$/.test(a)) continue;
     if (/^--timeout=\d+$/.test(a)) continue;
-    if (a === '-R' && /^[\w.-]+\/[\w.-]+$/.test(args[i + 1] || '')) { i++; continue; }
-    if (a === '--timeout' && /^\d+$/.test(args[i + 1] || '')) { i++; continue; }
+    if (a === '-R' && /^[\w.-]+\/[\w.-]+$/.test(args[i + 1] || '')) {
+      i++;
+      continue;
+    }
+    if (a === '--timeout' && /^\d+$/.test(args[i + 1] || '')) {
+      i++;
+      continue;
+    }
     return false;
   }
   return true;
@@ -147,13 +156,20 @@ const landShapeOk = (args) => {
 
 function push(args, ctx) {
   const { headless, branch } = ctx;
-  let force = false, other = false;
+  let force = false,
+    other = false;
   const pos = [];
   for (const a of args) {
     if (a === '-u' || a === '--set-upstream') continue;
-    if (a === '--force-with-lease' || a.startsWith('--force-with-lease=')) continue;   // the skill's rebase path
-    if (a === '-f' || a === '--force' || /^-[a-zA-Z]*f[a-zA-Z]*$/.test(a) && !a.startsWith('--')) { force = true; continue; }
-    if (a.startsWith('-')) { other = true; continue; }
+    if (a === '--force-with-lease' || a.startsWith('--force-with-lease=')) continue; // the skill's rebase path
+    if (a === '-f' || a === '--force' || (/^-[a-zA-Z]*f[a-zA-Z]*$/.test(a) && !a.startsWith('--'))) {
+      force = true;
+      continue;
+    }
+    if (a.startsWith('-')) {
+      other = true;
+      continue;
+    }
     if (a.startsWith('+')) force = true;
     pos.push(a.replace(/^\+/, ''));
   }
@@ -164,44 +180,38 @@ function push(args, ctx) {
   const toDefault = dst && DEFAULT_BRANCHES.includes(dst);
 
   if (force && headless) return verdict('deny', 'git.force_push', 'force_push', 'a headless worker may not force-push');
-  if (force) return null;                         // git.force_push rewrites it to --force-with-lease
-  if (toDefault) return headless
-    ? verdict('deny', 'git.push_default_branch', 'push_default_branch', `a headless worker may not push to ${dst}`)
-    : verdict('ask', 'git.push_default_branch', 'push_default_branch', `this pushes straight to ${dst}`);
-  if (!isGraph(dst)) return headless
-    ? verdict('deny', 'graph.push', 'push_needs_approval_surface',
-      'only `git push -u origin graph/<key>` may run with nobody to ask')
-    : null;
+  if (force) return null; // git.force_push rewrites it to --force-with-lease
+  if (toDefault)
+    return headless
+      ? verdict('deny', 'git.push_default_branch', 'push_default_branch', `a headless worker may not push to ${dst}`)
+      : verdict('ask', 'git.push_default_branch', 'push_default_branch', `this pushes straight to ${dst}`);
+  if (!isGraph(dst))
+    return headless ? verdict('deny', 'graph.push', 'push_needs_approval_surface', 'only `git push -u origin graph/<key>` may run with nobody to ask') : null;
   if (!headless) return verdict('ask', 'graph.push', 'graph_push_confirm', `this pushes ${dst}`);
-  if (other || extra.length) return verdict('deny', 'graph.push', 'push_needs_approval_surface',
-    'only `git push -u origin graph/<key>` may run with nobody to ask');
-  if (!isGraph(branch)) return verdict('deny', 'graph.push', 'outside_worktree',
-    'the working directory is not a worktree on a graph/<key> branch');
-  if (dst !== branch || (src && src !== 'HEAD' && src !== branch)) return verdict('deny', 'graph.push', 'branch_mismatch',
-    `the worktree has ${branch} checked out, not ${dst}`);
+  if (other || extra.length)
+    return verdict('deny', 'graph.push', 'push_needs_approval_surface', 'only `git push -u origin graph/<key>` may run with nobody to ask');
+  if (!isGraph(branch)) return verdict('deny', 'graph.push', 'outside_worktree', 'the working directory is not a worktree on a graph/<key> branch');
+  if (dst !== branch || (src && src !== 'HEAD' && src !== branch))
+    return verdict('deny', 'graph.push', 'branch_mismatch', `the worktree has ${branch} checked out, not ${dst}`);
   return verdict('allow', 'graph.push', 'graph_push_allowed', `headless worker pushing its own branch ${branch}`);
 }
 
 function prCreate(args, ctx) {
   const { headless, branch } = ctx;
   if (headless && !prShapeOk(args)) return shape('pull request creation takes only --title --body --base --head --fill');
-  const h = args.indexOf('--head') >= 0 ? args[args.indexOf('--head') + 1] : (args.find(a => a.startsWith('--head='))?.slice(7));
+  const h = args.indexOf('--head') >= 0 ? args[args.indexOf('--head') + 1] : args.find((a) => a.startsWith('--head='))?.slice(7);
   const head = h || branch;
-  if (!isGraph(branch) && !isGraph(h)) return headless
-    ? verdict('deny', 'graph.pr_create', 'outside_worktree', 'the working directory is not a worktree on a graph/<key> branch')
-    : null;
+  if (!isGraph(branch) && !isGraph(h))
+    return headless ? verdict('deny', 'graph.pr_create', 'outside_worktree', 'the working directory is not a worktree on a graph/<key> branch') : null;
   if (!headless) return verdict('ask', 'graph.pr_create', 'graph_pr_confirm', `this opens a pull request from ${head}`);
-  if (!isGraph(branch)) return verdict('deny', 'graph.pr_create', 'outside_worktree',
-    'the working directory is not a worktree on a graph/<key> branch');
+  if (!isGraph(branch)) return verdict('deny', 'graph.pr_create', 'outside_worktree', 'the working directory is not a worktree on a graph/<key> branch');
   if (head !== branch) return verdict('deny', 'graph.pr_create', 'branch_mismatch', `the worktree has ${branch} checked out, not ${head}`);
   return verdict('allow', 'graph.pr_create', 'graph_pr_allowed', `headless worker opening a pull request from ${branch}`);
 }
 
 function land(ctx) {
   const { headless, branch } = ctx;
-  if (!isGraph(branch)) return headless
-    ? verdict('deny', 'graph.land', 'outside_worktree', 'land-pr.sh runs from a worktree on a graph/<key> branch')
-    : null;
+  if (!isGraph(branch)) return headless ? verdict('deny', 'graph.land', 'outside_worktree', 'land-pr.sh runs from a worktree on a graph/<key> branch') : null;
   if (!headless) return verdict('ask', 'graph.land', 'graph_land_confirm', `this merges the pull request from ${branch} when it is green`);
   return verdict('allow', 'graph.land', 'graph_land_allowed', `headless worker landing ${branch}`);
 }
@@ -216,19 +226,19 @@ function exactLander(cmd, root) {
   if (META.test(cmd)) return false;
   const w = words(cmd);
   if (/(^|\/)land-pr\.sh$/.test(w[0] || '') && trustedLand(w[0], root)) return /^\d+$/.test(w[1] || '') && landShapeOk(w.slice(1));
-  if (w[0] === 'node' && w[2] === 'land' && /\/bin\/enforcer$/.test(w[1] || '') && trustedLand(w[1], root)) return /^\d+$/.test(w[3] || '') && landShapeOk(w.slice(3));
+  if (w[0] === 'node' && w[2] === 'land' && /\/bin\/enforcer$/.test(w[1] || '') && trustedLand(w[1], root))
+    return /^\d+$/.test(w[3] || '') && landShapeOk(w.slice(3));
   return false;
 }
 
 function settings(ev, ctx, cmd) {
   const path = isFileWrite(ev) ? String(ev.input?.path ?? ev.raw?.file_path ?? ev.raw?.notebook_path ?? '') : null;
-  const hit = path != null ? SETTINGS.test(path) : (SETTINGS.test(cmd) && !(PLAIN_READ.test(cmd.trim()) && !META.test(cmd) && !MUTATES.test(cmd)));
+  const hit = path != null ? SETTINGS.test(path) : SETTINGS.test(cmd) && !(PLAIN_READ.test(cmd.trim()) && !META.test(cmd) && !MUTATES.test(cmd));
   if (!hit) return null;
   return ctx.headless
     ? verdict('deny', 'governor.settings', 'settings_write', 'a headless worker may not change plugin or governor settings')
     : verdict('ask', 'governor.settings', 'settings_write', 'this changes plugin or governor settings');
 }
-
 
 // The headless-worker deny profile. Node text is untrusted, so a worker that was talked into it still
 // may not touch what ships or authenticates: CI workflows, release and deploy scripts, secret files.
@@ -239,8 +249,14 @@ function protectedPaths(ev, ctx, cmd) {
   const hit = isFileWrite(ev)
     ? PROTECTED.test(String(ev.input?.path ?? ev.raw?.file_path ?? ev.raw?.notebook_path ?? ''))
     : MUTATES.test(cmd) && words(cmd.replace(/[;&|<>()]/g, ' ')).some((w) => PROTECTED.test(w));
-  return hit ? verdict('deny', 'graph.protected_paths', 'protected_path',
-    'a headless worker may not change CI workflows, release or deploy scripts, or secret files; a release node may') : null;
+  return hit
+    ? verdict(
+        'deny',
+        'graph.protected_paths',
+        'protected_path',
+        'a headless worker may not change CI workflows, release or deploy scripts, or secret files; a release node may',
+      )
+    : null;
 }
 
 // A headless worker deleting a tree INSIDE its own worktree (build output, a temp dir) is
@@ -253,14 +269,25 @@ function protectedPaths(ev, ctx, cmd) {
 const RM_TREE = /^rm\s+((?:-[a-zA-Z]+\s+|--(?:recursive|force)\s+)+)(.+)$/;
 function worktreeDelete(cmd, ev, ctx) {
   if (!ctx.headless || !isGraph(ctx.branch) || META.test(cmd)) return null;
-  const m = RM_TREE.exec(cmd.trim()); if (!m) return null;
-  const flags = m[1]; if (!/(^|\s)(-[a-zA-Z]*r|--recursive)/i.test(flags) || !/(^|\s)(-[a-zA-Z]*f|--force)/.test(flags)) return null;
-  const cwd = typeof ev.cwd === 'string' && ev.cwd ? ev.cwd.replace(/\/+$/, '') : null; if (!cwd) return null;
-  const ops = words(m[2]); if (!ops.length) return null;
+  const m = RM_TREE.exec(cmd.trim());
+  if (!m) return null;
+  const flags = m[1];
+  if (!/(^|\s)(-[a-zA-Z]*r|--recursive)/i.test(flags) || !/(^|\s)(-[a-zA-Z]*f|--force)/.test(flags)) return null;
+  const cwd = typeof ev.cwd === 'string' && ev.cwd ? ev.cwd.replace(/\/+$/, '') : null;
+  if (!cwd) return null;
+  const ops = words(m[2]);
+  if (!ops.length) return null;
   for (const op of ops) {
     if (op.startsWith('-') || op.startsWith('~') || op.includes('$') || op.includes('*') || op.includes('?')) return null;
-    const parts = (op.startsWith('/') ? op : cwd + '/' + op).split('/').filter(Boolean); const out = [];
-    for (const part of parts) { if (part === '.') continue; if (part === '..') { if (!out.length) return null; out.pop(); } else out.push(part); }
+    const parts = (op.startsWith('/') ? op : cwd + '/' + op).split('/').filter(Boolean);
+    const out = [];
+    for (const part of parts) {
+      if (part === '.') continue;
+      if (part === '..') {
+        if (!out.length) return null;
+        out.pop();
+      } else out.push(part);
+    }
     const abs = '/' + out.join('/');
     if (abs === cwd || !abs.startsWith(cwd + '/') || /\/\.git(\/|$)/.test(abs)) return null;
   }
@@ -279,10 +306,15 @@ export function evaluate(ev) {
   const raw = commandOf(ev).trim();
   let folded = false;
   // the skill's `${CLAUDE_PLUGIN_ROOT:?message}` guard expands as the plain variable
-  const cmd = raw.replace(/\$\{CLAUDE_PLUGIN_ROOT:\?[^}]*\}/, '${CLAUDE_PLUGIN_ROOT}').replace(LAND_LOOKUP, (m, p) => {
-    if (!trustedLand(p, ev.worker?.pluginRoot)) return m;
-    folded = true; return 'land-pr.sh';
-  }).replace(/\s+2>&1\s*$/, '').trim();
+  const cmd = raw
+    .replace(/\$\{CLAUDE_PLUGIN_ROOT:\?[^}]*\}/, '${CLAUDE_PLUGIN_ROOT}')
+    .replace(LAND_LOOKUP, (m, p) => {
+      if (!trustedLand(p, ev.worker?.pluginRoot)) return m;
+      folded = true;
+      return 'land-pr.sh';
+    })
+    .replace(/\s+2>&1\s*$/, '')
+    .trim();
   if (exactLander(cmd, ev.worker?.pluginRoot)) return land(ctx);
   // the lander chained to anything else: the delivery rule names it before the settings guard does
   if (ctx.headless && META.test(cmd) && /(^|\/)land-pr\.sh$/.test(words(cmd)[0] || '') && trustedLand(words(cmd)[0], ev.worker?.pluginRoot))
@@ -292,9 +324,8 @@ export function evaluate(ev) {
   const wd = worktreeDelete(raw, ev, ctx);
   if (wd) return wd;
   if (!(ctx.headless ? mentionsDeliveryWide(cmd) : mentionsDelivery(cmd))) return null;
-  if (META.test(cmd)) return ctx.headless
-    ? verdict('deny', 'graph.push', 'push_not_alone', 'a push, pull request or land must be the whole command, on its own')
-    : null;
+  if (META.test(cmd))
+    return ctx.headless ? verdict('deny', 'graph.push', 'push_not_alone', 'a push, pull request or land must be the whole command, on its own') : null;
 
   const w = words(cmd);
   const args = pushArgs(cmd);
@@ -304,7 +335,7 @@ export function evaluate(ev) {
     if (ctx.headless && !(/^\d+$/.test(w[2] || '') && landShapeOk(w.slice(2)))) return shape('enforcer land takes a pull request number and --timeout');
     return land(ctx);
   }
-  const lp = /(^|\/)land-pr\.sh$/.test(w[0] || '') ? 0 : (w[0] === 'bash' && /(^|\/)land-pr\.sh$/.test(w[1] || '')) ? 1 : -1;
+  const lp = /(^|\/)land-pr\.sh$/.test(w[0] || '') ? 0 : w[0] === 'bash' && /(^|\/)land-pr\.sh$/.test(w[1] || '') ? 1 : -1;
   if (lp >= 0) {
     if (ctx.headless) {
       const trusted = (folded && lp === 0 && w[0] === 'land-pr.sh') || trustedLand(w[lp], ev.worker?.pluginRoot);
@@ -323,6 +354,5 @@ export function evaluate(ev) {
  * stays free of process state.
  */
 export function headlessFrom(env = {}) {
-  return env.ENFORCER_HEADLESS === '1' || env.JEV_HOOKS_HEADLESS === '1' ||
-    String(env.CLAUDE_CODE_ENTRYPOINT || '') === 'sdk-cli';
+  return env.ENFORCER_HEADLESS === '1' || env.JEV_HOOKS_HEADLESS === '1' || String(env.CLAUDE_CODE_ENTRYPOINT || '') === 'sdk-cli';
 }

@@ -19,8 +19,11 @@ for (const [e, groups] of Object.entries(hooks)) {
 }
 console.log('ok   hooks.json runs one `enforcer event` process per event, each with a timeout');
 const ev = { hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'ls' }, session_id: 's1', cwd: '/tmp' };
-const r = spawnSync(process.execPath, [fileURLToPath(new URL('../bin/enforcer', import.meta.url)), 'governor', 'decide'],
-  { input: JSON.stringify(ev), encoding: 'utf8', env: { ...process.env, HOME: mkdtempSync(join(tmpdir(), 'gov-')) } });
+const r = spawnSync(process.execPath, [fileURLToPath(new URL('../bin/enforcer', import.meta.url)), 'governor', 'decide'], {
+  input: JSON.stringify(ev),
+  encoding: 'utf8',
+  env: { ...process.env, HOME: mkdtempSync(join(tmpdir(), 'gov-')) },
+});
 assert.equal(r.status, 0, r.stderr);
 const rec = JSON.parse(r.stdout);
 assert.deepEqual(Object.keys(rec).sort(), ['code', 'decision', 'rule', 'summary', 'tool']);

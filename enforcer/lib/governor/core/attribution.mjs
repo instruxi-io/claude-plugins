@@ -46,8 +46,7 @@ export const ATTRIBUTION_TIMEOUT_MS = 1500;
  * @param {object} cfg  the effective config (shipOn, ingestUrl, baseUrl ...)
  * @returns {Promise<{sent: boolean, status?: number, client?: string, skipped?: string, detail?: string}>}
  */
-export async function attributeSession({ agent, client } = {}, cfg = {},
-  { fetchImpl = hookFetch, now = Date.now, timeoutMs = ATTRIBUTION_TIMEOUT_MS } = {}) {
+export async function attributeSession({ agent, client } = {}, cfg = {}, { fetchImpl = hookFetch, now = Date.now, timeoutMs = ATTRIBUTION_TIMEOUT_MS } = {}) {
   // The same switch that stops receipts leaving the machine stops this: an
   // install told not to report does not report its projects either.
   if (cfg.shipOn === false) return { sent: false, skipped: 'shipping is switched off (shipOn)' };
@@ -73,10 +72,16 @@ export async function attributeSession({ agent, client } = {}, cfg = {},
     });
     if (res.status !== 200) return { sent: true, status: res.status };
     let held;
-    try { held = (await res.json())?.data?.client; } catch { /* the status is the answer */ }
+    try {
+      held = (await res.json())?.data?.client;
+    } catch {
+      /* the status is the answer */
+    }
     return { sent: true, status: 200, ...(typeof held === 'string' ? { client: held } : {}) };
   } catch (e) {
-    return { sent: false, detail: e?.name === 'AbortError' || e?.name === 'TimeoutError'
-      ? `no answer within ${timeoutMs}ms` : 'Enforcer could not be reached' };
+    return {
+      sent: false,
+      detail: e?.name === 'AbortError' || e?.name === 'TimeoutError' ? `no answer within ${timeoutMs}ms` : 'Enforcer could not be reached',
+    };
   }
 }

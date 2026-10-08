@@ -13,26 +13,43 @@ export const MANIFEST_DIR = `${DOT}-plugin`;
 export const DEFAULT_BASE = 'https://api.instruxi.dev';
 const LOCKED_MANIFEST = fileURLToPath(new URL('../../../lib/api/spec/mcp-manifest.json', import.meta.url));
 
-export const load = (p) => { try { return JSON.parse(readFileSync(p, 'utf8')); } catch { return null; } };
+export const load = (p) => {
+  try {
+    return JSON.parse(readFileSync(p, 'utf8'));
+  } catch {
+    return null;
+  }
+};
 
 export function vtuple(v) {
   const out = [];
-  for (const part of String(v || '').split('-')[0].split('.')) {
+  for (const part of String(v || '')
+    .split('-')[0]
+    .split('.')) {
     if (!/^\d+$/.test(part)) return null;
     out.push(Number(part));
   }
   return out.length ? out : null;
 }
-const less = (a, b) => { for (let i = 0; i < Math.max(a.length, b.length); i++) { const d = (a[i] || 0) - (b[i] || 0); if (d) return d < 0; } return false; };
+const less = (a, b) => {
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const d = (a[i] || 0) - (b[i] || 0);
+    if (d) return d < 0;
+  }
+  return false;
+};
 
 export function staleInstalls(installed, catalogVersions, mkt) {
   const out = [];
   for (const name of Object.keys(catalogVersions).sort()) {
-    const avail = catalogVersions[name], pid = `${name}@${mkt}`, av = vtuple(avail);
+    const avail = catalogVersions[name],
+      pid = `${name}@${mkt}`,
+      av = vtuple(avail);
     for (const i of installed[pid] || []) {
       if (!i || typeof i !== 'object') continue;
       const hv = vtuple(i.version);
-      if (hv && av && less(hv, av)) out.push(`${name} ${i.version} installed (${i.scope || 'unknown scope'}) — ${avail} available: claude plugin update ${pid}`);
+      if (hv && av && less(hv, av))
+        out.push(`${name} ${i.version} installed (${i.scope || 'unknown scope'}) — ${avail} available: claude plugin update ${pid}`);
     }
   }
   return out;
@@ -47,29 +64,46 @@ export function unknownTools(health, known, pluginVersion) {
   const extra = [...names].filter((n) => typeof n === 'string' && !known.has(n)).sort();
   if (!extra.length) return [];
   const fams = new Map();
-  for (const n of extra) { const f = n.includes('_') ? n.split('_')[0] : n; fams.set(f, [...(fams.get(f) || []), n]); }
-  const shown = [...fams].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([f, v]) => (v.length > 1 || v[0] !== f ? `${f}_*` : f)).join(', ');
+  for (const n of extra) {
+    const f = n.includes('_') ? n.split('_')[0] : n;
+    fams.set(f, [...(fams.get(f) || []), n]);
+  }
+  const shown = [...fams]
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([f, v]) => (v.length > 1 || v[0] !== f ? `${f}_*` : f))
+    .join(', ');
   return [`MCP ${d.version || '?'} serves tools this plugin (${pluginVersion}) does not know: ${shown}`];
 }
 
 export function jwtClaims(tok) {
-  try { return JSON.parse(Buffer.from(String(tok).split('.')[1], 'base64url').toString('utf8')) || {}; } catch { return {}; }
+  try {
+    return JSON.parse(Buffer.from(String(tok).split('.')[1], 'base64url').toString('utf8')) || {};
+  } catch {
+    return {};
+  }
 }
 
 export function workspaceLine(doc) {
   const o = (doc?.enforcer || {}).oauth || {};
   if (!o.access_token) return null;
   const c = jwtClaims(o.access_token);
-  const name = c.tenant || c.tenant_name || c.tenant_code, tid = c.tenant_id;
+  const name = c.tenant || c.tenant_name || c.tenant_code,
+    tid = c.tenant_id;
   if (!(name || tid)) return null;
   return `enforcer workspace: ${name || tid}${name && tid ? ` (${tid})` : ''}${c.role ? ` · role ${c.role}` : ''}`;
 }
 
 export async function fetchHealth(base, auth = {}, timeoutMs = 1500) {
   try {
-    const d = await request(`${String(base).replace(/\/+$/, '')}/api/v1/mcp/health`, { headers: { 'User-Agent': 'enforcer-graph-plugin-versioncheck', ...auth } }, { timeoutMs, retries: 0 });
+    const d = await request(
+      `${String(base).replace(/\/+$/, '')}/api/v1/mcp/health`,
+      { headers: { 'User-Agent': 'enforcer-graph-plugin-versioncheck', ...auth } },
+      { timeoutMs, retries: 0 },
+    );
     return d && typeof d === 'object' && !Array.isArray(d) ? d : null;
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
 /** The lines to print. `health` is injected by tests; fetched otherwise. */

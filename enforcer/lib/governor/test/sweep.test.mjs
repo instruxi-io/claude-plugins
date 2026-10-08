@@ -6,14 +6,21 @@ import { tmpdir } from 'node:os';
 import { sweep } from '../adapters/claude-code/sweep.mjs';
 
 let pass = 0;
-const ok = (label, fn) => { fn(); pass++; console.log('  ok  ' + label); };
+const ok = (label, fn) => {
+  fn();
+  pass++;
+  console.log('  ok  ' + label);
+};
 
 const DAY = 24 * 3600 * 1000;
 const home = () => mkdtempSync(join(tmpdir(), 'gov-sweep-'));
 const write = (dir, name, ageDays = 0) => {
   const p = join(dir, name);
   writeFileSync(p, '{}');
-  if (ageDays) { const t = (Date.now() - ageDays * DAY) / 1000; utimesSync(p, t, t); }
+  if (ageDays) {
+    const t = (Date.now() - ageDays * DAY) / 1000;
+    utimesSync(p, t, t);
+  }
   return p;
 };
 
@@ -33,8 +40,8 @@ ok('the record and the durable state are never swept', () => {
   // pin: a sweep that could reach receipts.jsonl or state.json is data loss,
   // and nothing else in this directory has a session id in its name.
   const dir = home();
-  for (const n of ['receipts.jsonl', 'state.json', 'config.json', 'credentials.json',
-                   'outbox.json', 'install.json', 'policy-cache.json', 'token', '.lock']) write(dir, n, 400);
+  for (const n of ['receipts.jsonl', 'state.json', 'config.json', 'credentials.json', 'outbox.json', 'install.json', 'policy-cache.json', 'token', '.lock'])
+    write(dir, n, 400);
   const r = sweep({ sweepDays: 1 }, { dir });
   assert.equal(r.removed, 0);
   assert.equal(readdirSync(dir).length, 9);
@@ -49,8 +56,7 @@ ok('0 keeps everything, for an audit that wants the working files', () => {
 });
 
 ok('a missing directory is not an error', () => {
-  assert.deepEqual(sweep({ sweepDays: 7 }, { dir: join(tmpdir(), 'gov-sweep-does-not-exist') }),
-    { removed: 0, bytes: 0, skipped: 0 });
+  assert.deepEqual(sweep({ sweepDays: 7 }, { dir: join(tmpdir(), 'gov-sweep-does-not-exist') }), { removed: 0, bytes: 0, skipped: 0 });
 });
 
 console.log(`\n  ${pass} passed`);

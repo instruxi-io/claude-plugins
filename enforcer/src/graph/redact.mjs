@@ -17,7 +17,10 @@ export function redact(text) {
   let total = 0;
   for (const [kind, rx, keep] of R) {
     const tag = `[redacted:${kind}]`;
-    text = text.replace(rx, (...m) => { total++; return keep ? m[1] + tag : tag; });
+    text = text.replace(rx, (...m) => {
+      total++;
+      return keep ? m[1] + tag : tag;
+    });
   }
   return [text, total];
 }

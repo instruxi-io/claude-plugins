@@ -14,30 +14,87 @@ import { worktreeFor, worktreeSetup } from '../../src/dispatch/worktree.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const tmp = () => mkdtempSync(join(tmpdir(), 'drt-'));
-const wait = async (cond, ms = 8000) => { const end = Date.now() + ms; while (!(await cond())) { if (Date.now() > end) throw new Error('timed out waiting'); await new Promise((r) => setTimeout(r, 20)); } };
-const script = (dir, name, body) => { const p = join(dir, name); writeFileSync(p, `#!/bin/sh\n${body}\n`); chmodSync(p, 0o755); return p; };
+const wait = async (cond, ms = 8000) => {
+  const end = Date.now() + ms;
+  while (!(await cond())) {
+    if (Date.now() > end) throw new Error('timed out waiting');
+    await new Promise((r) => setTimeout(r, 20));
+  }
+};
+const script = (dir, name, body) => {
+  const p = join(dir, name);
+  writeFileSync(p, `#!/bin/sh\n${body}\n`);
+  chmodSync(p, 0o755);
+  return p;
+};
 
 /** An in-memory graph API with the methods the dispatcher calls. */
 class FakeAPI {
-  constructor(nodes) { this.list = nodes; this.patches = 0; this.completed = []; this.n = 100; }
-  async graph() { return {}; }
-  async nodes() { return this.list.map((n) => ({ ...n })); }
-  async frontier() { return this.list.filter((n) => n.status === 'ready').map((n) => ({ ...n, work_state: 'looking_for_work' })); }
-  async createNode(g, b) { const n = { id: 'id-' + this.n++, ...b }; this.list.push(n); return n; }
-  async patchNode(g, id, b) { this.patches++; Object.assign(this.list.find((n) => n.id === id), b); return {}; }
-  async claim(g, id) { return { run_id: 'run-' + id }; }
-  async heartbeat() { return { state: 'ok' }; }
-  async complete(g, n, r, body) { this.completed.push({ n, r, body }); return {}; }
-  async runs() { return []; }
+  constructor(nodes) {
+    this.list = nodes;
+    this.patches = 0;
+    this.completed = [];
+    this.n = 100;
+  }
+  async graph() {
+    return {};
+  }
+  async nodes() {
+    return this.list.map((n) => ({ ...n }));
+  }
+  async frontier() {
+    return this.list.filter((n) => n.status === 'ready').map((n) => ({ ...n, work_state: 'looking_for_work' }));
+  }
+  async createNode(g, b) {
+    const n = { id: 'id-' + this.n++, ...b };
+    this.list.push(n);
+    return n;
+  }
+  async patchNode(g, id, b) {
+    this.patches++;
+    Object.assign(
+      this.list.find((n) => n.id === id),
+      b,
+    );
+    return {};
+  }
+  async claim(g, id) {
+    return { run_id: 'run-' + id };
+  }
+  async heartbeat() {
+    return { state: 'ok' };
+  }
+  async complete(g, n, r, body) {
+    this.completed.push({ n, r, body });
+    return {};
+  }
+  async runs() {
+    return [];
+  }
 }
 const node = (key, extra = {}) => ({ id: 'id-' + key, key, type: 'task', status: 'ready', title: key, data: {}, ...extra });
-const mkArgs = (state, o = {}) => defaultArgs({ graph: 'g', stateDir: state, stopFile: join(state, 'STOP'), repoRoot: join(state, 'none'), interval: 0.05,
-  killGrace: 0.2, leaseRenew: 0.05, ...o });
-const quiet = () => { const lines = []; return { lines, out: (s) => lines.push(s) }; };
+const mkArgs = (state, o = {}) =>
+  defaultArgs({
+    graph: 'g',
+    stateDir: state,
+    stopFile: join(state, 'STOP'),
+    repoRoot: join(state, 'none'),
+    interval: 0.05,
+    killGrace: 0.2,
+    leaseRenew: 0.05,
+    ...o,
+  });
+const quiet = () => {
+  const lines = [];
+  return { lines, out: (s) => lines.push(s) };
+};
 
 test('claims carry X-Graph-Client', async () => {
   const seen = [];
-  const fetchImpl = async (url, init) => { seen.push({ url, h: init.headers }); return new Response(JSON.stringify({ data: { run_id: 'r1' } }), { status: 200 }); };
+  const fetchImpl = async (url, init) => {
+    seen.push({ url, h: init.headers });
+    return new Response(JSON.stringify({ data: { run_id: 'r1' } }), { status: 200 });
+  };
   const api = new API('http://x/api', { fetchImpl, headers: async () => ({ 'X-API-Key': 'k' }) });
   const card = await api.claim('g', 'n1', 'graph-dispatch');
   assert.equal(card.run_id, 'r1');
@@ -96,7 +153,11 @@ test('SIGTERM drains and clears the lease', async () => {
 
 test('limit hold renews the lease', async () => {
   const state = tmp();
-  const claude = script(state, 'claude', `echo '{"type":"result","subtype":"error_during_execution","is_error":true,"num_turns":0,"result":"You have hit your weekly limit"}'; exit 1`);
+  const claude = script(
+    state,
+    'claude',
+    `echo '{"type":"result","subtype":"error_during_execution","is_error":true,"num_turns":0,"result":"You have hit your weekly limit"}'; exit 1`,
+  );
   const api = new FakeAPI([node('a')]);
   const { lines, out } = quiet();
   const d = new Dispatcher(api, mkArgs(state, { agentBin: claude, limitBackoff: 30 }), out);
@@ -125,8 +186,14 @@ test('CI outage holds launches and a green feed releases the hold', async () => 
   d.ciFetch = async () => JSON.stringify({ components: [{ name: 'Actions', status: 'operational' }] });
   await wait(() => d.ciHold === 0);
   assert.ok(lines.some((l) => /CI-UNAVAILABLE cleared/.test(l)));
-  d.requestTerminate('SIGTERM'); await done;
-  assert.equal(await actionsStatus(async () => { throw new Error('down'); }), null);
+  d.requestTerminate('SIGTERM');
+  await done;
+  assert.equal(
+    await actionsStatus(async () => {
+      throw new Error('down');
+    }),
+    null,
+  );
 });
 
 test('a second dispatcher is refused; --takeover replaces a live lease', async () => {
@@ -151,7 +218,11 @@ test('pids.json orphans from a dead dispatcher are reaped', async () => {
   assert.deepEqual(await d.reapOrphans(), ['x']);
   // the worker handle is unref'd, so hold the loop open until its exit is delivered (macOS reports the group gone before the zombie is reaped)
   const hold = setInterval(() => {}, 50);
-  try { await p.done; } finally { clearInterval(hold); }
+  try {
+    await p.done;
+  } finally {
+    clearInterval(hold);
+  }
   assert.ok(!pidAliveGroup(p.pid));
   assert.ok(!existsSync(join(state, 'pids.json')));
 });
@@ -171,16 +242,24 @@ test('dry run plans launches and launches nothing', async () => {
 test('`enforcer dispatch --dry-run` prints the planned launches', async () => {
   const http = await import('node:http');
   const srv = http.createServer((req, res) => {
-    const body = req.url.includes('/frontier') ? { data: [node('solo')] } : req.url.includes('/nodes') ? { data: [node('solo')], meta: { total: 1 } } : { data: {} };
-    res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(body));
+    const body = req.url.includes('/frontier')
+      ? { data: [node('solo')] }
+      : req.url.includes('/nodes')
+        ? { data: [node('solo')], meta: { total: 1 } }
+        : { data: {} };
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify(body));
   });
   await new Promise((r) => srv.listen(0, '127.0.0.1', r));
   const cfg = tmp();
   const r = await new Promise((resolve) => {
-    const c = spawn(process.execPath, [join(ROOT, 'bin/enforcer'), 'dispatch', '--dry-run', 'g1', '--repo-root', cfg],
-      { env: { ...process.env, ENFORCER_CONFIG_HOME: cfg, GRAPH_BASE_URL: `http://127.0.0.1:${srv.address().port}`, GRAPH_API_KEY: 'k' } });
-    let stdout = ''; let stderr = '';
-    c.stdout.on('data', (d) => (stdout += d)); c.stderr.on('data', (d) => (stderr += d));
+    const c = spawn(process.execPath, [join(ROOT, 'bin/enforcer'), 'dispatch', '--dry-run', 'g1', '--repo-root', cfg], {
+      env: { ...process.env, ENFORCER_CONFIG_HOME: cfg, GRAPH_BASE_URL: `http://127.0.0.1:${srv.address().port}`, GRAPH_API_KEY: 'k' },
+    });
+    let stdout = '';
+    let stderr = '';
+    c.stdout.on('data', (d) => (stdout += d));
+    c.stderr.on('data', (d) => (stderr += d));
     c.on('close', (status) => resolve({ status, stdout, stderr }));
   });
   srv.close();
@@ -192,16 +271,27 @@ test('`enforcer dispatch --dry-run` prints the planned launches', async () => {
 test('worktree: scratch dir without a repo; include copies ignored files; share symlinks and excludes', () => {
   const root = tmp();
   const [p, br, note] = worktreeFor(node('k'), root, join(root, 'state'));
-  assert.equal(br, null); assert.match(note, /scratch/); assert.ok(existsSync(p));
+  assert.equal(br, null);
+  assert.match(note, /scratch/);
+  assert.ok(existsSync(p));
   const git = (args, cwd) => spawnSync('git', args, { cwd, encoding: 'utf8' });
-  const src = join(root, 'repo'); mkdirSync(src);
-  git(['init', '-q'], src); git(['config', 'user.email', 'a@b.c'], src); git(['config', 'user.name', 'n'], src);
-  writeFileSync(join(src, '.gitignore'), '.env*\nshared/\n'); writeFileSync(join(src, '.env.local'), 'X=1');
-  mkdirSync(join(src, 'shared')); writeFileSync(join(src, '.worktreeinclude'), '.env*\n'); writeFileSync(join(src, '.worktreeshare'), 'shared\n');
-  git(['add', '.gitignore', '.worktreeinclude', '.worktreeshare'], src); git(['commit', '-qm', 'init'], src);
-  const wt = join(root, 'wt'); git(['worktree', 'add', '-q', wt, '-b', 'b'], src);
+  const src = join(root, 'repo');
+  mkdirSync(src);
+  git(['init', '-q'], src);
+  git(['config', 'user.email', 'a@b.c'], src);
+  git(['config', 'user.name', 'n'], src);
+  writeFileSync(join(src, '.gitignore'), '.env*\nshared/\n');
+  writeFileSync(join(src, '.env.local'), 'X=1');
+  mkdirSync(join(src, 'shared'));
+  writeFileSync(join(src, '.worktreeinclude'), '.env*\n');
+  writeFileSync(join(src, '.worktreeshare'), 'shared\n');
+  git(['add', '.gitignore', '.worktreeinclude', '.worktreeshare'], src);
+  git(['commit', '-qm', 'init'], src);
+  const wt = join(root, 'wt');
+  git(['worktree', 'add', '-q', wt, '-b', 'b'], src);
   const r = worktreeSetup(src, wt);
-  assert.equal(r.copied, 1); assert.equal(r.linked, 1);
+  assert.equal(r.copied, 1);
+  assert.equal(r.linked, 1);
   assert.equal(readFileSync(join(wt, '.env.local'), 'utf8'), 'X=1');
   assert.match(readFileSync(join(src, '.git', 'info', 'exclude'), 'utf8'), /^\/shared$/m);
   assert.equal(git(['status', '--porcelain'], wt).stdout.trim(), '', 'the share does not dirty the worktree');
@@ -220,10 +310,20 @@ test('launch command: claude args, one plugin per name, grok needs --experimenta
 test('a verdict that lands after exit is read before the attempt is judged failed', async () => {
   const state = tmp();
   const ev = [
-    { type: 'assistant', message: { content: [{ type: 'tool_use', id: 't1', name: 'mcp__x__graph_report', input: { node_id: 'id-a', status: 'succeeded' } }] } },
-    { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 't1', content: JSON.stringify({ verification: { state: 'rejected', reason: 'no evidence' } }) }] } },
+    {
+      type: 'assistant',
+      message: { content: [{ type: 'tool_use', id: 't1', name: 'mcp__x__graph_report', input: { node_id: 'id-a', status: 'succeeded' } }] },
+    },
+    {
+      type: 'user',
+      message: {
+        content: [{ type: 'tool_result', tool_use_id: 't1', content: JSON.stringify({ verification: { state: 'rejected', reason: 'no evidence' } }) }],
+      },
+    },
     { type: 'result', subtype: 'success', is_error: false, num_turns: 2, result: 'done' },
-  ].map((e) => JSON.stringify(e)).join('\n');
+  ]
+    .map((e) => JSON.stringify(e))
+    .join('\n');
   writeFileSync(join(state, 'events.jsonl'), ev + '\n');
   const claude = script(state, 'claude', `cat '${join(state, 'events.jsonl')}'`);
   const api = new FakeAPI([node('a')]);

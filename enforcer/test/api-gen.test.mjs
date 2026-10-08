@@ -26,7 +26,8 @@ test('graph client has claim, complete, heartbeat, frontier, observations, revie
     '/graphs/{graphId}/frontier',
     '/graphs/{graphId}/nodes/{nodeId}/observations',
     '/graphs/{graphId}/review',
-  ]) assert.ok(types.includes(`"${p}": {`), `graph.d.ts has ${p}`);
+  ])
+    assert.ok(types.includes(`"${p}": {`), `graph.d.ts has ${p}`);
   const { graphClient, v3Client, filesClient, governanceClient } = await import('../lib/api/index.mjs');
   for (const make of [graphClient, v3Client, filesClient, governanceClient]) {
     const c = make({ baseUrl: 'http://127.0.0.1:1' });

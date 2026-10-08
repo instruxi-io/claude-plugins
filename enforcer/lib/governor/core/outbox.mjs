@@ -36,17 +36,29 @@ const MARK = join(DIR, 'outbox.json');
 const readMark = () => {
   try {
     const m = JSON.parse(readFileSync(MARK, 'utf8'));
-    return { shippedBytes: Number(m.shippedBytes) || 0, shippedAt: m.shippedAt || null,
-             lastError: m.lastError || null, prevHash: m.prevHash || 'genesis' };
-  } catch { return { shippedBytes: 0, shippedAt: null, lastError: null, prevHash: 'genesis' }; }
+    return { shippedBytes: Number(m.shippedBytes) || 0, shippedAt: m.shippedAt || null, lastError: m.lastError || null, prevHash: m.prevHash || 'genesis' };
+  } catch {
+    return { shippedBytes: 0, shippedAt: null, lastError: null, prevHash: 'genesis' };
+  }
 };
 
 const writeMark = (m) => {
-  try { writeFileSync(MARK, JSON.stringify(m)); return true; } catch { return false; }
+  try {
+    writeFileSync(MARK, JSON.stringify(m));
+    return true;
+  } catch {
+    return false;
+  }
 };
 
 /** Bytes currently in the record. */
-function size() { try { return statSync(RECEIPTS).size; } catch { return 0; } }
+function size() {
+  try {
+    return statSync(RECEIPTS).size;
+  } catch {
+    return 0;
+  }
+}
 
 /**
  * Receipts written but not yet acknowledged by the control plane.
@@ -73,7 +85,9 @@ export function pending(limit = 500) {
     readSync(fd, buf, 0, buf.length, from);
     closeSync(fd);
     chunk = buf.toString('utf8');
-  } catch { return { lines: [], from, to: from, prevHash }; }
+  } catch {
+    return { lines: [], from, to: from, prevHash };
+  }
 
   const lastNL = chunk.lastIndexOf('\n');
   if (lastNL < 0) return { lines: [], from, to: from, prevHash };
@@ -86,9 +100,12 @@ export function pending(limit = 500) {
     if (lines.length >= limit) break;
     consumed += bytes;
     if (!raw.trim()) continue;
-    try { lines.push(JSON.parse(raw)); }
-    catch { /* an unparseable line is still consumed: it cannot be shipped and
-               must not wedge the queue behind it forever */ }
+    try {
+      lines.push(JSON.parse(raw));
+    } catch {
+      /* an unparseable line is still consumed: it cannot be shipped and
+               must not wedge the queue behind it forever */
+    }
   }
   return { lines, from, to: from + consumed, prevHash };
 }

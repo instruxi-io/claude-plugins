@@ -19,7 +19,11 @@ import { findConfig, isGraphTool, isObj, actorTranscript, transcriptUsage, typed
 
 const here = dirname(fileURLToPath(import.meta.url));
 export const pluginVersion = () => {
-  try { return String(JSON.parse(readFileSync(join(here, '../../../plugin.json'), 'utf8')).version || 'unknown'); } catch { return 'unknown'; }
+  try {
+    return String(JSON.parse(readFileSync(join(here, '../../../plugin.json'), 'utf8')).version || 'unknown');
+  } catch {
+    return 'unknown';
+  }
 };
 export const CLIENT_BASE = () => `enforcer-graph-plugin/${pluginVersion()}`;
 const CLIENT_TOOLS = ['graph_next_work', 'graph_heartbeat', 'graph_report'];
@@ -30,7 +34,9 @@ const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0
 const mode = () => (process.env.GRAPH_EVIDENCE_MODE || 'input').trim().toLowerCase();
 
 const NOTE = (n) => `enforcer-graph: ${n} evidence item(s) captured from your own tool results were attached to this report. Do not hand-write evidence.`;
-const HANDOFF = (js) => 'enforcer-graph: this harness cannot rewrite an MCP tool\'s arguments, so pass the following captured evidence as the `evidence` argument of graph_report VERBATIM - do not edit, summarise, reorder or add to it. It was captured from your own tool results while the run was open.\n\n' + js;
+const HANDOFF = (js) =>
+  "enforcer-graph: this harness cannot rewrite an MCP tool's arguments, so pass the following captured evidence as the `evidence` argument of graph_report VERBATIM - do not edit, summarise, reorder or add to it. It was captured from your own tool results while the run was open.\n\n" +
+  js;
 
 export const stampsClient = (tool) => isGraphTool(tool) && CLIENT_TOOLS.some((t) => String(tool).endsWith(t));
 
@@ -51,16 +57,33 @@ export function checkPr(url, run = defaultGh) {
   const r = run(['pr', 'view', num, '-R', `${owner}/${repo}`, '--json', 'state,title,mergedAt,url']);
   if (!r) return null;
   if (r.status !== 0) {
-    const err = String(r.stderr || '').trim().split('\n').filter(Boolean);
+    const err = String(r.stderr || '')
+      .trim()
+      .split('\n')
+      .filter(Boolean);
     if (!err.length) return null;
     return { kind: 'artifact', url, label: 'pull request NOT FOUND', output: `gh pr view ${num} -R ${owner}/${repo} -> ${err[err.length - 1].slice(0, 200)}` };
   }
-  let d; try { d = JSON.parse(r.stdout); } catch { return null; }
-  return { kind: 'artifact', url: d.url || url, label: `pull request ${String(d.state || '?').toLowerCase()}: ${String(d.title || '').slice(0, 120)}`,
-    output: `gh pr view ${num} -R ${owner}/${repo} -> state=${d.state} merged=${d.mergedAt || 'no'}` };
+  let d;
+  try {
+    d = JSON.parse(r.stdout);
+  } catch {
+    return null;
+  }
+  return {
+    kind: 'artifact',
+    url: d.url || url,
+    label: `pull request ${String(d.state || '?').toLowerCase()}: ${String(d.title || '').slice(0, 120)}`,
+    output: `gh pr view ${num} -R ${owner}/${repo} -> state=${d.state} merged=${d.mergedAt || 'no'}`,
+  };
 }
 function defaultGh(args) {
-  try { const r = spawnSync('gh', args, { encoding: 'utf8', timeout: 10_000 }); return r.error ? null : r; } catch { return null; }
+  try {
+    const r = spawnSync('gh', args, { encoding: 'utf8', timeout: 10_000 });
+    return r.error ? null : r;
+  } catch {
+    return null;
+  }
 }
 
 export function withUsage(args, usage, legacy = true) {
@@ -83,16 +106,25 @@ export function overrideEntries(ov) {
 export function evidenceGaps(hints, evidence) {
   const recs = (evidence || []).filter(isObj);
   const cmds = recs.filter((e) => e.kind === 'command');
-  const text = (e) => ['cmd', 'output', 'url', 'label', 'excerpt', 'path'].map((k) => String(e[k] || '')).join(' ').toLowerCase();
-  const hasPr = recs.some((e) => { const t = text(e); return (t.includes('land-pr') && t.includes('merge')) || t.includes('pull request merged') || (t.includes('merged=') && !t.includes('merged=no')); });
+  const text = (e) =>
+    ['cmd', 'output', 'url', 'label', 'excerpt', 'path']
+      .map((k) => String(e[k] || ''))
+      .join(' ')
+      .toLowerCase();
+  const hasPr = recs.some((e) => {
+    const t = text(e);
+    return (t.includes('land-pr') && t.includes('merge')) || t.includes('pull request merged') || (t.includes('merged=') && !t.includes('merged=no'));
+  });
   const hasFile = recs.some((e) => e.kind === 'file' || /^(cat |sed -n|head |tail )/.test(String(e.cmd || '').trimStart()));
   const gaps = [];
   (hints || []).forEach((h, i) => {
     if (!isObj(h)) return;
-    const n = i + 1, crit = String(h.criterion || '').slice(0, 80);
-    if (h.kind === 'pr' && !hasPr) gaps.push([n, crit, 'wants land-pr.sh\'s merged output; attach the command that ran land-pr.sh']);
+    const n = i + 1,
+      crit = String(h.criterion || '').slice(0, 80);
+    if (h.kind === 'pr' && !hasPr) gaps.push([n, crit, "wants land-pr.sh's merged output; attach the command that ran land-pr.sh"]);
     else if (h.kind === 'file' && !hasFile) gaps.push([n, crit, 'wants the file body; attach `cat <file>` (or a Read/Edit of it), not a listing or diff stat']);
-    else if ((h.kind === 'check' || h.kind === 'prose') && !cmds.length) gaps.push([n, crit, 'wants a command whose verbatim output shows it; run the deciding command and attach it']);
+    else if ((h.kind === 'check' || h.kind === 'prose') && !cmds.length)
+      gaps.push([n, crit, 'wants a command whose verbatim output shows it; run the deciding command and attach it']);
   });
   return gaps;
 }
@@ -116,26 +148,49 @@ export function acceptanceRecords(inp, run, deps = {}) {
     const lines = Array.isArray(run && run.acceptance) ? run.acceptance.filter((l) => typeof l === 'string') : [];
     if (!lines.length || !inp.cwd || !existsSync(inp.cwd)) return [];
     let cwd = inp.cwd;
-    try { const g = spawnSync('git', ['rev-parse', '--show-toplevel'], { cwd, encoding: 'utf8', timeout: 5000 }); if (g.status === 0 && g.stdout.trim()) cwd = g.stdout.trim(); } catch {}
+    try {
+      const g = spawnSync('git', ['rev-parse', '--show-toplevel'], { cwd, encoding: 'utf8', timeout: 5000 });
+      if (g.status === 0 && g.stdout.trim()) cwd = g.stdout.trim();
+    } catch {}
     const lineMs = deps.acceptanceTimeoutMs ?? ACCEPT_LINE_MS;
     const deadline = Date.now() + (deps.acceptanceBudgetMs ?? ACCEPT_BUDGET_MS);
     const order = lines.map((l, i) => i).sort((a, b) => (FAST.test(lines[b]) ? 1 : 0) - (FAST.test(lines[a]) ? 1 : 0));
     const node = { key: run.key, node_id: run.node_id, data: { acceptance: lines } };
-    const items = [], notes = [];
+    const items = [],
+      notes = [];
     for (const i of order) {
       const left = deadline - Date.now();
-      if (left < ACCEPT_MIN_MS) { notes.push({ kind: 'note', text: `acceptance line ${i + 1} was not run (time budget of the report hook): ${lines[i].slice(0, 200)}` }); continue; }
-      const r = runEvidence(node, { cwd, graph: run.graph_id || '', only: i, runners: ACCEPT_RUNNERS, timeoutMs: Math.min(lineMs, left), retryDelayMs: 0, run: deps.acceptanceRun });
+      if (left < ACCEPT_MIN_MS) {
+        notes.push({ kind: 'note', text: `acceptance line ${i + 1} was not run (time budget of the report hook): ${lines[i].slice(0, 200)}` });
+        continue;
+      }
+      const r = runEvidence(node, {
+        cwd,
+        graph: run.graph_id || '',
+        only: i,
+        runners: ACCEPT_RUNNERS,
+        timeoutMs: Math.min(lineMs, left),
+        retryDelayMs: 0,
+        run: deps.acceptanceRun,
+      });
       for (const { line_index, ...rec } of r.items) {
         // A line the budget cut short is NOT a failed command: the judge reads exit 124 with no summary as a failure, while the
         // worker's own run of the same command is already among the captured records. Say what happened instead.
-        if (rec.exit === 124) notes.push({ kind: 'note', text: `acceptance line ${line_index + 1} did not finish within the report hook's ${Math.round(Math.min(lineMs, left) / 1000)} s; judge it from the worker's own captured run: ${lines[line_index].slice(0, 200)}` });
+        if (rec.exit === 124)
+          notes.push({
+            kind: 'note',
+            text: `acceptance line ${line_index + 1} did not finish within the report hook's ${Math.round(Math.min(lineMs, left) / 1000)} s; judge it from the worker's own captured run: ${lines[line_index].slice(0, 200)}`,
+          });
         else items.push(rec);
       }
-      for (const s of r.skipped) if (NOTE_REASONS.test(s.reason)) notes.push({ kind: 'note', text: `acceptance line ${s.line_index + 1} was not run (${s.reason}): ${lines[s.line_index].slice(0, 200)}` });
+      for (const s of r.skipped)
+        if (NOTE_REASONS.test(s.reason))
+          notes.push({ kind: 'note', text: `acceptance line ${s.line_index + 1} was not run (${s.reason}): ${lines[s.line_index].slice(0, 200)}` });
     }
     return [...items, ...notes];
-  } catch { return []; }
+  } catch {
+    return [];
+  }
 }
 
 const deny = (why) => ({ hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: 'enforcer-graph: ' + why });
@@ -149,7 +204,10 @@ export function evidenceBlock(inp, evidence) {
   if (ov) {
     const entries = overrideEntries(ov);
     const unmet = gaps.map((g) => g[0]).sort((a, b) => a - b);
-    if (!entries) return deny(`evidence_override must be {line: <acceptance line index>, reason: ...} (or a list of them); a bare true or a missing line is refused. Unmet lines: [${unmet.join(', ')}]`);
+    if (!entries)
+      return deny(
+        `evidence_override must be {line: <acceptance line index>, reason: ...} (or a list of them); a bare true or a missing line is refused. Unmet lines: [${unmet.join(', ')}]`,
+      );
     if (entries.some((e) => !e.reason.trim())) return deny('evidence_override needs a reason for every line.');
     const have = new Set(entries.map((e) => e.line));
     const missing = unmet.filter((n) => !have.has(n));
@@ -157,18 +215,26 @@ export function evidenceBlock(inp, evidence) {
     return null;
   }
   const msg = gaps.map(([n, c, fix]) => `criterion ${n} (${c}) ${fix}`).join('; ');
-  return deny('report blocked, the evidence misses what the card\'s hints ask for: ' + msg + '. Run it, then report again; or pass evidence_override: {line: <index>, reason: ...}.');
+  return deny(
+    "report blocked, the evidence misses what the card's hints ask for: " +
+      msg +
+      '. Run it, then report again; or pass evidence_override: {line: <index>, reason: ...}.',
+  );
 }
 
 // ---- enforcer-files upload of output longer than the clip ----
-export const filesBaseUrl = (cfg) => String(process.env.GRAPH_FILES_BASE_URL || (cfg || {}).files_base_url || '').trim().replace(/\/+$/, '');
+export const filesBaseUrl = (cfg) =>
+  String(process.env.GRAPH_FILES_BASE_URL || (cfg || {}).files_base_url || '')
+    .trim()
+    .replace(/\/+$/, '');
 const providerCache = new Map();
 
 async function authFor(cfg) {
   if (cfg && cfg.api_key) return { 'X-API-Key': cfg.api_key };
   return authHeaders();
 }
-const freq = (url, init, auth, ms) => apiFetch(url, { ...init, headers: { ...auth, Accept: 'application/json', ...(init.headers || {}) } }, { timeoutMs: ms, retries: 0 });
+const freq = (url, init, auth, ms) =>
+  apiFetch(url, { ...init, headers: { ...auth, Accept: 'application/json', ...(init.headers || {}) } }, { timeoutMs: ms, retries: 0 });
 
 export async function uploadFullOutput(text, cfg, timeoutMs = UPLOAD_BUDGET_MS) {
   try {
@@ -202,17 +268,23 @@ export async function attachFiles(items, cfg, upload = uploadFullOutput) {
   const enabled = !!filesBaseUrl(cfg) && cfg != null;
   for (const it of items) {
     if (!isObj(it) || !('raw' in it)) continue;
-    const raw = it.raw; delete it.raw;
+    const raw = it.raw;
+    delete it.raw;
     if (!enabled || typeof raw !== 'string' || raw.length <= OUTPUT_CLIP) continue;
     const fid = await upload(raw, cfg, deadline - Date.now());
-    if (fid) { it.file = fid; it.file_bytes = Buffer.byteLength(raw); }
+    if (fid) {
+      it.file = fid;
+      it.file_bytes = Buffer.byteLength(raw);
+    }
   }
   return items;
 }
 
 export async function decide(inp, deps = {}) {
   const tool = inp.tool_name || '';
-  const isReport = tool.endsWith('graph_report'), isRemember = tool.endsWith('graph_remember'), isHeartbeat = tool.endsWith('graph_heartbeat');
+  const isReport = tool.endsWith('graph_report'),
+    isRemember = tool.endsWith('graph_remember'),
+    isHeartbeat = tool.endsWith('graph_heartbeat');
   if (!(isReport || isRemember || isHeartbeat)) return null;
   const sid = actorKey(inp);
   const run = loadRun(sid) || {};
@@ -224,7 +296,8 @@ export async function decide(inp, deps = {}) {
   }
   if (isReport) usage = transcriptUsage(actorTranscript(inp), run.claimed_at);
   const acc = isReport && (inp.tool_input || {}).status === 'succeeded' ? acceptanceRecords(inp, run, deps) : [];
-  if (!records.length && !acc.length) return usage && mode() !== 'context' ? { hookEventName: 'PreToolUse', updatedInput: withUsage(inp.tool_input, usage) } : null;
+  if (!records.length && !acc.length)
+    return usage && mode() !== 'context' ? { hookEventName: 'PreToolUse', updatedInput: withUsage(inp.tool_input, usage) } : null;
   let evidence = isRemember
     ? selectEvidence(records.slice(-REMEMBER_RECENT).map(stripInternal), REMEMBER_RECENT)
     : selectEvidence([...acc, ...records.map(stripInternal)]);
@@ -243,14 +316,21 @@ export async function decide(inp, deps = {}) {
     const ov = (inp.tool_input || {}).evidence_override;
     const entries = ov ? overrideEntries(ov) : null;
     if (entries) {
-      const ti = { ...inp.tool_input }; delete ti.evidence_override;
+      const ti = { ...inp.tool_input };
+      delete ti.evidence_override;
       ti.data = { ...(isObj(ti.data) ? ti.data : {}), overrides: entries };
       inp = { ...inp, tool_input: ti };
     }
   }
   let cfg = null;
-  try { cfg = findConfig(inp.cwd); } catch {}
-  try { evidence = await attachFiles(evidence, cfg, deps.upload); } catch { for (const it of evidence) if (isObj(it)) delete it.raw; }
+  try {
+    cfg = findConfig(inp.cwd);
+  } catch {}
+  try {
+    evidence = await attachFiles(evidence, cfg, deps.upload);
+  } catch {
+    for (const it of evidence) if (isObj(it)) delete it.raw;
+  }
   const out = { hookEventName: 'PreToolUse' };
   if (mode() === 'context') out.additionalContext = HANDOFF(JSON.stringify(evidence));
   else {
@@ -264,7 +344,8 @@ export async function decide(inp, deps = {}) {
 export function reclaimedNotice(inp) {
   const run = loadRun(actorKey(inp));
   return run && run.reclaimed
-    ? `enforcer-graph: the lease on node ${run.key || run.node_id} was reclaimed (the heartbeat got 404/409). Stop; a report from this run will be refused. graph_remember any progress worth keeping, then graph_next_work.` : null;
+    ? `enforcer-graph: the lease on node ${run.key || run.node_id} was reclaimed (the heartbeat got 404/409). Stop; a report from this run will be refused. graph_remember any progress worth keeping, then graph_next_work.`
+    : null;
 }
 
 // Postgres jsonb cannot hold U+0000, so one NUL byte anywhere in a report (often from captured
@@ -274,7 +355,11 @@ const NUL = /\u0000/g;
 export function stripNul(v) {
   if (typeof v === 'string') return v.includes('\u0000') ? v.replace(NUL, '') : v;
   if (Array.isArray(v)) return v.map(stripNul);
-  if (v && typeof v === 'object') { const o = {}; for (const [k, x] of Object.entries(v)) o[k] = stripNul(x); return o; }
+  if (v && typeof v === 'object') {
+    const o = {};
+    for (const [k, x] of Object.entries(v)) o[k] = stripNul(x);
+    return o;
+  }
   return v;
 }
 
@@ -284,15 +369,22 @@ export async function attachEvidence(inp, deps) {
     if (!isObj(inp)) return null;
     const tool = inp.tool_name || '';
     let out = null;
-    try { out = await decide(inp, deps); } catch {}
+    try {
+      out = await decide(inp, deps);
+    } catch {}
     if (stampsClient(tool) && mode() !== 'context') {
       out = out || { hookEventName: 'PreToolUse' };
       out.updatedInput = withClient(out.updatedInput ?? inp.tool_input, inp);
     }
     const notice = isGraphTool(tool) ? reclaimedNotice(inp) : null;
-    if (notice) { out = out || { hookEventName: 'PreToolUse' }; out.additionalContext = ((out.additionalContext || '') + '\n' + notice).trim(); }
+    if (notice) {
+      out = out || { hookEventName: 'PreToolUse' };
+      out.additionalContext = ((out.additionalContext || '') + '\n' + notice).trim();
+    }
     if (!out) return null;
     if (out.updatedInput !== undefined) out.updatedInput = stripNul(out.updatedInput);
     return notice ? { hookSpecificOutput: out, systemMessage: notice } : { hookSpecificOutput: out };
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }

@@ -30,15 +30,28 @@ const LEGACY_FILE = join(process.env.GOVERNOR_HOME || join(home(), '.enforcer-go
 export { DEFAULT_BASE_URL };
 
 /** The legacy credential file's path when it still holds a credential, else null. */
-export const legacyCredentialFile = () => { const l = readJson(LEGACY_FILE)?.enforcer; return l && (l.api_key || l.oauth?.access_token) ? LEGACY_FILE : null; };
+export const legacyCredentialFile = () => {
+  const l = readJson(LEGACY_FILE)?.enforcer;
+  return l && (l.api_key || l.oauth?.access_token) ? LEGACY_FILE : null;
+};
 
-const readJson = (f) => { try { return JSON.parse(readFileSync(f, 'utf8')); } catch { return null; } };
+const readJson = (f) => {
+  try {
+    return JSON.parse(readFileSync(f, 'utf8'));
+  } catch {
+    return null;
+  }
+};
 
 /** The stored credential document, shared file first. Null when there is none. */
 export function readCredentials() {
   const shared = readJson(SHARED_FILE());
-  try { if (shared) assertSchema(shared, SHARED_FILE()); }
-  catch (e) { process.stderr.write(`enforcer: ${e.message}\n`); return null; } // refuse newer state: signed out, never misread
+  try {
+    if (shared) assertSchema(shared, SHARED_FILE());
+  } catch (e) {
+    process.stderr.write(`enforcer: ${e.message}\n`);
+    return null;
+  } // refuse newer state: signed out, never misread
   if (shared?.enforcer) return shared;
   const legacy = readJson(LEGACY_FILE);
   return legacy?.enforcer ? legacy : null;
@@ -55,10 +68,19 @@ export function saveCredentials(doc) {
   doc = stamp(doc);
   const dir = SHARED_DIR();
   mkdirSync(dir, { recursive: true, mode: 0o700 });
-  try { chmodSync(dir, 0o700); } catch { /* not ours to chmod */ }
+  try {
+    chmodSync(dir, 0o700);
+  } catch {
+    /* not ours to chmod */
+  }
   const tmp = join(dir, `.credentials.${process.pid}.tmp`);
   const fd = openSync(tmp, 'w', 0o600);
-  try { writeSync(fd, JSON.stringify(doc, null, 2) + '\n'); fsyncSync(fd); } finally { closeSync(fd); }
+  try {
+    writeSync(fd, JSON.stringify(doc, null, 2) + '\n');
+    fsyncSync(fd);
+  } finally {
+    closeSync(fd);
+  }
   chmodSync(tmp, 0o600);
   renameSync(tmp, SHARED_FILE());
 }
@@ -71,7 +93,11 @@ export function saveCredentials(doc) {
  */
 export function allowedOrigins() {
   const out = new Set([new URL(DEFAULT_BASE_URL).origin]);
-  try { if (envBaseUrl()) out.add(new URL(envBaseUrl()).origin); } catch { /* ignore */ }
+  try {
+    if (envBaseUrl()) out.add(new URL(envBaseUrl()).origin);
+  } catch {
+    /* ignore */
+  }
   return out;
 }
 export function isAllowedUrl(u) {
@@ -80,7 +106,9 @@ export function isAllowedUrl(u) {
     if (!allowedOrigins().has(url.origin)) return false;
     // https required, except for an origin the operator named in the environment.
     return url.protocol === 'https:' || (!!envBaseUrl() && url.origin === new URL(envBaseUrl()).origin);
-  } catch { return false; }
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -93,7 +121,9 @@ export function isSafeBase(u) {
   try {
     const url = new URL(String(u));
     return url.protocol === 'https:' || (url.protocol === 'http:' && ['127.0.0.1', 'localhost', '[::1]'].includes(url.host.replace(/:\d+$/, '')));
-  } catch { return false; }
+  } catch {
+    return false;
+  }
 }
 
 // One refresh lock for Node and Python: a directory, because mkdir is atomic
@@ -106,29 +136,58 @@ export const refreshLockPath = () => join(SHARED_DIR(), '.refresh.lock');
 
 /** True when the lock records a pid on this machine that no longer exists. */
 function lockHolderDead(lock) {
-  let pid; try { pid = Number(readFileSync(join(lock, 'pid'), 'utf8')); } catch { return false; }
+  let pid;
+  try {
+    pid = Number(readFileSync(join(lock, 'pid'), 'utf8'));
+  } catch {
+    return false;
+  }
   if (!Number.isInteger(pid) || pid <= 0) return false;
-  try { process.kill(pid, 0); return false; } catch (e) { return e.code === 'ESRCH'; }
+  try {
+    process.kill(pid, 0);
+    return false;
+  } catch (e) {
+    return e.code === 'ESRCH';
+  }
 }
 
 /** Acquire the shared refresh lock; returns a release function, or null on timeout. */
 export async function acquireRefreshLock(timeoutMs = LOCK_TIMEOUT_MS) {
   const dir = SHARED_DIR();
   mkdirSync(dir, { recursive: true, mode: 0o700 });
-  try { chmodSync(dir, 0o700); } catch { /* not ours */ }
+  try {
+    chmodSync(dir, 0o700);
+  } catch {
+    /* not ours */
+  }
   const lock = refreshLockPath();
   const deadline = Date.now() + timeoutMs;
   for (;;) {
     try {
       mkdirSync(lock, { mode: 0o700 });
-      try { writeFileSync(join(lock, 'pid'), String(process.pid)); } catch { /* the mtime rule still applies */ }
-      return () => { try { rmSync(lock, { recursive: true, force: true }); } catch { /* gone */ } };
+      try {
+        writeFileSync(join(lock, 'pid'), String(process.pid));
+      } catch {
+        /* the mtime rule still applies */
+      }
+      return () => {
+        try {
+          rmSync(lock, { recursive: true, force: true });
+        } catch {
+          /* gone */
+        }
+      };
     } catch (e) {
       if (e.code !== 'EEXIST') return null;
       try {
         // A holder that died (pid gone) or sat past STALE_MS never releases: break its lock.
-        if (lockHolderDead(lock) || Date.now() - statSync(lock).mtimeMs > LOCK_STALE_MS) { rmSync(lock, { recursive: true, force: true }); continue; }
-      } catch { /* raced */ }
+        if (lockHolderDead(lock) || Date.now() - statSync(lock).mtimeMs > LOCK_STALE_MS) {
+          rmSync(lock, { recursive: true, force: true });
+          continue;
+        }
+      } catch {
+        /* raced */
+      }
     }
     if (Date.now() >= deadline) return null;
     await sleep(25);
@@ -154,7 +213,7 @@ export function enforcerKey() {
   const env = process.env.ENFORCER_API_KEY;
   if (env && env.trim()) return env.trim();
   const k = readCredentials()?.enforcer?.api_key;
-  return (typeof k === 'string' && k.trim()) ? k.trim() : null;
+  return typeof k === 'string' && k.trim() ? k.trim() : null;
 }
 
 // Refresh this long before expiry, so a token is never presented with seconds
@@ -197,31 +256,49 @@ export async function authHeaders({ fetchImpl = globalThis.fetch, now = Date.now
     if (c?.access_token && c.expires_at && Date.parse(c.expires_at) - now() > REFRESH_SKEW_MS) {
       return { Authorization: `Bearer ${c.access_token}` };
     }
-    const doc2 = cur || doc; const o2 = c || o;
+    const doc2 = cur || doc;
+    const o2 = c || o;
     if (!o2.refresh_token || !isAllowedUrl(o2.token_endpoint)) return {};
     const body = new URLSearchParams({ grant_type: 'refresh_token', refresh_token: o2.refresh_token, client_id: o2.client_id || o.client_id });
     // A token the server has not yet expired is still good: reuse it on a transient failure.
-    const usable = o2.access_token && o2.expires_at && Date.parse(o2.expires_at) > now()
-      ? { Authorization: `Bearer ${o2.access_token}` } : {};
+    const usable = o2.access_token && o2.expires_at && Date.parse(o2.expires_at) > now() ? { Authorization: `Bearer ${o2.access_token}` } : {};
     const record = (reason) => {
-      try { saveCredentials({ ...doc2, enforcer: { ...doc2.enforcer, oauth: { ...o2, last_refresh_error: { at: new Date(now()).toISOString(), reason } } } }); } catch { /* best effort */ }
+      try {
+        saveCredentials({ ...doc2, enforcer: { ...doc2.enforcer, oauth: { ...o2, last_refresh_error: { at: new Date(now()).toISOString(), reason } } } });
+      } catch {
+        /* best effort */
+      }
     };
     // Transient (timeout, network, 5xx): retry once after a short backoff, then keep the old pair untouched.
     // The refresh token is single-use, so after a lost response it may already be rotated server-side;
     // keeping it unchanged lets the next call replay it (the server answers a replay of the last-used token).
-    let res = null; let reason = null;
+    let res = null;
+    let reason = null;
     for (let attempt = 0; attempt < 2; attempt++) {
       if (attempt) await sleep(backoffMs);
       try {
         res = await fetchImpl(o2.token_endpoint, {
-          method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body,
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body,
           signal: AbortSignal.timeout(1800),
         });
-      } catch (e) { res = null; reason = `transient: ${e?.name || 'error'}`; continue; }
-      if (res.status >= 500 || res.status === 429 || res.status === 408) { reason = `transient: HTTP ${res.status}`; res = null; continue; }
+      } catch (e) {
+        res = null;
+        reason = `transient: ${e?.name || 'error'}`;
+        continue;
+      }
+      if (res.status >= 500 || res.status === 429 || res.status === 408) {
+        reason = `transient: HTTP ${res.status}`;
+        res = null;
+        continue;
+      }
       break;
     }
-    if (!res) { record(reason); return usable; }
+    if (!res) {
+      record(reason);
+      return usable;
+    }
     if (!res.ok && res.status >= 400 && res.status < 500) {
       // A refused refresh is retried once: another process may have rotated the pair, or the
       // refusal may be momentary. Re-read the file, and replay with whatever pair is current.
@@ -233,23 +310,44 @@ export async function authHeaders({ fetchImpl = globalThis.fetch, now = Date.now
       const rt = again?.refresh_token || o2.refresh_token;
       try {
         const r2 = await fetchImpl(o2.token_endpoint, {
-          method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
           body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: rt, client_id: o2.client_id || o.client_id }),
           signal: AbortSignal.timeout(1800),
         });
         if (r2.ok || r2.status >= 500) res = r2.status >= 500 ? null : r2;
         else res = r2;
-      } catch { res = null; reason = 'transient: retry failed'; }
-      if (!res) { record(reason || 'transient: retry HTTP 5xx'); return usable; }
+      } catch {
+        res = null;
+        reason = 'transient: retry failed';
+      }
+      if (!res) {
+        record(reason || 'transient: retry HTTP 5xx');
+        return usable;
+      }
     }
     if (!res.ok) {
       // Only a definite rejection (invalid_grant / 400 / 401 / other 4xx) signs the machine out.
-      let code = ''; try { code = (await res.json())?.error || ''; } catch { /* no body */ }
+      let code = '';
+      try {
+        code = (await res.json())?.error || '';
+      } catch {
+        /* no body */
+      }
       record(`signed out: HTTP ${res.status}${code ? ` ${code}` : ''}`);
       return {};
     }
-    let t; try { t = await res.json(); } catch { record('transient: unreadable response'); return usable; }
-    if (!t?.access_token) { record('transient: no access_token in response'); return usable; }
+    let t;
+    try {
+      t = await res.json();
+    } catch {
+      record('transient: unreadable response');
+      return usable;
+    }
+    if (!t?.access_token) {
+      record('transient: no access_token in response');
+      return usable;
+    }
     const { last_refresh_error: _drop, ...clean } = o2;
     const next = {
       ...clean,
@@ -258,11 +356,16 @@ export async function authHeaders({ fetchImpl = globalThis.fetch, now = Date.now
       expires_at: new Date(now() + (Number(t.expires_in) || 900) * 1000).toISOString(),
       scope: t.scope || o2.scope,
       ...(Number(t.refresh_token_expires_in || t.refresh_expires_in) > 0
-        ? { refresh_expires_at: new Date(now() + Number(t.refresh_token_expires_in || t.refresh_expires_in) * 1000).toISOString() } : {}),
+        ? { refresh_expires_at: new Date(now() + Number(t.refresh_token_expires_in || t.refresh_expires_in) * 1000).toISOString() }
+        : {}),
     };
     saveCredentials({ ...doc2, enforcer: { ...doc2.enforcer, oauth: next } });
     return { Authorization: `Bearer ${next.access_token}` };
-  } catch { return stale; } finally { release(); }
+  } catch {
+    return stale;
+  } finally {
+    release();
+  }
 }
 
 /** A plain 'sign in again' sentence when the browser sign-in can no longer refresh, else null. */
@@ -306,5 +409,11 @@ export function credentialId() {
   if (key) return keyId(key);
   const o = readCredentials()?.enforcer?.oauth;
   if (!o?.client_id) return null;
-  return 'oauth_' + createHash('sha256').update(`${o.client_id}:${o.account_id || ''}`).digest('hex').slice(0, 10);
+  return (
+    'oauth_' +
+    createHash('sha256')
+      .update(`${o.client_id}:${o.account_id || ''}`)
+      .digest('hex')
+      .slice(0, 10)
+  );
 }

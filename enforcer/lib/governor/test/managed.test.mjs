@@ -5,8 +5,16 @@ import assert from 'node:assert/strict';
 import { merge, managedKeys, refresh } from '../src/managed.mjs';
 
 let pass = 0;
-const ok = (label, fn) => { fn(); pass++; console.log('  ok  ' + label); };
-const okAsync = async (label, fn) => { await fn(); pass++; console.log('  ok  ' + label); };
+const ok = (label, fn) => {
+  fn();
+  pass++;
+  console.log('  ok  ' + label);
+};
+const okAsync = async (label, fn) => {
+  await fn();
+  pass++;
+  console.log('  ok  ' + label);
+};
 
 ok('a tenant cap tightens a looser local one, and never the reverse', () => {
   assert.equal(merge({ dollars: 400 }, { dollars: 150 }).dollars, 150);
@@ -36,8 +44,10 @@ ok('the stricter soft mark and the stricter soft action win', () => {
 ok('a setting with no stricter direction is not merged at all', () => {
   // The API refuses these, but a compromised or future server could send them;
   // the merge is the second place that must not act on one.
-  const out = merge({ centralUrl: 'https://api.instruxi.dev', operator: 'me', clients: {} },
-    { centralUrl: 'https://elsewhere.example', operator: 'someone', clients: { '/x': 'y' }, sweepDays: 99 });
+  const out = merge(
+    { centralUrl: 'https://api.instruxi.dev', operator: 'me', clients: {} },
+    { centralUrl: 'https://elsewhere.example', operator: 'someone', clients: { '/x': 'y' }, sweepDays: 99 },
+  );
   assert.equal(out.centralUrl, 'https://api.instruxi.dev');
   assert.equal(out.operator, 'me');
   assert.deepEqual(out.clients, {});
@@ -52,7 +62,15 @@ ok('nothing managed is a no-op, not a reset', () => {
 });
 
 await okAsync('an unreachable control plane leaves the machine on its own config', async () => {
-  const r = await refresh({}, { fetchImpl: async () => { throw new Error('offline'); }, timeoutMs: 10 });
+  const r = await refresh(
+    {},
+    {
+      fetchImpl: async () => {
+        throw new Error('offline');
+      },
+      timeoutMs: 10,
+    },
+  );
   assert.equal(r.ok, false);
   assert.ok(r.detail, 'a failure must say why');
 });

@@ -8,7 +8,11 @@ import { join } from 'node:path';
 const root = mkdtempSync(join(tmpdir(), 'state-'));
 process.env.HOME = join(root, 'home');
 for (const k of ['ENFORCER_STATE_DIR', 'ENFORCER_CONFIG_HOME', 'CLAUDE_CONFIG_DIR']) delete process.env[k];
-let n = 0; const ok = (m) => { n++; console.log('  ok  ' + m); };
+let n = 0;
+const ok = (m) => {
+  n++;
+  console.log('  ok  ' + m);
+};
 const { stateBase } = await import('../src/state.mjs');
 const { legacyStateDir } = await import('../hooks/claude/paths.mjs');
 
@@ -34,7 +38,9 @@ import { statSync } from 'node:fs';
     const row = rows.find((r) => r.name === 'state dir writable, 0700');
     if (process.platform !== 'win32') assert.equal(statSync(process.env.ENFORCER_STATE_DIR).mode & 0o777, 0o700);
     assert.ok(row.ok, row.detail);
-  } finally { process.umask(old); }
+  } finally {
+    process.umask(old);
+  }
   ok('state dir is created 0700 under a permissive umask');
 }
 console.log(`${n} passed, 0 failed`);

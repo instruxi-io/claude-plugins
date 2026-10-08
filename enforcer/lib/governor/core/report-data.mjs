@@ -12,19 +12,38 @@ export function parseSince(s) {
   return +m[1] * UNIT[m[2]];
 }
 
-const readJSON = (f) => { try { return JSON.parse(readFileSync(f, 'utf8')); } catch { return null; } };
-const add = (o, k, n) => { o[k] = (o[k] || 0) + n; };
+const readJSON = (f) => {
+  try {
+    return JSON.parse(readFileSync(f, 'utf8'));
+  } catch {
+    return null;
+  }
+};
+const add = (o, k, n) => {
+  o[k] = (o[k] || 0) + n;
+};
 const round = (n) => Math.round(n * 1e6) / 1e6;
-const top = (o, n = 10) => Object.entries(o).sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)).slice(0, n)
-  .map(([name, count]) => ({ name, count }));
+const top = (o, n = 10) =>
+  Object.entries(o)
+    .sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))
+    .slice(0, n)
+    .map(([name, count]) => ({ name, count }));
 
 function readReceipts(dir) {
   let text = '';
-  try { text = readFileSync(join(dir, 'receipts.jsonl'), 'utf8'); } catch { return []; }
+  try {
+    text = readFileSync(join(dir, 'receipts.jsonl'), 'utf8');
+  } catch {
+    return [];
+  }
   const out = [];
   for (const line of text.split('\n')) {
     if (!line.trim()) continue;
-    try { out.push(JSON.parse(line)); } catch { /* a torn line is skipped */ }
+    try {
+      out.push(JSON.parse(line));
+    } catch {
+      /* a torn line is skipped */
+    }
   }
   return out;
 }
@@ -51,22 +70,41 @@ export function buildReport(dir, { since = '24h', now = Date.now(), verbose = fa
   const projectOf = {};
   for (const r of readReceipts(dir)) if (r.client && r.agent) projectOf[String(r.agent).split(':').pop()] = r.client;
 
-  const perAgent = {}, perProject = {}, perModel = {};
-  let spend = 0, tokens = 0;
+  const perAgent = {},
+    perProject = {},
+    perModel = {};
+  let spend = 0,
+    tokens = 0;
   let files = [];
-  try { files = readdirSync(dir).filter((f) => /^cost-.+\.json$/.test(f)); } catch { /* no state dir */ }
+  try {
+    files = readdirSync(dir).filter((f) => /^cost-.+\.json$/.test(f));
+  } catch {
+    /* no state dir */
+  }
   for (const f of files) {
     const d = readJSON(join(dir, f));
     if (!d || typeof d.usd !== 'number' || !(d.usd >= 0)) continue;
-    let at = d.at; if (typeof at !== 'number') { try { at = statSync(join(dir, f)).mtimeMs; } catch { continue; } }
+    let at = d.at;
+    if (typeof at !== 'number') {
+      try {
+        at = statSync(join(dir, f)).mtimeMs;
+      } catch {
+        continue;
+      }
+    }
     if (at < from || at > now + 60e3) continue;
     const session = f.slice(5, -5);
     spend += d.usd;
     add(perAgent, session, d.usd);
     add(perProject, projectOf[session] || '(unknown)', d.usd);
   }
-  const byTool = {}, errByTool = {}, byDecision = {}, byCode = {}, wouldByRule = {};
-  let wouldDeny = 0, wouldAsk = 0;
+  const byTool = {},
+    errByTool = {},
+    byDecision = {},
+    byCode = {},
+    wouldByRule = {};
+  let wouldDeny = 0,
+    wouldAsk = 0;
   for (const r of receipts) {
     if (r.verdict === 'summary') {
       tokens += Number(r.tokens) || 0;
@@ -80,11 +118,17 @@ export function buildReport(dir, { since = '24h', now = Date.now(), verbose = fa
     add(byDecision, dec, 1);
     add(byCode, `${dec}:${decisionCode(r, checksOff)}`, 1);
     if (r.would && r.would.decision && r.would.decision !== 'allow') {
-      if (r.would.decision === 'deny') wouldDeny++; else wouldAsk++;
+      if (r.would.decision === 'deny') wouldDeny++;
+      else wouldAsk++;
       add(wouldByRule, `${r.would.decision}:${r.would.code || 'unknown'}`, 1);
     }
   }
-  const rounded = (o) => Object.fromEntries(Object.entries(o).sort().map(([k, v]) => [k, round(v)]));
+  const rounded = (o) =>
+    Object.fromEntries(
+      Object.entries(o)
+        .sort()
+        .map(([k, v]) => [k, round(v)]),
+    );
   const rep = {
     window: since,
     receipts: receipts.length,

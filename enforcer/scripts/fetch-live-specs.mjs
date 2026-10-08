@@ -8,7 +8,10 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const out = process.argv[2];
-if (!out) { console.error('usage: fetch-live-specs.mjs <outdir>'); process.exit(2); }
+if (!out) {
+  console.error('usage: fetch-live-specs.mjs <outdir>');
+  process.exit(2);
+}
 const base = (process.env.CONTRACT_BASE_URL || 'https://api.instruxi.dev').replace(/\/+$/, '');
 const SERVICES = { graph: 'graph', enforcer: 'v3', files: 'files', governance: 'governance' };
 mkdirSync(out, { recursive: true });
@@ -22,6 +25,9 @@ for (const [service, name] of Object.entries(SERVICES)) {
     if (!doc.paths) throw new Error('no `paths`: not a swagger document');
     writeFileSync(join(out, `${name}.json`), JSON.stringify(doc));
     console.log(`ok   ${service}: ${url} (${Object.keys(doc.paths).length} paths)`);
-  } catch (e) { failed++; console.error(`FAIL ${service}: ${url}: ${e.message}`); }
+  } catch (e) {
+    failed++;
+    console.error(`FAIL ${service}: ${url}: ${e.message}`);
+  }
 }
 process.exit(failed ? 1 : 0);

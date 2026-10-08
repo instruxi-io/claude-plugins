@@ -72,8 +72,10 @@ test(`every header the plugin names is in the spec (${source})`, () => {
 test('known drift is still drift', () => {
   for (const k of known) {
     assert.ok(k.reason && k.kind && k.id, `known-drift entry needs id, kind and reason: ${JSON.stringify(k)}`);
-    assert.ok(violations.some((v) => v.id === k.id && v.kind === k.kind && (k.field || '') === (v.field || '')),
-      `known drift no longer occurs (fixed? delete it from known-drift.json): ${k.id} ${k.kind} ${k.field || ''}`);
+    assert.ok(
+      violations.some((v) => v.id === k.id && v.kind === k.kind && (k.field || '') === (v.field || '')),
+      `known drift no longer occurs (fixed? delete it from known-drift.json): ${k.id} ${k.kind} ${k.field || ''}`,
+    );
   }
 });
 
@@ -97,7 +99,7 @@ test('a sent field missing from the schema fails', () => {
 test('a read field missing from the schema fails', () => {
   const hb = { ...claim, path: '/graphs/{}/nodes/{}/runs/{}/heartbeat' };
   assert.deepEqual(checkCall({ ...hb, reads: ['data.state', 'data.lease_expires_at', 'warnings'] }, graph), []);
-  const v = checkCall({ ...hb, reads: ['state'] }, graph);   // `state` lives under `data`, not at the envelope
+  const v = checkCall({ ...hb, reads: ['state'] }, graph); // `state` lives under `data`, not at the envelope
   assert.deepEqual([v[0]?.kind, v[0]?.field], ['read', 'state']);
 });
 

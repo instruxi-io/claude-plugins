@@ -14,7 +14,9 @@ function exit0() {
   if (globalThis.__enforcerEvent) throw new HookExit('exit');
   process.exit(0);
 }
-const rethrowExit = (e) => { if (e instanceof HookExit) throw e; };
+const rethrowExit = (e) => {
+  if (e instanceof HookExit) throw e;
+};
 
 // Codex names its tools apply_patch and shell (command may be an argv array).
 // Map them to Edit and Bash so the Edit/Write and Bash rules match.
@@ -47,8 +49,16 @@ export function input(...allowed) {
     const raw = globalThis.__enforcerEvent ? globalThis.__enforcerEvent.input : readFileSync(0, 'utf8');
     ev = raw.trim() ? JSON.parse(raw) : {};
     if (!raw.trim()) Object.defineProperty(ev, 'badStdin', { value: true });
-  } catch { ev = {}; Object.defineProperty(ev, 'badStdin', { value: true }); return ev; }
-  if (!ev || typeof ev !== 'object' || Array.isArray(ev)) { ev = {}; Object.defineProperty(ev, 'badStdin', { value: true }); return ev; }
+  } catch {
+    ev = {};
+    Object.defineProperty(ev, 'badStdin', { value: true });
+    return ev;
+  }
+  if (!ev || typeof ev !== 'object' || Array.isArray(ev)) {
+    ev = {};
+    Object.defineProperty(ev, 'badStdin', { value: true });
+    return ev;
+  }
   if (allowed.length && ev && typeof ev.hook_event_name === 'string' && !allowed.includes(ev.hook_event_name)) exit0();
   return codexNormalize(ev);
 }
@@ -58,7 +68,8 @@ export function input(...allowed) {
 // Claude Code never showed them.
 export function emit(eventName, out, top = {}) {
   const json = JSON.stringify({ ...top, hookSpecificOutput: { hookEventName: eventName, ...out } });
-  if (globalThis.__enforcerEvent) globalThis.__enforcerEvent.out = json; else process.stdout.write(json);
+  if (globalThis.__enforcerEvent) globalThis.__enforcerEvent.out = json;
+  else process.stdout.write(json);
   exit0();
 }
 
@@ -78,7 +89,9 @@ export const pass = (event, top = {}) => emit(event, {}, top);
 
 // Events with no hookSpecificOutput schema (SessionEnd, SubagentStop): Claude
 // Code rejects any JSON naming them, so the only valid answer is none at all.
-export function done() { exit0(); }
+export function done() {
+  exit0();
+}
 
 // What Claude Code's hook JSON MEANS -- the tool map, the match text, the agent
 // id, the billing mode -- is in adapters/claude-code/events.mjs. This file is
@@ -89,28 +102,42 @@ export function done() { exit0(); }
 // "allow": a hook that throws exits 1, which Claude Code treats as non-blocking.
 export function failDecision() {
   let mode;
-  try { mode = loadConfig().failMode; } catch {}
+  try {
+    mode = loadConfig().failMode;
+  } catch {}
   if (mode === 'ask' || mode === 'deny') return mode;
   return headlessFrom(process.env) ? 'deny' : 'ask';
 }
 
 // PreToolUse entry: any throw becomes a deny (headless) or ask, never a pass.
 export async function guardPre(event, fn) {
-  try { await fn(); }
-  catch (e) {
+  try {
+    await fn();
+  } catch (e) {
     rethrowExit(e);
-    let msg = ''; try { msg = String(e?.message || e).slice(0, 300); } catch {}
-    try { process.stderr.write(`enforcer-governor: governor_error: ${msg}\n`); } catch {}
-    emit(event, { permissionDecision: failDecision(),
-      permissionDecisionReason: `enforcer-governor:governor_error ${msg}\nThe governor failed while checking this action, so it is not allowed to proceed unchecked.` });
+    let msg = '';
+    try {
+      msg = String(e?.message || e).slice(0, 300);
+    } catch {}
+    try {
+      process.stderr.write(`enforcer-governor: governor_error: ${msg}\n`);
+    } catch {}
+    emit(event, {
+      permissionDecision: failDecision(),
+      permissionDecisionReason: `enforcer-governor:governor_error ${msg}\nThe governor failed while checking this action, so it is not allowed to proceed unchecked.`,
+    });
   }
 }
 
 // Every other entry: a failure here decides nothing, so report it and exit 0.
 export async function guard(fn) {
-  try { await fn(); } catch (e) {
+  try {
+    await fn();
+  } catch (e) {
     rethrowExit(e);
-    try { process.stderr.write(`enforcer-governor: hook error: ${String(e?.message || e).slice(0, 300)}\n`); } catch {}
+    try {
+      process.stderr.write(`enforcer-governor: hook error: ${String(e?.message || e).slice(0, 300)}\n`);
+    } catch {}
     exit0();
   }
 }

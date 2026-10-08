@@ -21,31 +21,85 @@ other dispatcher flags pass through; see docs/graph/DISPATCHER.md
 `;
 
 export const stateDir = (graph, env = process.env) => join(env.ENFORCER_CONFIG_HOME || join(homedir(), '.config', 'enforcer'), 'dispatch', graph);
-const readJson = (p) => { try { return JSON.parse(readFileSync(p, 'utf8')); } catch { return null; } };
-const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
-const tailLine = (p) => { try { return readFileSync(p, 'utf8').split('\n').filter(Boolean).at(-1) || ''; } catch { return ''; } };
+const readJson = (p) => {
+  try {
+    return JSON.parse(readFileSync(p, 'utf8'));
+  } catch {
+    return null;
+  }
+};
+const alive = (pid) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
+const tailLine = (p) => {
+  try {
+    return readFileSync(p, 'utf8').split('\n').filter(Boolean).at(-1) || '';
+  } catch {
+    return '';
+  }
+};
 
 export async function start(argv, env = process.env) {
   const graph = argv.find((a, i) => !a.startsWith('-') && !['--workers', '--model', '--repo-root', '--worker-rules'].includes(argv[i - 1]));
-  const flag = (n) => { const i = argv.indexOf(n); return i >= 0 ? argv[i + 1] : undefined; };
+  const flag = (n) => {
+    const i = argv.indexOf(n);
+    return i >= 0 ? argv[i + 1] : undefined;
+  };
   const repoRoot = flag('--repo-root');
   const workerRules = flag('--worker-rules');
-  if (workerRules !== undefined && !['on', 'off'].includes(workerRules)) { process.stderr.write('enforcer dispatch: --worker-rules must be on or off\n'); return 2; }
-  if (process.platform === 'win32') { process.stderr.write('enforcer dispatch: not supported on Windows (workers need process groups and POSIX signals); use WSL\n'); return 2; }
-  if (argv.includes('--dry-run')) { // plan only: nothing is claimed, created, launched or written
+  if (workerRules !== undefined && !['on', 'off'].includes(workerRules)) {
+    process.stderr.write('enforcer dispatch: --worker-rules must be on or off\n');
+    return 2;
+  }
+  if (process.platform === 'win32') {
+    process.stderr.write('enforcer dispatch: not supported on Windows (workers need process groups and POSIX signals); use WSL\n');
+    return 2;
+  }
+  if (argv.includes('--dry-run')) {
+    // plan only: nothing is claimed, created, launched or written
     const { main: runtime } = await import('./dispatch/run.mjs');
     return runtime(['--graph', graph, ...argv.filter((a) => a !== graph)], env);
   }
   const res = await preflight({ graph, env, ...(workerRules ? { workerRules } : {}), ...(repoRoot ? { repoRoot } : {}) });
   for (const r of res) process.stdout.write(`${r.ok ? 'ok  ' : 'fail'}  ${r.name}: ${r.line}\n`);
-  if (res.some((r) => !r.ok)) { process.stderr.write('enforcer dispatch: preflight failed, nothing started\n'); return 2; }
+  if (res.some((r) => !r.ok)) {
+    process.stderr.write('enforcer dispatch: preflight failed, nothing started\n');
+    return 2;
+  }
   const dir = stateDir(graph, env);
   mkdirSync(dir, { recursive: true });
   const old = readJson(join(dir, 'pids.json'));
-  if (old?.dispatcher && alive(old.dispatcher)) { process.stderr.write(`enforcer dispatch: already running for ${graph} (pid ${old.dispatcher}); see: enforcer dispatch status ${graph}\n`); return 3; }
-  const extra = argv.filter((a, i) => a !== graph && !['--workers', '--model', '--repo-root', '--worker-rules'].includes(a) && !['--workers', '--model', '--repo-root', '--worker-rules'].includes(argv[i - 1]));
-  const args = [join(HERE, '../bin/enforcer'), 'dispatch', 'run', '--graph', graph, '--workers', String(flag('--workers') || DEFAULTS.workers),
-    '--model', flag('--model') || DEFAULTS.model, '--state-dir', dir, ...(workerRules ? ['--worker-rules', workerRules] : []), ...(repoRoot ? ['--repo-root', repoRoot] : []), ...extra];
+  if (old?.dispatcher && alive(old.dispatcher)) {
+    process.stderr.write(`enforcer dispatch: already running for ${graph} (pid ${old.dispatcher}); see: enforcer dispatch status ${graph}\n`);
+    return 3;
+  }
+  const extra = argv.filter(
+    (a, i) =>
+      a !== graph &&
+      !['--workers', '--model', '--repo-root', '--worker-rules'].includes(a) &&
+      !['--workers', '--model', '--repo-root', '--worker-rules'].includes(argv[i - 1]),
+  );
+  const args = [
+    join(HERE, '../bin/enforcer'),
+    'dispatch',
+    'run',
+    '--graph',
+    graph,
+    '--workers',
+    String(flag('--workers') || DEFAULTS.workers),
+    '--model',
+    flag('--model') || DEFAULTS.model,
+    '--state-dir',
+    dir,
+    ...(workerRules ? ['--worker-rules', workerRules] : []),
+    ...(repoRoot ? ['--repo-root', repoRoot] : []),
+    ...extra,
+  ];
   const out = openSync(join(dir, 'dispatcher.out'), 'a');
   const child = spawn(process.execPath, args, { detached: true, stdio: ['ignore', out, out], env });
   child.unref();
@@ -61,7 +115,10 @@ export function failedLines(n) {
   const out = [];
   if (failed.length && v.threshold != null) out.push(`    threshold ${v.threshold}`);
   for (const f of failed) {
-    if (typeof f !== 'object' || f === null) { out.push(`    failed: ${f}`); continue; }
+    if (typeof f !== 'object' || f === null) {
+      out.push(`    failed: ${f}`);
+      continue;
+    }
     const p = f.probability ?? f.p ?? f.confidence;
     const what = f.criterion ?? f.line ?? f.text ?? (f.index != null ? `criterion ${f.index}` : '?');
     out.push(`    failed: ${what}${p != null ? ` (probability ${p})` : ''}`);
@@ -69,7 +126,7 @@ export function failedLines(n) {
   return out;
 }
 
-const last = (arr) => arr.length ? arr[arr.length - 1] : null;
+const last = (arr) => (arr.length ? arr[arr.length - 1] : null);
 
 /** Plain-language status. Returns the text. */
 export async function statusText(graph, env = process.env) {
@@ -82,7 +139,8 @@ export async function statusText(graph, env = process.env) {
   const blockedKeys = new Set();
   const ci = [];
   for (const l of log) {
-    const m = /LANDING-BLOCKED\s+(\S+?)[: ]/.exec(l); if (m) blockedKeys.add(m[1]);
+    const m = /LANDING-BLOCKED\s+(\S+?)[: ]/.exec(l);
+    if (m) blockedKeys.add(m[1]);
     if (/CI-UNAVAILABLE/.test(l)) ci.push(l);
   }
   const done = nodes.filter((n) => n.status === 'done');
@@ -92,7 +150,10 @@ export async function statusText(graph, env = process.env) {
   const gates = open.filter((n) => ['gate', 'release'].includes(n.type));
   const review = open.filter((n) => n.status === 'verifying' || ['rejected', 'escalated'].includes(n.verdict?.state || n.verification?.state));
   const needsYou = open.filter((n) => gates.includes(n) || review.includes(n) || n.status === 'failed');
-  const mins = (n) => { const t = Date.parse(n.updated_at || n.started_at || ''); return Number.isFinite(t) ? Math.max(0, Math.round((Date.now() - t) / 60000)) : '?'; };
+  const mins = (n) => {
+    const t = Date.parse(n.updated_at || n.started_at || '');
+    return Number.isFinite(t) ? Math.max(0, Math.round((Date.now() - t) / 60000)) : '?';
+  };
   const model = (n) => ({ mechanical: 'haiku', standard: 'sonnet', deep: 'opus' })[n.data?.tier] || DEFAULTS.model;
   const L = [];
   L.push(`dispatcher: ${running ? `running (pid ${pids.dispatcher})` : 'not running'}${ci.length && running ? '; blocked on CI' : ''}`);
@@ -117,13 +178,19 @@ export async function statusText(graph, env = process.env) {
 export async function stop(graph, env = process.env, waitMs = 600000) {
   const dir = stateDir(graph, env);
   const pids = readJson(join(dir, 'pids.json'));
-  if (!pids?.dispatcher || !alive(pids.dispatcher)) { process.stdout.write(`no dispatcher is running for ${graph}\n`); return 0; }
+  if (!pids?.dispatcher || !alive(pids.dispatcher)) {
+    process.stdout.write(`no dispatcher is running for ${graph}\n`);
+    return 0;
+  }
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, 'STOP'), '');
   process.stdout.write(`stop requested for ${graph}: running workers finish, no new ones start\n`);
   const end = Date.now() + waitMs;
   while (alive(pids.dispatcher) && Date.now() < end) await new Promise((r) => setTimeout(r, 1000));
-  if (alive(pids.dispatcher)) { process.stdout.write(`still draining (pid ${pids.dispatcher}); check: enforcer dispatch status ${graph}\n`); return 1; }
+  if (alive(pids.dispatcher)) {
+    process.stdout.write(`still draining (pid ${pids.dispatcher}); check: enforcer dispatch status ${graph}\n`);
+    return 1;
+  }
   process.stdout.write('dispatcher stopped\n');
   rmSync(join(dir, 'STOP'), { force: true });
   return 0;
@@ -131,26 +198,47 @@ export async function stop(graph, env = process.env, waitMs = 600000) {
 
 export async function main(argv, env = process.env) {
   const [sub, ...rest] = argv;
-  if (sub === undefined) { process.stdout.write(HELP); return 2; }
-  if (sub === '--help' || sub === '-h') { process.stdout.write(HELP); return 0; }
+  if (sub === undefined) {
+    process.stdout.write(HELP);
+    return 2;
+  }
+  if (sub === '--help' || sub === '-h') {
+    process.stdout.write(HELP);
+    return 0;
+  }
   try {
     if (sub === 'status') {
       const graph = rest[0];
       if (!graph) {
         let names = [];
-        try { names = readdirSync(dirname(stateDir('x', env))).filter((d) => alive(readJson(join(dirname(stateDir('x', env)), d, 'pids.json'))?.dispatcher || 0)); } catch {}
-        process.stdout.write(names.length ? names.map((d) => `running: ${d}   (enforcer dispatch status ${d})\n`).join('') : 'no dispatcher is running; start one with: enforcer dispatch <graph>\n');
+        try {
+          names = readdirSync(dirname(stateDir('x', env))).filter((d) => alive(readJson(join(dirname(stateDir('x', env)), d, 'pids.json'))?.dispatcher || 0));
+        } catch {}
+        process.stdout.write(
+          names.length
+            ? names.map((d) => `running: ${d}   (enforcer dispatch status ${d})\n`).join('')
+            : 'no dispatcher is running; start one with: enforcer dispatch <graph>\n',
+        );
         return 0;
       }
-      process.stdout.write(await statusText(graph, env)); return 0;
+      process.stdout.write(await statusText(graph, env));
+      return 0;
     }
     if (sub === 'stop') {
-      if (!rest[0]) { process.stderr.write('usage: enforcer dispatch stop <graph>\n'); return 2; }
+      if (!rest[0]) {
+        process.stderr.write('usage: enforcer dispatch stop <graph>\n');
+        return 2;
+      }
       return await stop(rest[0], env);
     }
     if (sub === 'prune') {
       const i = rest.indexOf('--repo-root');
-      if (rest.includes('--help') || rest.includes('-h')) { process.stdout.write('usage: enforcer dispatch prune [--yes] [--repo-root dir]\n  without --yes: dry run, print what would be removed; --yes removes merged, clean, unheld worktrees and their local branches\n'); return 0; }
+      if (rest.includes('--help') || rest.includes('-h')) {
+        process.stdout.write(
+          'usage: enforcer dispatch prune [--yes] [--repo-root dir]\n  without --yes: dry run, print what would be removed; --yes removes merged, clean, unheld worktrees and their local branches\n',
+        );
+        return 0;
+      }
       const repoRoot = i >= 0 ? rest[i + 1] : join(homedir(), 'apps');
       const { pruneWorktrees, liveWorkerKeys } = await import('./dispatch/prune.mjs');
       const liveKeys = liveWorkerKeys(dirname(stateDir('x', env)));
@@ -159,5 +247,8 @@ export async function main(argv, env = process.env) {
     }
     if (sub === 'run') return await (await import('./dispatch/run.mjs')).main(rest, env); // the foreground dispatcher `start` detaches
     return await start(argv, env);
-  } catch (e) { process.stderr.write(`enforcer dispatch: ${e.message}\n`); return 2; }
+  } catch (e) {
+    process.stderr.write(`enforcer dispatch: ${e.message}\n`);
+    return 2;
+  }
 }

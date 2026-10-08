@@ -41,14 +41,16 @@ const TTL_MS = 24 * 60 * 60 * 1000;
 
 /** A cap where a smaller number is tighter, and 0 means "no cap". */
 const cap = (managed, local) => {
-  const m = Number(managed), l = Number(local);
-  if (!Number.isFinite(m) || m <= 0) return local;   // managed says "no cap"
-  if (!Number.isFinite(l) || l <= 0) return m;       // local says "no cap"
+  const m = Number(managed),
+    l = Number(local);
+  if (!Number.isFinite(m) || m <= 0) return local; // managed says "no cap"
+  if (!Number.isFinite(l) || l <= 0) return m; // local says "no cap"
   return Math.min(m, l);
 };
 /** A plain number where smaller is tighter (0 is a real value, not "off"). */
 const lower = (managed, local) => {
-  const m = Number(managed), l = Number(local);
+  const m = Number(managed),
+    l = Number(local);
   if (!Number.isFinite(m)) return local;
   if (!Number.isFinite(l)) return m;
   return Math.min(m, l);
@@ -60,7 +62,7 @@ const managedWins = (managed, local) => (managed === undefined ? local : managed
 
 const MERGE = {
   dollars: cap,
-  soft: lower,                 // the soft mark is a fraction: earlier is stricter
+  soft: lower, // the soft mark is a fraction: earlier is stricter
   softAction: (m, l) => (m === 'deny' || l === 'deny' ? 'deny' : l),
   dailyLimit: cap,
   weeklyLimit: cap,
@@ -96,7 +98,9 @@ export function merge(local = {}, managed = {}) {
 
 /** Which settings this machine is not free to loosen, for /config and /status. */
 export function managedKeys(managed = {}) {
-  return Object.keys(managed || {}).filter(k => MERGE[k]).sort();
+  return Object.keys(managed || {})
+    .filter((k) => MERGE[k])
+    .sort();
 }
 
 // ── the cache ───────────────────────────────────────────────────────────────
@@ -118,7 +122,9 @@ export const ENV_OVERRIDES = Object.freeze({
 export function envOverrides(env = process.env) {
   const out = {};
   for (const [key, name] of Object.entries(ENV_OVERRIDES)) {
-    const v = String(env?.[name] ?? '').trim().toLowerCase();
+    const v = String(env?.[name] ?? '')
+      .trim()
+      .toLowerCase();
     if (v === 'on') out[key] = true;
     else if (v === 'off') out[key] = false;
   }
@@ -139,7 +145,9 @@ export function stale({ now = Date.now } = {}) {
   try {
     const d = JSON.parse(readFileSync(CACHE, 'utf8'));
     return d.cred !== credentialId() || now() - (d.at || 0) > REFRESH_MS;
-  } catch { return true; }
+  } catch {
+    return true;
+  }
 }
 
 export function readManaged({ now = Date.now } = {}) {
@@ -151,14 +159,18 @@ export function readManaged({ now = Date.now } = {}) {
     if (d.cred && d.cred !== credentialId()) return {};
     if (now() - (d.at || 0) > TTL_MS) return {};
     return d.settings;
-  } catch { return {}; }
+  } catch {
+    return {};
+  }
 }
 
 function writeManaged(settings, at) {
   try {
     mkdirSync(DIR, { recursive: true });
     writeFileSync(CACHE, JSON.stringify({ at, cred: credentialId(), settings }));
-  } catch { /* a cache we cannot write is a floor we do not apply */ }
+  } catch {
+    /* a cache we cannot write is a floor we do not apply */
+  }
 }
 
 /**
@@ -182,8 +194,7 @@ export async function refresh(cfg = {}, { fetchImpl = hookFetch, now = Date.now,
     writeManaged(settings, now());
     return { ok: true, settings };
   } catch (e) {
-    const detail = e?.name === 'TimeoutError' || e?.name === 'AbortError'
-      ? `no answer within ${timeoutMs}ms` : 'Enforcer could not be reached';
+    const detail = e?.name === 'TimeoutError' || e?.name === 'AbortError' ? `no answer within ${timeoutMs}ms` : 'Enforcer could not be reached';
     return { ok: false, detail };
   }
 }
@@ -200,11 +211,11 @@ const CHECK_NAMES = Object.freeze({ rulesOn: 'rules', budgetOn: 'budget', policy
 export function decisioningLine(cfg = {}, { managed = readManaged(), env = process.env } = {}) {
   const fromEnv = envOverrides(env);
   const applied = merge(withEnv(cfg, env), managed);
-  const on = Object.keys(CHECK_NAMES).filter(k => applied[k] === true).map(k => {
-    const mark = managed[k] === true ? ' (organisation)' : k in fromEnv ? ' (environment)' : '';
-    return CHECK_NAMES[k] + mark;
-  });
-  return on.length
-    ? `Decisioning: ON (${on.join(', ')})`
-    : 'Decisioning: OFF (report only). Turn on: enforcer governor enable rules';
+  const on = Object.keys(CHECK_NAMES)
+    .filter((k) => applied[k] === true)
+    .map((k) => {
+      const mark = managed[k] === true ? ' (organisation)' : k in fromEnv ? ' (environment)' : '';
+      return CHECK_NAMES[k] + mark;
+    });
+  return on.length ? `Decisioning: ON (${on.join(', ')})` : 'Decisioning: OFF (report only). Turn on: enforcer governor enable rules';
 }

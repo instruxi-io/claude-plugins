@@ -48,7 +48,11 @@ export function sweep(cfg = {}, { now = Date.now(), dir = DIR } = {}) {
   const cutoff = now - days * DAY_MS;
 
   let names = [];
-  try { names = readdirSync(dir); } catch { return out; }
+  try {
+    names = readdirSync(dir);
+  } catch {
+    return out;
+  }
 
   for (const name of names) {
     if (!SCRATCH.test(name)) continue;
@@ -61,7 +65,9 @@ export function sweep(cfg = {}, { now = Date.now(), dir = DIR } = {}) {
       unlinkSync(path);
       out.removed++;
       out.bytes += st.size;
-    } catch { out.skipped++; }   // raced with a live session, or not ours to delete
+    } catch {
+      out.skipped++;
+    } // raced with a live session, or not ours to delete
   }
   return out;
 }

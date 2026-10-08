@@ -20,7 +20,13 @@ test('real worker end to end', { skip: enabled ? false : reason, timeout: 600_00
   const home = join(work, 'home');
   mkdirSync(tree, { recursive: true });
   mkdirSync(home, { recursive: true });
-  const node = { node_id: 'n1', key: 'hello-file', title: 'Create hello.txt', description: 'Create a file hello.txt in the current directory containing the word hello.', acceptance: ['hello.txt exists and contains hello'] };
+  const node = {
+    node_id: 'n1',
+    key: 'hello-file',
+    title: 'Create hello.txt',
+    description: 'Create a file hello.txt in the current directory containing the word hello.',
+    acceptance: ['hello.txt exists and contains hello'],
+  };
   const stub = await startNodeStub({ node });
   mkdirSync(join(tree, '.enforcer'), { recursive: true });
   writeFileSync(join(tree, '.enforcer', 'graph.json'), JSON.stringify({ graph_id: 'g1', base_url: stub.url, api_key_env: 'GRAPH_API_KEY' }) + '\n');
@@ -32,14 +38,21 @@ test('real worker end to end', { skip: enabled ? false : reason, timeout: 600_00
     const out = await new Promise((resolve) => {
       const c = spawn(cmd[0], cmd.slice(1), { cwd: tree, env, stdio: ['ignore', 'pipe', 'pipe'] });
       let o = '';
-      c.stdout.on('data', (d) => { o += d; });
-      c.stderr.on('data', (d) => { o += d; });
+      c.stdout.on('data', (d) => {
+        o += d;
+      });
+      c.stderr.on('data', (d) => {
+        o += d;
+      });
       c.on('close', () => resolve(o));
     });
     const tail = out.slice(-2000);
     assert.ok(stub.claims >= 1, `node was claimed\n${tail}`);
     assert.ok(stub.heartbeats >= 1, 'at least one heartbeat arrived');
-    assert.ok(stub.reports.some((r) => Array.isArray(r.evidence) && r.evidence.length > 0), 'the report carried evidence');
+    assert.ok(
+      stub.reports.some((r) => Array.isArray(r.evidence) && r.evidence.length > 0),
+      'the report carried evidence',
+    );
     assert.ok(stub.completed, 'the run was completed');
     assert.ok(existsSync(join(tree, 'hello.txt')) && /hello/.test(readFileSync(join(tree, 'hello.txt'), 'utf8')), 'hello.txt exists');
   } finally {

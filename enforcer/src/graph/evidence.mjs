@@ -18,32 +18,62 @@ export function pyDumps(v) {
   if (typeof v === 'string') return JSON.stringify(v).replace(/[\u007f-￿]/g, (c) => '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0'));
   if (typeof v === 'number' || typeof v === 'boolean') return JSON.stringify(v);
   if (Array.isArray(v)) return '[' + v.map(pyDumps).join(', ') + ']';
-  return '{' + Object.entries(v).filter(([, x]) => x !== undefined).map(([k, x]) => `${pyDumps(String(k))}: ${pyDumps(x)}`).join(', ') + '}';
+  return (
+    '{' +
+    Object.entries(v)
+      .filter(([, x]) => x !== undefined)
+      .map(([k, x]) => `${pyDumps(String(k))}: ${pyDumps(x)}`)
+      .join(', ') +
+    '}'
+  );
 }
 
 // wx-lockfile, as governor/core/store.mjs: stale only when the owner pid is dead.
 const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
-const alive = (pid) => { try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; } };
+const alive = (pid) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return e.code === 'EPERM';
+  }
+};
 function acquire(lock, waitMs = 5000) {
   const deadline = Date.now() + waitMs;
   const token = randomBytes(8).toString('hex');
   for (;;) {
     try {
       const fd = openSync(lock, 'wx', 0o600);
-      try { writeSync(fd, `${process.pid}:${token}`); } finally { closeSync(fd); }
+      try {
+        writeSync(fd, `${process.pid}:${token}`);
+      } finally {
+        closeSync(fd);
+      }
       return token;
     } catch {}
     if (Date.now() > deadline) return null;
     try {
       const [pid] = readFileSync(lock, 'utf8').trim().split(':');
-      if (+pid > 0 && !alive(+pid)) { try { unlinkSync(lock); } catch {} continue; }
-      if (!(+pid > 0) && Date.now() - statSync(lock).mtimeMs > 5000) { try { unlinkSync(lock); } catch {} continue; }
+      if (+pid > 0 && !alive(+pid)) {
+        try {
+          unlinkSync(lock);
+        } catch {}
+        continue;
+      }
+      if (!(+pid > 0) && Date.now() - statSync(lock).mtimeMs > 5000) {
+        try {
+          unlinkSync(lock);
+        } catch {}
+        continue;
+      }
     } catch {}
     sleep(5);
   }
 }
 function release(lock, token) {
-  try { if (readFileSync(lock, 'utf8').split(':')[1] === token) unlinkSync(lock); } catch {}
+  try {
+    if (readFileSync(lock, 'utf8').split(':')[1] === token) unlinkSync(lock);
+  } catch {}
 }
 
 /** Never throws. One O_APPEND write per record under the lock; past `cap` the raw output is dropped, then the record. */
@@ -60,28 +90,43 @@ export function appendEvidence(sid, record, cap = RAW_RUN_CAP) {
         let line = pyDumps(record) + '\n';
         const isObj = record && typeof record === 'object' && !Array.isArray(record);
         if (size + Buffer.byteLength(line) > cap && isObj && 'raw' in record) {
-          record = { ...record }; delete record.raw;
+          record = { ...record };
+          delete record.raw;
           record.raw_truncated = `run raw cap of ${cap} bytes reached`;
           line = pyDumps(record) + '\n';
         }
         if (size + Buffer.byteLength(line) > cap) return false;
         writeSync(fd, Buffer.from(line));
         return true;
-      } finally { closeSync(fd); }
-    } finally { release(lock, token); }
-  } catch { return false; }
+      } finally {
+        closeSync(fd);
+      }
+    } finally {
+      release(lock, token);
+    }
+  } catch {
+    return false;
+  }
 }
 
 export function sweepSessions(maxAgeS = SESSION_MAX_AGE_S, now = Date.now() / 1000) {
   let removed = 0;
   for (const d of [evidenceDir(), dataDir()]) {
-    let names; try { names = readdirSync(d); } catch { continue; }
+    let names;
+    try {
+      names = readdirSync(d);
+    } catch {
+      continue;
+    }
     for (const n of names) {
       if (!/\.(jsonl|json|count)$/.test(n)) continue;
       const f = join(d, n);
       try {
         const st = statSync(f);
-        if (st.isFile() && now - st.mtimeMs / 1000 > maxAgeS) { rmSync(f); removed++; }
+        if (st.isFile() && now - st.mtimeMs / 1000 > maxAgeS) {
+          rmSync(f);
+          removed++;
+        }
       } catch {}
     }
   }
@@ -90,11 +135,21 @@ export function sweepSessions(maxAgeS = SESSION_MAX_AGE_S, now = Date.now() / 10
 
 export function loadEvidence(sid, runId = null) {
   const out = [];
-  let text; try { text = readFileSync(evidencePath(sid), 'utf8'); } catch { return out; }
+  let text;
+  try {
+    text = readFileSync(evidencePath(sid), 'utf8');
+  } catch {
+    return out;
+  }
   for (let line of text.split('\n')) {
     line = line.trim();
     if (!line) continue;
-    let rec; try { rec = JSON.parse(line); } catch { continue; }
+    let rec;
+    try {
+      rec = JSON.parse(line);
+    } catch {
+      continue;
+    }
     if (rec && typeof rec === 'object' && !Array.isArray(rec) && rec.kind) {
       if (runId && rec._run && rec._run !== runId) continue;
       out.push(rec);
@@ -103,14 +158,21 @@ export function loadEvidence(sid, runId = null) {
   return out;
 }
 
-export function clearEvidence(sid) { try { rmSync(evidencePath(sid)); } catch {} }
+export function clearEvidence(sid) {
+  try {
+    rmSync(evidencePath(sid));
+  } catch {}
+}
 
 export const GATE_RE = /verify\.sh|go test|npm (run )?(check|test)|land-pr|pytest|test\/run\.sh|cargo test|make (test|verify)/;
 export const PR_RE = /https?:\/\/github\.com\/[^/\s"')]+\/[^/\s"')]+\/pull\/\d+/;
 
 export const isGate = (r) => r.kind === 'command' && GATE_RE.test(r.cmd || '');
 /** The internal run marker leaves as `run_id`, so every evidence item names the run it was captured under. */
-export function stripInternal(rec) { const { _run, ...rest } = rec; return _run ? { ...rest, run_id: _run } : rest; }
+export function stripInternal(rec) {
+  const { _run, ...rest } = rec;
+  return _run ? { ...rest, run_id: _run } : rest;
+}
 
 /** The PR-body footer line that joins a pull request to its run. */
 export const prFooter = (runId) => `Enforcer-Run: ${runId}`;
@@ -138,7 +200,10 @@ export function selectEvidence(records, cap = EVIDENCE_CAP) {
   const lastIf = (a, n) => (n > 0 ? a.slice(-n) : []);
   const keep = last(failed, cap);
   const room = cap - keep.length;
-  const gates = last(otherCmd.filter(([, r]) => isGate(r)), Math.max(room, 0));
+  const gates = last(
+    otherCmd.filter(([, r]) => isGate(r)),
+    Math.max(room, 0),
+  );
   const gset = new Set(gates.map(([i]) => i));
   const rest = otherCmd.filter(([i]) => !gset.has(i));
   let tail = [...gates];

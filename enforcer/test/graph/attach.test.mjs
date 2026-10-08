@@ -15,7 +15,12 @@ const REMEMBER = 'mcp__plugin_enforcer_enforcer__graph_remember';
 const NEXT = 'mcp__plugin_enforcer_enforcer__graph_next_work';
 
 let n = 0;
-function fresh(hints = [{ criterion: 'c1', kind: 'check' }, { criterion: 'c2', kind: 'file' }]) {
+function fresh(
+  hints = [
+    { criterion: 'c1', kind: 'check' },
+    { criterion: 'c2', kind: 'file' },
+  ],
+) {
   const root = mkdtempSync(join(realpathSync(tmpdir()), 'attach-'));
   process.env.ENFORCER_STATE_DIR = join(root, 'state');
   delete process.env.GRAPH_EVIDENCE_MODE;
@@ -23,7 +28,11 @@ function fresh(hints = [{ criterion: 'c1', kind: 'check' }, { criterion: 'c2', k
   saveRun(sid, { run_id: 'r1', node_id: 'n1', graph_id: 'g1', claimed_at: '2026-01-01T00:00:00Z', acceptance_evidence: hints });
   return { root, sid };
 }
-const rep = (sid, extra = {}, tool = REPORT) => ({ session_id: sid, tool_name: tool, tool_input: { graph: 'g', node_id: 'n1', run_id: 'r1', status: 'succeeded', report: 'x', ...extra } });
+const rep = (sid, extra = {}, tool = REPORT) => ({
+  session_id: sid,
+  tool_name: tool,
+  tool_input: { graph: 'g', node_id: 'n1', run_id: 'r1', status: 'succeeded', report: 'x', ...extra },
+});
 const ui = (o) => o?.hookSpecificOutput?.updatedInput;
 const big = 'x'.repeat(5000);
 
@@ -31,7 +40,12 @@ test('denied report uploads nothing', async () => {
   const { sid } = fresh();
   appendEvidence(sid, { kind: 'command', cmd: 'echo hi', exit: 0, output: 'hi', raw: big, _run: 'r1' });
   let uploads = 0;
-  const out = await attachEvidence(rep(sid), { upload: async () => { uploads++; return null; } });
+  const out = await attachEvidence(rep(sid), {
+    upload: async () => {
+      uploads++;
+      return null;
+    },
+  });
   assert.equal(out.hookSpecificOutput.permissionDecision, 'deny');
   assert.match(out.hookSpecificOutput.permissionDecisionReason, /criterion 2/);
   assert.equal(uploads, 0);
@@ -65,14 +79,27 @@ test('PR URL is resolved, not trusted', async () => {
   assert.equal(ev.label, 'pull request NOT FOUND');
   const ok = checkPr(url, () => ({ status: 0, stdout: JSON.stringify({ state: 'MERGED', title: 'T', mergedAt: '2026-01-01', url }) }));
   assert.match(ok.output, /state=MERGED merged=2026-01-01/);
-  assert.equal(checkPr('not a url', () => { throw new Error('no'); }), null);
-  assert.equal(checkPr(url, () => null), null); // no gh: fail open
+  assert.equal(
+    checkPr('not a url', () => {
+      throw new Error('no');
+    }),
+    null,
+  );
+  assert.equal(
+    checkPr(url, () => null),
+    null,
+  ); // no gh: fail open
 });
 
 test('usage is attached from the transcript', async () => {
   const { root, sid } = fresh();
   const tp = join(root, 't.jsonl');
-  const line = (id, ts) => JSON.stringify({ type: 'assistant', timestamp: ts, message: { id, model: 'm1', usage: { input_tokens: 10, output_tokens: 5, cache_read_input_tokens: 2, cache_creation_input_tokens: 1 }, content: [] } });
+  const line = (id, ts) =>
+    JSON.stringify({
+      type: 'assistant',
+      timestamp: ts,
+      message: { id, model: 'm1', usage: { input_tokens: 10, output_tokens: 5, cache_read_input_tokens: 2, cache_creation_input_tokens: 1 }, content: [] },
+    });
   writeFileSync(tp, [line('a', '2025-12-31T00:00:00Z'), line('b', '2026-01-02T00:00:00Z'), line('b', '2026-01-02T00:00:01Z')].join('\n'));
   appendEvidence(sid, { kind: 'command', cmd: 'cat f', exit: 0, output: 'o', _run: 'r1' });
   const out = await attachEvidence({ ...rep(sid), transcript_path: tp }, {});
@@ -99,11 +126,16 @@ test('client is hooks=on only once a capture marker exists', async () => {
 });
 
 test('upload sets file id and always drops raw', async () => {
-  const items = [{ kind: 'command', raw: big }, { kind: 'command', raw: 'short' }];
+  const items = [
+    { kind: 'command', raw: big },
+    { kind: 'command', raw: 'short' },
+  ];
   process.env.GRAPH_FILES_BASE_URL = 'http://files.test';
   try {
     await attachFiles(items, {}, async () => '11111111-2222-3333-4444-555555555555');
-  } finally { delete process.env.GRAPH_FILES_BASE_URL; }
+  } finally {
+    delete process.env.GRAPH_FILES_BASE_URL;
+  }
   assert.equal(items[0].file, '11111111-2222-3333-4444-555555555555');
   assert.equal(items[0].file_bytes, 5000);
   assert.equal(items[0].raw, undefined);
@@ -121,13 +153,17 @@ test('garbage input is silent; context mode hands evidence over', async () => {
     const out = await attachEvidence(rep(sid), {});
     assert.match(out.hookSpecificOutput.additionalContext, /VERBATIM/);
     assert.equal(out.hookSpecificOutput.updatedInput, undefined);
-  } finally { delete process.env.GRAPH_EVIDENCE_MODE; }
+  } finally {
+    delete process.env.GRAPH_EVIDENCE_MODE;
+  }
 });
 
 function freshAcc(acceptance) {
   const { root, sid } = fresh([]);
   saveRun(sid, { run_id: 'r1', node_id: 'n1', graph_id: 'g1', key: 'k', claimed_at: '2026-01-01T00:00:00Z', acceptance_evidence: [], acceptance });
-  const cwd = join(root, 'wt'); mkdirSync(cwd); writeFileSync(join(cwd, 'f.txt'), 'hello\n');
+  const cwd = join(root, 'wt');
+  mkdirSync(cwd);
+  writeFileSync(join(cwd, 'f.txt'), 'hello\n');
   return { sid, cwd };
 }
 
@@ -158,7 +194,10 @@ test('acceptance lines past the time budget are noted, not run; cheap lines run 
   const { sid, cwd } = freshAcc([slow, slow, 'ls f.txt prints the file']);
   const out = await attachEvidence({ ...rep(sid), cwd }, { acceptanceTimeoutMs: 300, acceptanceBudgetMs: 700 });
   const ev = ui(out).evidence;
-  assert.ok(ev.some((e) => e.cmd === 'ls f.txt' && e.exit === 0), 'the cheap ls ran first');
+  assert.ok(
+    ev.some((e) => e.cmd === 'ls f.txt' && e.exit === 0),
+    'the cheap ls ran first',
+  );
   assert.equal(ev.filter((e) => e.kind === 'note' && /did not finish/.test(e.text)).length, 1, 'one slow line ran, timed out, and was noted');
   assert.equal(ev.filter((e) => e.kind === 'note' && /time budget/.test(e.text)).length, 1, 'the other slow line was noted as unreached');
 });

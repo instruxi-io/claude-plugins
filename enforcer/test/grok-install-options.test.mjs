@@ -14,7 +14,10 @@ test('graph-only install writes no governor hook', async () => {
   const home = mk();
   await install({ home, yes: true, options: { graphOnly: true }, ...quiet });
   const j = JSON.parse(hooksOf(home));
-  const cmds = Object.values(j.hooks).flat().flatMap((g) => g.hooks.map((h) => h.command)).filter((c) => / event /.test(c));
+  const cmds = Object.values(j.hooks)
+    .flat()
+    .flatMap((g) => g.hooks.map((h) => h.command))
+    .filter((c) => / event /.test(c));
   assert.ok(cmds.length > 0);
   for (const c of cmds) assert.match(c, / event [a-z-]+ --graph-only$/);
 });
@@ -49,7 +52,8 @@ test('a plain reinstall reuses the recorded options', async () => {
 });
 
 test('dry-run prints the options and writes nothing', async () => {
-  const home = mk(); const lines = [];
+  const home = mk();
+  const lines = [];
   await install({ home, dryRun: true, options: { graphOnly: true, skills: true }, out: (s) => lines.push(s) });
   assert.ok(lines.some((l) => l.includes('options: --graph-only --skills')));
   assert.equal(existsSync(join(home, '.grok')), false);

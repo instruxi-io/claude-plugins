@@ -40,9 +40,17 @@ test('landing completion attaches acceptance command output', async () => {
   assert.deepEqual(acceptanceCommands(node), ['ls x.txt']);
   let posted;
   const body = await landAndComplete({
-    pr: '7', url: 'https://github.com/o/r/pull/7', view: '{}', cmd: ['land-pr.sh', '7'], workerReport: 'done',
-    land: async () => ({ rc: 0, out: 'merged' }), mergeCommit: async () => 'abc123',
-    evidence: async () => landingEvidence(node, dir), complete: async (b) => { posted = b; },
+    pr: '7',
+    url: 'https://github.com/o/r/pull/7',
+    view: '{}',
+    cmd: ['land-pr.sh', '7'],
+    workerReport: 'done',
+    land: async () => ({ rc: 0, out: 'merged' }),
+    mergeCommit: async () => 'abc123',
+    evidence: async () => landingEvidence(node, dir),
+    complete: async (b) => {
+      posted = b;
+    },
   });
   assert.equal(posted, body);
   assert.equal(body.status, 'succeeded');
@@ -54,8 +62,12 @@ test('landing completion attaches acceptance command output', async () => {
 
 test('a failed landing completes failed with no acceptance evidence', async () => {
   const body = await landAndComplete({
-    pr: '7', cmd: ['land-pr.sh', '7'], land: async () => ({ rc: 2, out: 'ci red' }),
-    mergeCommit: async () => '', evidence: async () => assert.fail('not run'), complete: async () => {},
+    pr: '7',
+    cmd: ['land-pr.sh', '7'],
+    land: async () => ({ rc: 2, out: 'ci red' }),
+    mergeCommit: async () => '',
+    evidence: async () => assert.fail('not run'),
+    complete: async () => {},
   });
   assert.equal(body.status, 'failed');
   assert.match(body.error, /CI failed/);
@@ -88,7 +100,13 @@ test('the lander is heartbeated while it runs', async () => {
   const dir = tmp();
   let beats = 0;
   const { rc } = await landWithHeartbeat({
-    cmd: ['sh', '-c', 'sleep 0.35'], cwd: dir, logPath: join(dir, 'l.log'), everyMs: 50, heartbeat: async () => { beats++; },
+    cmd: ['sh', '-c', 'sleep 0.35'],
+    cwd: dir,
+    logPath: join(dir, 'l.log'),
+    everyMs: 50,
+    heartbeat: async () => {
+      beats++;
+    },
   });
   assert.equal(rc, 0);
   assert.ok(beats >= 2, `beats=${beats}`);

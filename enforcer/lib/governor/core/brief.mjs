@@ -35,12 +35,10 @@ function situationOf(a, cfg) {
 }
 
 const LINES = {
-  approaching: (a, pct) =>
-    `Enforcer: this session is at ${pct}% of its spend limit. Prefer finishing work in progress over starting anything new.`,
+  approaching: (a, pct) => `Enforcer: this session is at ${pct}% of its spend limit. Prefer finishing work in progress over starting anything new.`,
   'near-limit': (a, pct) =>
     `Enforcer: this session is at ${pct}% of its spend limit and will be stopped at 100%. Wrap up and summarise what is done rather than beginning new work.`,
-  stopped: () =>
-    `Enforcer: this agent is stopped and further tool calls will be refused. Say what you completed and what remains.`,
+  stopped: () => `Enforcer: this agent is stopped and further tool calls will be refused. Say what you completed and what remains.`,
 };
 
 /**
@@ -50,10 +48,12 @@ const LINES = {
 export function brief(a, cfg = {}) {
   const situation = situationOf(a, cfg);
   if (!situation) return null;
-  if (a.said === situation) return null;          // already told it; do not nag
+  if (a.said === situation) return null; // already told it; do not nag
   const pct = Math.round(PCT(a) * 100);
   return { text: LINES[situation](a, pct), situation };
 }
 
 /** Record that the agent has been told, so the next turn stays quiet. */
-export function markTold(a, situation) { a.said = situation; }
+export function markTold(a, situation) {
+  a.said = situation;
+}

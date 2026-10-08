@@ -19,7 +19,11 @@ const out = (s) => process.stdout.write(s + '\n');
 
 /** The claims of a JWT, or {} when it is not one. Not verified: display and matching only. */
 export function jwtClaims(token) {
-  try { return JSON.parse(Buffer.from(String(token).split('.')[1], 'base64url').toString('utf8')); } catch { return {}; }
+  try {
+    return JSON.parse(Buffer.from(String(token).split('.')[1], 'base64url').toString('utf8'));
+  } catch {
+    return {};
+  }
 }
 
 const baseOf = (doc) => resolveConfig({ saved: doc }).baseUrl;
@@ -51,19 +55,26 @@ export function membershipsOf(me) {
 
 /** Match `<name|code|tenant_id>` against memberships: exact id/code, then name, case-insensitive. Throws on none or ambiguity. */
 export function resolveWorkspace(rows, query, { fuzzy = false } = {}) {
-  const q = String(query || '').trim().toLowerCase();
+  const q = String(query || '')
+    .trim()
+    .toLowerCase();
   if (!q) throw new Error('name a workspace: switch <name|code|tenant_id>');
   const hit = (f) => rows.filter((m) => f(m));
   let found = hit((m) => m.tenant_id?.toLowerCase() === q || m.code?.toLowerCase() === q);
   if (!found.length) found = hit((m) => m.name?.toLowerCase() === q);
   const partial = hit((m) => m.name?.toLowerCase().includes(q));
   if (!found.length && fuzzy) found = partial;
-  if (found.length > 1) throw new Error(`"${query}" matches ${found.length} workspaces (${found.map((m) => m.name || m.tenant_id).join(', ')}); use the code or id`);
+  if (found.length > 1)
+    throw new Error(`"${query}" matches ${found.length} workspaces (${found.map((m) => m.name || m.tenant_id).join(', ')}); use the code or id`);
   if (!found.length && partial.length) {
-    throw new Error(`"${query}" is not an exact workspace code, id or name; partial matches: ${partial.map((m) => m.name || m.tenant_id).join(', ')}. Use the exact one, or pass --fuzzy to accept a unique partial match.`);
+    throw new Error(
+      `"${query}" is not an exact workspace code, id or name; partial matches: ${partial.map((m) => m.name || m.tenant_id).join(', ')}. Use the exact one, or pass --fuzzy to accept a unique partial match.`,
+    );
   }
   if (!found.length) {
-    throw new Error(`you are not a member of "${query}". Switching only moves between workspaces you belong to; for a new one, sign in with its code (/enforcer:login <WORKSPACE-CODE>) or accept an invite.`);
+    throw new Error(
+      `you are not a member of "${query}". Switching only moves between workspaces you belong to; for a new one, sign in with its code (/enforcer:login <WORKSPACE-CODE>) or accept an invite.`,
+    );
   }
   return found[0];
 }
@@ -99,7 +110,11 @@ export async function listWorkspaces({ fetchImpl = defaultFetch } = {}) {
   const { me, headers } = await getMe(base, fetchImpl);
   const cur = jwtClaims(readCredentials()?.enforcer?.oauth?.access_token).tenant_id || me?.tenant?.id;
   let rows = [];
-  try { rows = await getTenants(base, headers, fetchImpl); } catch { /* unreachable /auth/tenants: use /auth/me */ }
+  try {
+    rows = await getTenants(base, headers, fetchImpl);
+  } catch {
+    /* unreachable /auth/tenants: use /auth/me */
+  }
   // Older servers (or a token with no /auth/tenants) still get the /auth/me view.
   const merged = rows.length ? rows : membershipsOf(me);
   if (cur && !merged.some((m) => m.tenant_id === cur)) merged.push(...membershipsOf(me).filter((m) => m.tenant_id === cur));
@@ -115,14 +130,18 @@ export async function switchWorkspace(query, { fetchImpl = defaultFetch, now = D
   if (target.current) return { ...target, unchanged: true };
   const headers = await authHeaders({ fetchImpl });
   const r = await fetchImpl(`${base}${API}/auth/tenant/switch`, {
-    method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ tenant_id: target.tenant_id }), signal: AbortSignal.timeout(10_000),
+    method: 'POST',
+    headers: { ...headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tenant_id: target.tenant_id }),
+    signal: AbortSignal.timeout(10_000),
   });
   if (r.status === 403) {
     const body = await r.json().catch(() => ({}));
     const why = body?.error?.message || body?.message || (typeof body?.error === 'string' ? body.error : '') || 'no reason given';
-    throw new Error(`Enforcer refused the switch (HTTP 403): ${why}. `
-      + 'If the sign-in lacks the enforcer:workspace.write scope, sign in again with it: /enforcer:login --for work');
+    throw new Error(
+      `Enforcer refused the switch (HTTP 403): ${why}. ` +
+        'If the sign-in lacks the enforcer:workspace.write scope, sign in again with it: /enforcer:login --for work',
+    );
   }
   if (!r.ok) throw new Error(`Enforcer refused the switch (HTTP ${r.status}).`);
   const j = await r.json();
@@ -132,10 +151,19 @@ export async function switchWorkspace(query, { fetchImpl = defaultFetch, now = D
   // Re-read: authHeaders may have refreshed (and rotated) the pair in between.
   const fresh = readCredentials();
   const o = fresh.enforcer.oauth;
-  saveCredentials({ ...fresh, enforcer: { ...fresh.enforcer, oauth: {
-    ...o, access_token: access, refresh_token: t.refresh_token || o.refresh_token,
-    expires_at: new Date(now() + (Number(t.expires_in) || 900) * 1000).toISOString(), scope: t.scope || o.scope,
-  } } });
+  saveCredentials({
+    ...fresh,
+    enforcer: {
+      ...fresh.enforcer,
+      oauth: {
+        ...o,
+        access_token: access,
+        refresh_token: t.refresh_token || o.refresh_token,
+        expires_at: new Date(now() + (Number(t.expires_in) || 900) * 1000).toISOString(),
+        scope: t.scope || o.scope,
+      },
+    },
+  });
   return target;
 }
 
@@ -146,21 +174,32 @@ export async function currentWorkspace({ fetchImpl = defaultFetch } = {}) {
   if (!o?.access_token) throw new Error('not signed in with a browser sign-in. Run /enforcer:login.');
   const c = jwtClaims(o.access_token);
   let me = null;
-  try { me = (await getMe(baseOf(doc), fetchImpl)).me; } catch { /* the token's own claims still say where you are */ }
+  try {
+    me = (await getMe(baseOf(doc), fetchImpl)).me;
+  } catch {
+    /* the token's own claims still say where you are */
+  }
   return {
-    tenant: me?.tenant?.name || c.tenant || null, tenant_id: c.tenant_id || me?.tenant?.id || null,
-    role: roleOf(me?.role) || c.role || null, account_id: me?.account_id || c.account_id || c.sub || null,
+    tenant: me?.tenant?.name || c.tenant || null,
+    tenant_id: c.tenant_id || me?.tenant?.id || null,
+    role: roleOf(me?.role) || c.role || null,
+    account_id: me?.account_id || c.account_id || c.sub || null,
     expires_at: o.expires_at || null,
-    preset: o.preset || null, scopes: o.scope ? String(o.scope).split(/\s+/).filter(Boolean).length : null,
+    preset: o.preset || null,
+    scopes: o.scope ? String(o.scope).split(/\s+/).filter(Boolean).length : null,
   };
 }
 
-export const describe = (w) => `Workspace: ${w.tenant || w.name || w.tenant_id} (${w.tenant_id}) · role ${w.role || '?'} · account ${w.account_id || '?'}${w.preset ? ` · preset ${w.preset}${w.scopes != null ? ` (${w.scopes} scopes)` : ''}` : ''}${w.expires_at ? ` · token expires ${w.expires_at}` : ''}`;
+export const describe = (w) =>
+  `Workspace: ${w.tenant || w.name || w.tenant_id} (${w.tenant_id}) · role ${w.role || '?'} · account ${w.account_id || '?'}${w.preset ? ` · preset ${w.preset}${w.scopes != null ? ` (${w.scopes} scopes)` : ''}` : ''}${w.expires_at ? ` · token expires ${w.expires_at}` : ''}`;
 
 async function main([cmd = 'current', ...rest]) {
   if (cmd === 'list') {
     const rows = await listWorkspaces();
-    if (!rows.length) { out('No workspaces found for this sign-in.'); return; }
+    if (!rows.length) {
+      out('No workspaces found for this sign-in.');
+      return;
+    }
     for (const m of rows) out(`${m.current ? '*' : ' '} ${m.name || m.tenant_id}${m.code ? ` [${m.code}]` : ''}  ${m.role || '?'}  ${m.tenant_id}`);
     out('* = current workspace');
     return;
@@ -168,15 +207,25 @@ async function main([cmd = 'current', ...rest]) {
   if (cmd === 'switch') {
     const fuzzy = rest.includes('--fuzzy');
     const t = await switchWorkspace(rest.filter((a) => a !== '--fuzzy').join(' '), { fuzzy });
-    out(t.unchanged ? `Already in ${t.name || t.tenant_id}.` : `Switched to ${t.name || t.tenant_id}. New Enforcer processes on this machine act in it; the MCP connection in this session still holds the previous workspace until you run /mcp reconnect or restart.`);
+    out(
+      t.unchanged
+        ? `Already in ${t.name || t.tenant_id}.`
+        : `Switched to ${t.name || t.tenant_id}. New Enforcer processes on this machine act in it; the MCP connection in this session still holds the previous workspace until you run /mcp reconnect or restart.`,
+    );
     out(describe(await currentWorkspace()));
     return;
   }
-  if (cmd === 'current') { out(describe(await currentWorkspace())); return; }
+  if (cmd === 'current') {
+    out(describe(await currentWorkspace()));
+    return;
+  }
   out('Usage: /enforcer:workspace list | switch <name|code|tenant_id> | current');
   process.exitCode = 2;
 }
 
 if (isMain(import.meta.url)) {
-  main(commandArgs()).catch((e) => { out(`Workspace: ${e.message}`); process.exitCode = 1; });
+  main(commandArgs()).catch((e) => {
+    out(`Workspace: ${e.message}`);
+    process.exitCode = 1;
+  });
 }

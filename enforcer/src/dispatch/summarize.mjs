@@ -38,7 +38,9 @@ export function decisionRecords(text) {
     try {
       const rec = JSON.parse(text.slice(i, end));
       if (isObj(rec) && typeof rec.code === 'string') out.push(rec);
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   }
   return out;
 }
@@ -97,7 +99,11 @@ export function judgeLines(key, v) {
   const prob = (c) => (num(c.probability) ? c.probability : 2);
   const out = [`JUDGE ${key} score=${v.score ?? '-'} conf=${v.confidence ?? '-'}`];
   for (const c of [...crit].sort((a, b) => prob(a) - prob(b))) {
-    const t = String(c.text || c.criterion || '').split(/\s+/).filter(Boolean).join(' ').slice(0, 120);
+    const t = String(c.text || c.criterion || '')
+      .split(/\s+/)
+      .filter(Boolean)
+      .join(' ')
+      .slice(0, 120);
     out.push(`  ${num(c.probability) ? c.probability.toFixed(2) : '-'} ${t}`);
   }
   return out;
@@ -122,9 +128,11 @@ export function rejectionOf(text, field) {
 export function denialClass(s) {
   const recs = (s.decisions || []).filter((r) => ['deny', 'ask'].includes(r.decision));
   if (!recs.length) return [null, null];
-  const picks = [[(c) => c.startsWith('destructive_'), 'triage'],
-                 [(c) => c === 'graph_run_not_open', 'remediation'],
-                 [(c) => c === 'push_needs_approval_surface', 'salvage']];
+  const picks = [
+    [(c) => c.startsWith('destructive_'), 'triage'],
+    [(c) => c === 'graph_run_not_open', 'remediation'],
+    [(c) => c === 'push_needs_approval_surface', 'salvage'],
+  ];
   for (const [pick, kind] of picks) {
     for (const r of recs) if (pick(r.code)) return [kind, r];
   }
@@ -133,16 +141,39 @@ export function denialClass(s) {
 
 /** turns, result subtype, permission denials, cost, the run id the worker claimed and whether it reported. */
 export function summarize(path, harness = 'claude') {
-  const s = { turns: 0, result: null, denials: 0, denied_tools: [], run_id: null, reported: false,
-              cost: null, mcp: {}, started: false, session_id: null, usage: {}, error_text: null,
-              result_text: null, denied_inputs: [], decisions: [],
-              report_status: null, report_error: null, report_node: null, report_data: null,
-              rejection: null, card_rejection: null, card_skills: [] };
+  const s = {
+    turns: 0,
+    result: null,
+    denials: 0,
+    denied_tools: [],
+    run_id: null,
+    reported: false,
+    cost: null,
+    mcp: {},
+    started: false,
+    session_id: null,
+    usage: {},
+    error_text: null,
+    result_text: null,
+    denied_inputs: [],
+    decisions: [],
+    report_status: null,
+    report_error: null,
+    report_node: null,
+    report_data: null,
+    rejection: null,
+    card_rejection: null,
+    card_skills: [],
+  };
   const claims = new Set();
   const reports = new Set();
   if (harness === 'claude') {
     let raw = null;
-    try { raw = readFileSync(path, 'utf8'); } catch { /* unreadable: no events either */ }
+    try {
+      raw = readFileSync(path, 'utf8');
+    } catch {
+      /* unreadable: no events either */
+    }
     for (const l of (raw || '').split('\n')) {
       const line = l.trim();
       if (line && !line.startsWith('{')) {
@@ -227,14 +258,17 @@ export function workerPrompt(graph, node, path, branch, previous = null) {
   const data = node.data || {};
   const lines = [];
   if (previous) {
-    lines.push(`NEW NODE. Your previous node (\`${previous}\`) is finished and reported: its run is closed, do not ` +
-               'touch its worktree or report it again. Keep what you learned about this repo, but take ' +
-               'every fact about THIS node from its card.');
+    lines.push(
+      `NEW NODE. Your previous node (\`${previous}\`) is finished and reported: its run is closed, do not ` +
+        'touch its worktree or report it again. Keep what you learned about this repo, but take ' +
+        'every fact about THIS node from its card.',
+    );
   }
-  lines.push(`Graph ${graph}, node ${node.id} (key \`${node.key}\`).`,
-             `Claim it with graph_next_work {graph, node: "${node.id}", runner: "${node.key}"} and work it per your instructions.`);
-  lines.push(branch ? `Your git worktree is ${path} on branch ${branch} (already created; work only there).`
-                    : `Your working directory is ${path}.`);
+  lines.push(
+    `Graph ${graph}, node ${node.id} (key \`${node.key}\`).`,
+    `Claim it with graph_next_work {graph, node: "${node.id}", runner: "${node.key}"} and work it per your instructions.`,
+  );
+  lines.push(branch ? `Your git worktree is ${path} on branch ${branch} (already created; work only there).` : `Your working directory is ${path}.`);
   lines.push('End the body of any pull request you open with the line `Enforcer-Run: <run_id from your claim card>`; it joins the PR to your run.');
   lines.push(untrustedBlock({ title: node.title ?? '', brief: data.brief ?? null }));
   return lines.join('\n');
@@ -243,25 +277,32 @@ export function workerPrompt(graph, node, path, branch, previous = null) {
 /** The prompt of a node's next launch after a failed attempt this session. */
 export function remediationPrompt(graph, node, path, branch, failures) {
   const last = failures[failures.length - 1];
-  const lines = [`REMEDIATION LAUNCH (attempt ${failures.length + 1} this session). Your previous attempt at this node failed.`,
+  const lines = [
+    `REMEDIATION LAUNCH (attempt ${failures.length + 1} this session). Your previous attempt at this node failed.`,
     'Previous error: ' + last.error,
     'last_rejection: ' + (last.rejection || 'none on record (read last_rejection on your claim card)'),
     'Fix the cause, not the symptom: find WHY it failed (missing context, a wrong assumption, a ' +
-    'prerequisite) before you change anything, and say in your report what the cause was. If the cause ' +
-    'is outside this node (a missing prerequisite, a human decision), graph_remember it structured and ' +
-    'report failed: the dispatcher triages the node next, it does not relaunch it a third time.'];
+      'prerequisite) before you change anything, and say in your report what the cause was. If the cause ' +
+      'is outside this node (a missing prerequisite, a human decision), graph_remember it structured and ' +
+      'report failed: the dispatcher triages the node next, it does not relaunch it a third time.',
+  ];
   return [...lines, workerPrompt(graph, node, path, branch)].join('\n');
 }
 
 // ---- harness usage limits
 
-export const LIMIT_RE = new RegExp('hit your (?:weekly|daily|monthly|session|usage) limit|usage limit (?:reached|exceeded)|' +
-  'rate[ -]?limit(?:ed|s)?\\b|too many requests|out of (?:credits|quota)', 'i');
-export const RESET_RE = new RegExp('resets?\\s+(?:at\\s+|on\\s+)?(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\\.?\\s+(\\d{1,2}),?' +
-  '\\s+(\\d{1,2})(?::(\\d{2}))?\\s*(am|pm)?(?:\\s*\\(([A-Za-z][A-Za-z0-9_+\\-]*(?:/[A-Za-z0-9_+\\-]+)*)\\))?', 'i');
+export const LIMIT_RE = new RegExp(
+  'hit your (?:weekly|daily|monthly|session|usage) limit|usage limit (?:reached|exceeded)|' +
+    'rate[ -]?limit(?:ed|s)?\\b|too many requests|out of (?:credits|quota)',
+  'i',
+);
+export const RESET_RE = new RegExp(
+  'resets?\\s+(?:at\\s+|on\\s+)?(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\\.?\\s+(\\d{1,2}),?' +
+    '\\s+(\\d{1,2})(?::(\\d{2}))?\\s*(am|pm)?(?:\\s*\\(([A-Za-z][A-Za-z0-9_+\\-]*(?:/[A-Za-z0-9_+\\-]+)*)\\))?',
+  'i',
+);
 export const MAX_HOLD = 8 * 86400;
-const MONTHS = Object.fromEntries(['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
-  .map((m, i) => [m, i + 1]));
+const MONTHS = Object.fromEntries(['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'].map((m, i) => [m, i + 1]));
 
 /** The limit message when a worker's result or stderr says the harness is out of quota, else null. */
 export function harnessLimitText(s) {
@@ -275,8 +316,16 @@ export function harnessLimitText(s) {
 }
 
 function parts(ms, tz) {
-  const f = new Intl.DateTimeFormat('en-US', { timeZone: tz, hourCycle: 'h23', year: 'numeric', month: 'numeric',
-    day: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric' });
+  const f = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz,
+    hourCycle: 'h23',
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: 'numeric',
+    second: 'numeric',
+  });
   const o = {};
   for (const p of f.formatToParts(new Date(ms))) o[p.type] = Number(p.value);
   return o;
@@ -284,7 +333,10 @@ function parts(ms, tz) {
 
 // epoch ms of a wall-clock time in tz (tz undefined: the process's local zone)
 function wallToEpoch(y, mo, d, h, mi, tz) {
-  const valid = (t) => { const x = new Date(t); return x.getUTCFullYear() === y && x.getUTCMonth() === mo - 1 && x.getUTCDate() === d; };
+  const valid = (t) => {
+    const x = new Date(t);
+    return x.getUTCFullYear() === y && x.getUTCMonth() === mo - 1 && x.getUTCDate() === d;
+  };
   const asUtc = Date.UTC(y, mo - 1, d, h, mi, 0, 0);
   if (!valid(asUtc) || h > 23) return null;
   if (!tz) return new Date(y, mo - 1, d, h, mi, 0, 0).getTime();
@@ -302,7 +354,11 @@ export function limitResetAt(text, now = null) {
   if (!m) return null;
   let tz = m[6] || undefined;
   if (tz) {
-    try { new Intl.DateTimeFormat('en-US', { timeZone: tz }); } catch { tz = undefined; }
+    try {
+      new Intl.DateTimeFormat('en-US', { timeZone: tz });
+    } catch {
+      tz = undefined;
+    }
   }
   const hour = (Number(m[3]) % 12) + ((m[5] || '').toLowerCase() === 'pm' ? 12 : 0);
   const nowTs = now === null ? Date.now() / 1000 : now;
@@ -311,7 +367,10 @@ export function limitResetAt(text, now = null) {
   const month = MONTHS[m[1].toLowerCase().slice(0, 3)];
   const day = Number(m[2]);
   const minute = Number(m[4] || 0);
-  const at = (y) => { const w = wallToEpoch(y, month, day, hour, minute, tz); return w === null ? null : w / 1000; };
+  const at = (y) => {
+    const w = wallToEpoch(y, month, day, hour, minute, tz);
+    return w === null ? null : w / 1000;
+  };
   let when = at(year);
   if (when === null) when = at(year + 1);
   if (when === null) return null;

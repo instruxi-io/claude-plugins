@@ -5,14 +5,20 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
 const home = mkdtempSync(join(tmpdir(), 'gov-api-'));
-process.env.GOVERNOR_HOME = home; process.env.ENFORCER_HOME = join(home, 'e');
+process.env.GOVERNOR_HOME = home;
+process.env.ENFORCER_HOME = join(home, 'e');
 delete process.env.ENFORCER_API_KEY;
 // The checks are off by default; this suite drives them, so it turns them on.
 const { writeChecksOn } = await import('./fixtures/checks-on.mjs');
 writeChecksOn(home);
 
 const { createGovernor, NO_COST, verify, ALLOW, ASK, DENY, REWRITE } = await import('../core/index.mjs');
-const assert = (c, m) => { if (!c) { console.error('FAIL: ' + m); process.exit(1); } };
+const assert = (c, m) => {
+  if (!c) {
+    console.error('FAIL: ' + m);
+    process.exit(1);
+  }
+};
 const ok = (m) => console.log(m + ' ok');
 const receipts = () => readFileSync(join(home, 'receipts.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
 
@@ -43,14 +49,20 @@ ok('the cost source feeds the spend check');
 gov.after({ agent: 'h:1' }, { failed: true });
 gov.spawned('h:2');
 const st = JSON.parse(readFileSync(join(home, 'state.json'), 'utf8'));
-assert(st.agents['h:1'].fails.length === 1 && st.spawns.some(s => s.id === 'h:2'), 'after() and spawned() feed the rate checks');
+assert(st.agents['h:1'].fails.length === 1 && st.spawns.some((s) => s.id === 'h:2'), 'after() and spawned() feed the rate checks');
 ok('after() and spawned() are recorded');
 
 gov.session.end({ agent: 'h:1' });
 const all = receipts();
 const summary = all.at(-1);
-assert(summary.verdict === 'summary' && summary.cost_usd === 1.25 && summary.meter === 'stub', 'session.end() writes the harness figure as cost_usd and names its source');
-assert(all.filter(x => x.verdict !== 'summary').every(x => x.client === '?acme' && x.meter === 'stub'), 'every decision receipt names the project and the meter');
+assert(
+  summary.verdict === 'summary' && summary.cost_usd === 1.25 && summary.meter === 'stub',
+  'session.end() writes the harness figure as cost_usd and names its source',
+);
+assert(
+  all.filter((x) => x.verdict !== 'summary').every((x) => x.client === '?acme' && x.meter === 'stub'),
+  'every decision receipt names the project and the meter',
+);
 const v = verify(join(home, 'receipts.jsonl'));
 assert(v.ok && v.receipts === all.length, `the chain verifies across API calls (${JSON.stringify(v)})`);
 ok('session.end() closes a chain that verifies');

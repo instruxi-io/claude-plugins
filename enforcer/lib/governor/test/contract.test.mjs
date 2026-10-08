@@ -19,11 +19,17 @@ function run(command, env) {
   return new Promise((resolve, reject) => {
     const p = spawn(process.execPath, [HOOK], { env, stdio: ['pipe', 'pipe', 'ignore'] });
     let out = '';
-    p.stdout.on('data', (d) => { out += d; });
+    p.stdout.on('data', (d) => {
+      out += d;
+    });
     p.on('error', reject);
     p.on('close', () => {
       let j;
-      try { j = JSON.parse(out); } catch { return reject(new Error(`the hook printed no JSON: ${out}`)); }
+      try {
+        j = JSON.parse(out);
+      } catch {
+        return reject(new Error(`the hook printed no JSON: ${out}`));
+      }
       const h = j.hookSpecificOutput || {};
       const said = [j.systemMessage, h.permissionDecisionReason].filter(Boolean).join(' ');
       if (h.updatedInput) return resolve({ decision: 'rewrite', input: h.updatedInput, said });
@@ -41,21 +47,33 @@ function run(command, env) {
 const tmp = mkdtempSync(join(tmpdir(), 'gov-contract-'));
 const quiet = { tmp, log: () => {} };
 const broken = [
-  ['an adapter that turns a refusal into no opinion',
-    { harness: 'claude-code', run: async (c, e) => { const o = await run(c, e); return o.decision === 'deny' ? { decision: 'pass' } : o; } }],
-  ['an adapter whose harness cannot ask, passing an ask through',
-    { harness: 'claude-code', canAsk: false, run }],
-  ['an adapter whose harness cannot rewrite, passing a rewrite through',
-    { harness: 'claude-code', canRewrite: false, run }],
+  [
+    'an adapter that turns a refusal into no opinion',
+    {
+      harness: 'claude-code',
+      run: async (c, e) => {
+        const o = await run(c, e);
+        return o.decision === 'deny' ? { decision: 'pass' } : o;
+      },
+    },
+  ],
+  ['an adapter whose harness cannot ask, passing an ask through', { harness: 'claude-code', canAsk: false, run }],
+  ['an adapter whose harness cannot rewrite, passing a rewrite through', { harness: 'claude-code', canRewrite: false, run }],
   ['an adapter stamping the wrong harness', { harness: 'codex', run }],
 ];
 for (const [what, adapter] of broken) {
   let caught = null;
-  try { await runContract(adapter, quiet); } catch (e) { caught = e; }
-  if (!(caught instanceof ContractError)) { console.error(`FAIL: the contract passed ${what}${caught ? `: ${caught}` : ''}`); process.exit(1); }
+  try {
+    await runContract(adapter, quiet);
+  } catch (e) {
+    caught = e;
+  }
+  if (!(caught instanceof ContractError)) {
+    console.error(`FAIL: the contract passed ${what}${caught ? `: ${caught}` : ''}`);
+    process.exit(1);
+  }
 }
 console.log('  ok  the contract rejects adapters that break it');
 
-const kept = await runContract({ harness: 'claude-code', canAsk: true, canRewrite: true, run },
-  { tmp });
+const kept = await runContract({ harness: 'claude-code', canAsk: true, canRewrite: true, run }, { tmp });
 console.log(`\n  claude-code keeps the harness contract (${kept.length} groups)`);

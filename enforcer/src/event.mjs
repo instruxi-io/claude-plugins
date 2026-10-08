@@ -60,8 +60,10 @@ export function merge(a, b) {
   if (!isObj(b)) return a;
   const out = { ...a };
   for (const [k, v] of Object.entries(b)) {
-    if (k === 'permissionDecision') { const rank = { allow: 1, defer: 1, ask: 2, deny: 3 }; if ((rank[v] || 0) > (rank[a[k]] || 0)) out[k] = v; }
-    else if (JOIN.has(k) && typeof v === 'string' && typeof a[k] === 'string') out[k] = `${a[k]}\n${v}`;
+    if (k === 'permissionDecision') {
+      const rank = { allow: 1, defer: 1, ask: 2, deny: 3 };
+      if ((rank[v] || 0) > (rank[a[k]] || 0)) out[k] = v;
+    } else if (JOIN.has(k) && typeof v === 'string' && typeof a[k] === 'string') out[k] = `${a[k]}\n${v}`;
     else if (isObj(v) && isObj(a[k])) out[k] = merge(a[k], v);
     else out[k] = v;
   }
@@ -69,19 +71,45 @@ export function merge(a, b) {
 }
 
 async function governor(file, raw) {
-  const st = globalThis.__enforcerEvent = { input: raw, out: '' };
+  const st = (globalThis.__enforcerEvent = { input: raw, out: '' });
   const { HookExit } = await import('../lib/governor/hooks/lib.mjs');
-  try { await import(`../lib/governor/hooks/${file}`); }
-  catch (e) { if (!(e instanceof HookExit)) { try { process.stderr.write(`enforcer: governor hook failed: ${e?.message || e}\n`); } catch {} } }
+  try {
+    await import(`../lib/governor/hooks/${file}`);
+  } catch (e) {
+    if (!(e instanceof HookExit)) {
+      try {
+        process.stderr.write(`enforcer: governor hook failed: ${e?.message || e}\n`);
+      } catch {}
+    }
+  }
   globalThis.__enforcerEvent = undefined;
-  try { return st.out ? JSON.parse(st.out) : null; } catch { return null; }
+  try {
+    return st.out ? JSON.parse(st.out) : null;
+  } catch {
+    return null;
+  }
 }
 
 // Every graph handler runs in this process.
-const NATIVE = { track_run: ['track-run', 'trackRun'], capture_evidence: ['capture', 'captureEvidence'], heartbeat: ['heartbeat', 'heartbeat'], attach_evidence: ['attach', 'attachEvidence'],
-  session_start: ['session', 'sessionStart'], start_ticker: ['ticker', 'startTicker'], stop_ticker: ['ticker', 'stopTicker'], remember_on_compact: ['session', 'rememberOnCompact'], open_run_guard: ['session', 'openRunGuard'] };
+const NATIVE = {
+  track_run: ['track-run', 'trackRun'],
+  capture_evidence: ['capture', 'captureEvidence'],
+  heartbeat: ['heartbeat', 'heartbeat'],
+  attach_evidence: ['attach', 'attachEvidence'],
+  session_start: ['session', 'sessionStart'],
+  start_ticker: ['ticker', 'startTicker'],
+  stop_ticker: ['ticker', 'stopTicker'],
+  remember_on_compact: ['session', 'rememberOnCompact'],
+  open_run_guard: ['session', 'openRunGuard'],
+};
 /** The run id for a hook log line: the live run of this actor's session, else the environment's. */
-const runOf = (ev) => { try { return loadRun(actorKey(ev))?.run_id || undefined; } catch { return undefined; } };
+const runOf = (ev) => {
+  try {
+    return loadRun(actorKey(ev))?.run_id || undefined;
+  } catch {
+    return undefined;
+  }
+};
 export async function native(handlers, ev, deadline) {
   let out = null;
   for (const h of handlers) {
@@ -92,22 +120,48 @@ export async function native(handlers, ev, deadline) {
     let outcome = 'ok';
     try {
       const mod = await import(`./graph/hooks/${NATIVE[h][0]}.mjs`);
-      const r = await Promise.race([mod[NATIVE[h][1]](ev), new Promise((res) => { timer = setTimeout(() => res(null), left); })]);
+      const r = await Promise.race([
+        mod[NATIVE[h][1]](ev),
+        new Promise((res) => {
+          timer = setTimeout(() => res(null), left);
+        }),
+      ]);
       if (r) out = merge(out, r);
-    } catch { outcome = 'error'; const note = noteFailure(ev.session_id, h); if (note) out = merge(out, { systemMessage: note }); }
-    finally { clearTimeout(timer); logHook({ hook: h, event: ev.hook_event_name || '', actor: actorKey(ev), outcome, ms: Date.now() - t0, code: outcome === 'ok' ? 0 : 1, run_id: runOf(ev) }); }
+    } catch {
+      outcome = 'error';
+      const note = noteFailure(ev.session_id, h);
+      if (note) out = merge(out, { systemMessage: note });
+    } finally {
+      clearTimeout(timer);
+      logHook({
+        hook: h,
+        event: ev.hook_event_name || '',
+        actor: actorKey(ev),
+        outcome,
+        ms: Date.now() - t0,
+        code: outcome === 'ok' ? 0 : 1,
+        run_id: runOf(ev),
+      });
+    }
   }
   return { out, code: 0 };
 }
 
 export async function runEvent(name, opts = {}) {
   const event = NAMES[name];
-  if (!event) { process.stderr.write(`usage: enforcer event <${EXIT_NAMES()}>\n`); return 2; }
+  if (!event) {
+    process.stderr.write(`usage: enforcer event <${EXIT_NAMES()}>\n`);
+    return 2;
+  }
   const spec = EVENTS[event];
   let raw = '';
-  try { raw = readFileSync(0, 'utf8'); } catch {}
+  try {
+    raw = readFileSync(0, 'utf8');
+  } catch {}
   let ev = {};
-  try { ev = JSON.parse(raw || '{}') || {}; } catch {}
+  try {
+    ev = JSON.parse(raw || '{}') || {};
+  } catch {}
   if (!isObj(ev)) ev = {};
   // The harness names the event itself; a shim routed an event it does not own stays silent.
   let out = null;
@@ -126,9 +180,11 @@ export async function runEvent(name, opts = {}) {
   if (opts.only) handlers = handlers.filter((h) => h === opts.only);
   if (denied) handlers = [];
   let code = 0;
-  if (handlers.length && (event === 'SessionStart' || graphContextLive(ev))) { // session-start notices print with or without a graph
+  if (handlers.length && (event === 'SessionStart' || graphContextLive(ev))) {
+    // session-start notices print with or without a graph
     const r = await native(handlers, ev, Date.now() + (spec.budget || 5000));
-    out = merge(out, r.out); code = r.code;
+    out = merge(out, r.out);
+    code = r.code;
   }
   if (out) process.stdout.write(JSON.stringify(out) + '\n');
   return code;

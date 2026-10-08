@@ -12,8 +12,10 @@ test('launch disables the installed enforcer plugin for the child', () => {
 });
 
 test('launch passes --plugin-dir for the checkout', () => {
-  const c = cmd(); const i = c.indexOf('--plugin-dir');
-  assert.ok(i > 0); assert.equal(c[i + 1], PLUGIN_DIR);
+  const c = cmd();
+  const i = c.indexOf('--plugin-dir');
+  assert.ok(i > 0);
+  assert.equal(c[i + 1], PLUGIN_DIR);
 });
 
 test('preflight prints the plugin root and version workers will run', async () => {

@@ -5,7 +5,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const home = mkdtempSync(join(tmpdir(), 'uninst-'));
-process.env.HOME = home; process.env.USERPROFILE = home;
+process.env.HOME = home;
+process.env.USERPROFILE = home;
 process.env.ENFORCER_HOME = join(home, '.enforcer');
 process.env.ENFORCER_CONFIG_HOME = join(home, '.config', 'enforcer');
 process.env.CLAUDE_SETTINGS_PATH = join(home, 'cc-dir', 'settings.json');
@@ -17,14 +18,24 @@ const { assertSchema, SchemaError, SCHEMA_VERSION } = await import('../src/schem
 const codex = await import('../src/codex-install.mjs');
 
 let pass = 0;
-const ok = async (label, fn) => { await fn(); pass++; console.log('  ok  ' + label); };
+const ok = async (label, fn) => {
+  await fn();
+  pass++;
+  console.log('  ok  ' + label);
+};
 const quiet = { out: () => {} };
 
 await ok('uninstall removes the OTEL settings entries', async () => {
   mkdirSync(join(home, 'cc-dir'), { recursive: true });
   mkdirSync(process.env.ENFORCER_HOME, { recursive: true });
-  writeFileSync(process.env.CLAUDE_SETTINGS_PATH, JSON.stringify({ theme: 'dark', otelHeadersHelper: 'node "/x/otel-headers.mjs"',
-    env: { CLAUDE_CODE_ENABLE_TELEMETRY: '1', OTEL_EXPORTER_OTLP_ENDPOINT: 'https://x', KEEP: '1' } }));
+  writeFileSync(
+    process.env.CLAUDE_SETTINGS_PATH,
+    JSON.stringify({
+      theme: 'dark',
+      otelHeadersHelper: 'node "/x/otel-headers.mjs"',
+      env: { CLAUDE_CODE_ENABLE_TELEMETRY: '1', OTEL_EXPORTER_OTLP_ENDPOINT: 'https://x', KEEP: '1' },
+    }),
+  );
   writeFileSync(join(process.env.ENFORCER_HOME, 'otel-headers.mjs'), '//');
   writeFileSync(join(process.env.ENFORCER_HOME, 'plugin-root'), '/p\n');
   saveCredentials({ enforcer: { api_key: 'k' } });
@@ -44,7 +55,15 @@ await ok('--purge removes credentials after confirmation', async () => {
   assert.ok(existsSync(SHARED_FILE()), 'declined: kept');
   assert.ok(r.left.some((l) => l.includes('purge declined')));
   let asked = '';
-  r = await uninstall({ home, purge: true, confirm: async (q) => { asked = q; return true; }, ...quiet });
+  r = await uninstall({
+    home,
+    purge: true,
+    confirm: async (q) => {
+      asked = q;
+      return true;
+    },
+    ...quiet,
+  });
   assert.match(asked, /signed out/);
   assert.ok(!existsSync(SHARED_FILE()));
 });
@@ -52,7 +71,10 @@ await ok('--purge removes credentials after confirmation', async () => {
 await ok('older schema reader refuses newer state', async () => {
   mkdirSync(process.env.ENFORCER_HOME, { recursive: true });
   writeFileSync(SHARED_FILE(), JSON.stringify({ schema_version: SCHEMA_VERSION + 1, enforcer: { api_key: 'k' } }));
-  assert.throws(() => assertSchema({ schema_version: SCHEMA_VERSION + 1 }, 'f'), (e) => e instanceof SchemaError && /newer enforcer/.test(e.message));
+  assert.throws(
+    () => assertSchema({ schema_version: SCHEMA_VERSION + 1 }, 'f'),
+    (e) => e instanceof SchemaError && /newer enforcer/.test(e.message),
+  );
   assert.equal(readCredentials(), null);
   assert.throws(() => saveCredentials({ enforcer: { api_key: 'x' } }), SchemaError);
   assert.equal(JSON.parse(readFileSync(SHARED_FILE(), 'utf8')).schema_version, SCHEMA_VERSION + 1, 'newer file untouched');

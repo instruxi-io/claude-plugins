@@ -22,18 +22,29 @@ mkdirSync(process.env.GOVERNOR_HOME, { recursive: true });
 mkdirSync(process.env.ENFORCER_HOME, { recursive: true });
 
 const PATH = '/api/v1/governance/ingest/attributions';
-let mode = 'ok';          // ok | 404 | 500 | hang
-let posts = [];           // every attribution request the server saw
+let mode = 'ok'; // ok | 404 | 500 | hang
+let posts = []; // every attribution request the server saw
 const hung = [];
 const srv = createServer((req, res) => {
   let body = '';
-  req.on('data', (c) => { body += c; });
+  req.on('data', (c) => {
+    body += c;
+  });
   req.on('end', () => {
     if (req.url === PATH && req.method === 'POST') {
       posts.push({ auth: req.headers.authorization, type: req.headers['content-type'], body: JSON.parse(body || '{}') });
-      if (mode === 'hang') { hung.push(res); return; }
-      if (mode === '404') { res.writeHead(404); return res.end('Cannot POST ' + PATH); }
-      if (mode === '500') { res.writeHead(500); return res.end('export failed'); }
+      if (mode === 'hang') {
+        hung.push(res);
+        return;
+      }
+      if (mode === '404') {
+        res.writeHead(404);
+        return res.end('Cannot POST ' + PATH);
+      }
+      if (mode === '500') {
+        res.writeHead(500);
+        return res.end('export failed');
+      }
       const { agent, client } = JSON.parse(body);
       res.writeHead(200, { 'Content-Type': 'application/json' });
       return res.end(JSON.stringify({ success: true, data: { agent, client: client.replace(/^\?/, ''), client_guessed: client[0] === '?' } }));
@@ -50,15 +61,20 @@ const srv = createServer((req, res) => {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       return res.end('{}');
     }
-    res.writeHead(404); res.end();
+    res.writeHead(404);
+    res.end();
   });
 });
 await new Promise((r) => srv.listen(0, '127.0.0.1', r));
 const base = `http://127.0.0.1:${srv.address().port}`;
 
-const signIn = () => writeFileSync(join(process.env.ENFORCER_HOME, 'credentials.json'), JSON.stringify({
-  enforcer: { base_url: base, oauth: { client_id: 'client-1', access_token: 'at-1', expires_at: '2999-01-01T00:00:00Z' } },
-}));
+const signIn = () =>
+  writeFileSync(
+    join(process.env.ENFORCER_HOME, 'credentials.json'),
+    JSON.stringify({
+      enforcer: { base_url: base, oauth: { client_id: 'client-1', access_token: 'at-1', expires_at: '2999-01-01T00:00:00Z' } },
+    }),
+  );
 const signOut = () => writeFileSync(join(process.env.ENFORCER_HOME, 'credentials.json'), JSON.stringify({ enforcer: {} }));
 // Decisioning is off by default; the rule cases here need it on.
 const setConfig = (c) => writeFileSync(join(process.env.GOVERNOR_HOME, 'config.json'), JSON.stringify({ budgetOn: true, rulesOn: true, policyOn: true, ...c }));
@@ -70,17 +86,25 @@ const gov = createGovernor({ harness: 'test' });
 const session = { agent: 'claude:0f3c9a1b', cwd: '/w/acme-api' };
 
 let pass = 0;
-const ok = async (label, fn) => { posts = []; mode = 'ok'; await fn(); pass++; console.log('  ok  ' + label); };
+const ok = async (label, fn) => {
+  posts = [];
+  mode = 'ok';
+  await fn();
+  pass++;
+  console.log('  ok  ' + label);
+};
 
 await ok('signed out: nothing is sent', async () => {
-  signOut(); setConfig({});
+  signOut();
+  setConfig({});
   const r = await gov.session.start(session);
   assert.equal(posts.length, 0);
   assert.equal(r.sent, false);
 });
 
 await ok('signed in: ONE request per session start, carrying the derived project', async () => {
-  signIn(); setConfig({});
+  signIn();
+  setConfig({});
   const r = await gov.session.start(session);
   assert.equal(posts.length, 1);
   assert.deepEqual(posts[0].body, { agent: 'claude:0f3c9a1b', client: '?acme-api' }, 'unmapped: the folder, marked as a guess');
@@ -92,7 +116,10 @@ await ok('signed in: ONE request per session start, carrying the derived project
 await ok('a configured mapping names the project, as a receipt would', async () => {
   setConfig({ clients: { '/w/acme-api': 'acme' } });
   await gov.session.start({ agent: 'claude:11112222', cwd: '/w/acme-api/src' });
-  assert.deepEqual(posts.map((p) => p.body), [{ agent: 'claude:11112222', client: 'acme' }]);
+  assert.deepEqual(
+    posts.map((p) => p.body),
+    [{ agent: 'claude:11112222', client: 'acme' }],
+  );
   setConfig({});
 });
 
@@ -114,7 +141,8 @@ await ok('an old server (404) is harmless: no throw, no retry, no queue, no erro
   // Warm the managed/identity caches so the only thing start() does is attribute.
   await gov.session.start(session);
   const before = files();
-  posts = []; mode = '404';
+  posts = [];
+  mode = '404';
   const r = await gov.session.start(session);
   assert.deepEqual(r, { sent: true, status: 404 });
   assert.equal(posts.length, 1, 'sent once, not retried');
@@ -138,8 +166,12 @@ await ok('a server that never answers cannot hold the session start past the tim
   // Raced against a guard, so a missing timeout FAILS here instead of hanging
   // the suite.
   let guard;
-  const r = await Promise.race([gov.session.start(session),
-    new Promise((_, reject) => { guard = setTimeout(() => reject(new Error('session start is still waiting on the server')), ATTRIBUTION_TIMEOUT_MS + 3000); })]);
+  const r = await Promise.race([
+    gov.session.start(session),
+    new Promise((_, reject) => {
+      guard = setTimeout(() => reject(new Error('session start is still waiting on the server')), ATTRIBUTION_TIMEOUT_MS + 3000);
+    }),
+  ]);
   clearTimeout(guard);
   const took = Date.now() - t0;
   assert.equal(r.sent, false);
@@ -149,36 +181,46 @@ await ok('a server that never answers cannot hold the session start past the tim
 });
 
 await ok('an unreachable control plane is a silent no-op', async () => {
-  writeFileSync(join(process.env.ENFORCER_HOME, 'credentials.json'), JSON.stringify({
-    enforcer: { base_url: 'http://127.0.0.1:9', oauth: { client_id: 'client-1', access_token: 'at-1', expires_at: '2999-01-01T00:00:00Z' } },
-  }));
+  writeFileSync(
+    join(process.env.ENFORCER_HOME, 'credentials.json'),
+    JSON.stringify({
+      enforcer: { base_url: 'http://127.0.0.1:9', oauth: { client_id: 'client-1', access_token: 'at-1', expires_at: '2999-01-01T00:00:00Z' } },
+    }),
+  );
   setConfig({ ingestUrl: 'http://127.0.0.1:9' });
   const r = await gov.session.start(session);
   assert.equal(r.sent, false);
-  signIn(); setConfig({});
+  signIn();
+  setConfig({});
 });
 
 // The hook itself: Claude Code's SessionStart JSON in, one attribution out,
 // and the process exits promptly with the usual empty answer.
 const hook = fileURLToPath(new URL('../hooks/session.mjs', import.meta.url));
-const runHook = (ev) => new Promise((resolve) => {
-  // spawn, not spawnSync: the stub server lives in THIS process's event loop.
-  const t0 = Date.now();
-  const p = spawn(process.execPath, [hook], { env: { ...process.env, HOME: home } });
-  let out = '';
-  p.stdout.on('data', (c) => { out += c; });
-  p.on('close', (code) => resolve({ code, out, took: Date.now() - t0 }));
-  p.stdin.end(JSON.stringify(ev));
-});
+const runHook = (ev) =>
+  new Promise((resolve) => {
+    // spawn, not spawnSync: the stub server lives in THIS process's event loop.
+    const t0 = Date.now();
+    const p = spawn(process.execPath, [hook], { env: { ...process.env, HOME: home } });
+    let out = '';
+    p.stdout.on('data', (c) => {
+      out += c;
+    });
+    p.on('close', (code) => resolve({ code, out, took: Date.now() - t0 }));
+    p.stdin.end(JSON.stringify(ev));
+  });
 
-await ok('SessionStart hook: sends the session\'s attribution once and answers as before', async () => {
+await ok("SessionStart hook: sends the session's attribution once and answers as before", async () => {
   setConfig({ clients: { '/w/acme-api': 'acme' } });
   const r = await runHook({ hook_event_name: 'SessionStart', session_id: '0f3c9a1b-2222-4333-8444-555566667777', cwd: '/w/acme-api' });
   assert.equal(r.code, 0);
   const { systemMessage, ...answer } = JSON.parse(r.out);
   assert.deepEqual(answer, { hookSpecificOutput: { hookEventName: 'SessionStart', env: { ENFORCER_GOVERNOR: '1' } } });
   assert.match(systemMessage, /^Decisioning: (ON|OFF)/);
-  assert.deepEqual(posts.map((p) => p.body), [{ agent: 'claude:0f3c9a1b', client: 'acme' }]);
+  assert.deepEqual(
+    posts.map((p) => p.body),
+    [{ agent: 'claude:0f3c9a1b', client: 'acme' }],
+  );
   setConfig({});
 });
 
@@ -203,7 +245,6 @@ await ok('SessionEnd sends no attribution', async () => {
   assert.equal(posts.length, 0);
 });
 
-
 // ── subagents are their own agents ──────────────────────────────────────────
 const { toolEvent, agentOf } = await import('../adapters/claude-code/events.mjs');
 const { governor: ccGov } = await import('../adapters/claude-code/index.mjs');
@@ -213,11 +254,20 @@ const tdir = mkdtempSync(join(tmpdir(), 'gov-sub-'));
 const parentT = join(tdir, SID + '.jsonl');
 const subDir = join(tdir, SID, 'subagents');
 mkdirSync(subDir, { recursive: true });
-const usageLine = (id, out) => JSON.stringify({ type: 'assistant', message: { id, model: 'claude-sonnet-5', usage: { input_tokens: 10, output_tokens: out } } }) + '\n';
-const call = (extra, cmd = 'git status') => cc.before(toolEvent({
-  hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: cmd },
-  session_id: SID, transcript_path: parentT, cwd: '/w/acme-api', ...extra,
-}));
+const usageLine = (id, out) =>
+  JSON.stringify({ type: 'assistant', message: { id, model: 'claude-sonnet-5', usage: { input_tokens: 10, output_tokens: out } } }) + '\n';
+const call = (extra, cmd = 'git status') =>
+  cc.before(
+    toolEvent({
+      hook_event_name: 'PreToolUse',
+      tool_name: 'Bash',
+      tool_input: { command: cmd },
+      session_id: SID,
+      transcript_path: parentT,
+      cwd: '/w/acme-api',
+      ...extra,
+    }),
+  );
 
 await ok('two subagents, identical calls, all allowed', async () => {
   assert.equal(agentOf({ session_id: SID }), 'claude:0f3c9a1b');
@@ -245,7 +295,11 @@ await ok('subagent budget is its own', async () => {
   assert.equal(again.verdict.action, 'allow', 'its sibling is not');
 });
 
-for (const res of hung) { try { res.destroy(); } catch {} }
+for (const res of hung) {
+  try {
+    res.destroy();
+  } catch {}
+}
 srv.close();
 srv.closeAllConnections?.();
 console.log(`\n  ${pass} passed`);

@@ -22,8 +22,7 @@ function status(config, extra = {}) {
 }
 
 test('status says OFF when every check is off', () => {
-  assert.equal(status({ rulesOn: false, budgetOn: false, policyOn: false }),
-    'Decisioning: OFF (report only). Turn on: enforcer governor enable rules');
+  assert.equal(status({ rulesOn: false, budgetOn: false, policyOn: false }), 'Decisioning: OFF (report only). Turn on: enforcer governor enable rules');
   assert.equal(status(), 'Decisioning: OFF (report only). Turn on: enforcer governor enable rules');
 });
 

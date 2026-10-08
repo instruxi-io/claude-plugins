@@ -6,12 +6,24 @@ import { dataDir, evidenceDir, privateWrite } from './state.mjs';
 export const runPath = (sid) => join(dataDir(), `${sid || 'unknown'}.json`);
 
 export function loadRun(sid) {
-  try { return JSON.parse(readFileSync(runPath(sid), 'utf8')); } catch { return null; }
+  try {
+    return JSON.parse(readFileSync(runPath(sid), 'utf8'));
+  } catch {
+    return null;
+  }
 }
 
-export function saveRun(sid, run) { privateWrite(runPath(sid), JSON.stringify(run)); }
+export function saveRun(sid, run) {
+  privateWrite(runPath(sid), JSON.stringify(run));
+}
 
 export function clearRun(sid) {
-  for (const s of ['.json', '.count']) { try { rmSync(join(dataDir(), `${sid || 'unknown'}${s}`)); } catch {} }
-  try { rmSync(join(evidenceDir(), `${sid || 'unknown'}.jsonl`)); } catch {}
+  for (const s of ['.json', '.count']) {
+    try {
+      rmSync(join(dataDir(), `${sid || 'unknown'}${s}`));
+    } catch {}
+  }
+  try {
+    rmSync(join(evidenceDir(), `${sid || 'unknown'}.jsonl`));
+  } catch {}
 }

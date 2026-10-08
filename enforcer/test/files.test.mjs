@@ -9,29 +9,46 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const home = mkdtempSync(join(realpathSync(tmpdir()), 'files-plugin-'));
-process.env.HOME = home; process.env.ENFORCER_HOME = join(home, '.enforcer'); process.env.GOVERNOR_HOME = join(home, '.g');
+process.env.HOME = home;
+process.env.ENFORCER_HOME = join(home, '.enforcer');
+process.env.GOVERNOR_HOME = join(home, '.g');
 delete process.env.ENFORCER_API_KEY;
 
 const { upload, download, provider, parseArgs, fileRef, serverName, USER_AGENT } = await import('../bin/files.mjs');
 const { splitArgs, commandArgs } = await import('../src/args.mjs');
 
 let pass = 0;
-const ok = async (label, fn) => { await fn(); pass++; console.log('  ok  ' + label); };
+const ok = async (label, fn) => {
+  await fn();
+  pass++;
+  console.log('  ok  ' + label);
+};
 
 // --- the stub: enforcer-files + the bucket a presigned URL points at
 const state = { mode: 'presigned', provider: 's3', stored: {}, refuse: false, log: [] };
 const srv = createServer(async (req, res) => {
-  const chunks = []; for await (const c of req) chunks.push(c);
+  const chunks = [];
+  for await (const c of req) chunks.push(c);
   const body = Buffer.concat(chunks);
   const u = new URL(req.url, 'http://x');
   const base = `http://127.0.0.1:${srv.address().port}`;
-  const json = (s, o) => { res.writeHead(s, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(o)); };
+  const json = (s, o) => {
+    res.writeHead(s, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(o));
+  };
   state.log.push({ m: req.method, p: u.pathname, ua: req.headers['user-agent'], key: req.headers['x-api-key'] });
 
-  if (u.pathname.startsWith('/bucket/')) { // the presigned target: no enforcer credential
+  if (u.pathname.startsWith('/bucket/')) {
+    // the presigned target: no enforcer credential
     const k = decodeURIComponent(u.pathname.slice('/bucket/'.length));
-    if (req.method === 'PUT') { state.stored[k] = body; return json(200, {}); }
-    if (req.method === 'GET') { res.writeHead(200); return res.end(state.stored[k] || ''); }
+    if (req.method === 'PUT') {
+      state.stored[k] = body;
+      return json(200, {});
+    }
+    if (req.method === 'GET') {
+      res.writeHead(200);
+      return res.end(state.stored[k] || '');
+    }
   }
   if (!req.headers['x-api-key']) return json(401, { success: false, error: 'unauthorized' });
   const P = '/api/v1/files/storage';
@@ -56,8 +73,13 @@ const srv = createServer(async (req, res) => {
   }
   if (u.pathname === `${P}/file/gcs/download`) {
     const h = state.disposition ? { 'Content-Disposition': state.disposition } : {};
-    if (state.truncate) { res.writeHead(200, { ...h, 'Content-Length': '100' }); res.write('short'); return setTimeout(() => res.destroy(), 20); }
-    res.writeHead(200, h); return res.end(Buffer.from('gcs bytes'));
+    if (state.truncate) {
+      res.writeHead(200, { ...h, 'Content-Length': '100' });
+      res.write('short');
+      return setTimeout(() => res.destroy(), 20);
+    }
+    res.writeHead(200, h);
+    return res.end(Buffer.from('gcs bytes'));
   }
   json(404, { success: false, error: 'not_found' });
 });
@@ -86,7 +108,10 @@ await ok('presigned (S3): the bytes go straight to storage, then the upload is r
   assert.deepEqual([...state.stored['ix/t/abc/u/11111111-2222-3333-4444-555555555555/docs/report.pdf']], [...readFileSync(src)], 'exact bytes, binary-safe');
   const put = state.log.find((l) => l.m === 'PUT');
   assert.equal(put.key, undefined, 'no Enforcer credential is sent to the storage URL');
-  assert.ok(state.log.some((l) => l.p.endsWith('/presigned-upload-complete')), 'recorded so it is listable');
+  assert.ok(
+    state.log.some((l) => l.p.endsWith('/presigned-upload-complete')),
+    'recorded so it is listable',
+  );
   assert.equal(r.file.file_id, '11111111-2222-3333-4444-555555555555');
 });
 
@@ -139,19 +164,37 @@ await ok('failed download leaves no partial file', async () => {
   const dest = join(home, 'partial.txt');
   await assert.rejects(download('aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', { out: dest }, { base }));
   state.truncate = false;
-  assert.deepEqual(readdirSync(home).filter((f) => f.startsWith('partial')), []);
+  assert.deepEqual(
+    readdirSync(home).filter((f) => f.startsWith('partial')),
+    [],
+  );
 });
 
 await ok('a UUID download takes the server filename', async () => {
   state.disposition = 'attachment; filename="../evil/Q3 report.pdf"';
-  const cwd = process.cwd(); process.chdir(home);
-  try { const r = await download('aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', {}, { base }); assert.equal(r.path, join(home, 'Q3 report.pdf')); }
-  finally { process.chdir(cwd); state.disposition = undefined; }
+  const cwd = process.cwd();
+  process.chdir(home);
+  try {
+    const r = await download('aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', {}, { base });
+    assert.equal(r.path, join(home, 'Q3 report.pdf'));
+  } finally {
+    process.chdir(cwd);
+    state.disposition = undefined;
+  }
   assert.equal(serverName("attachment; filename*=UTF-8''a%20b.txt"), 'a b.txt');
 });
 
 await ok('arguments come from ENFORCER_ARGS, quoted, never run by a shell', () => {
-  assert.deepEqual(splitArgs(`upload "my dir/a b.txt" --dir 'x y' $(touch /tmp/pwned) ; rm`), ['upload', 'my dir/a b.txt', '--dir', 'x y', '$(touch', '/tmp/pwned)', ';', 'rm']);
+  assert.deepEqual(splitArgs(`upload "my dir/a b.txt" --dir 'x y' $(touch /tmp/pwned) ; rm`), [
+    'upload',
+    'my dir/a b.txt',
+    '--dir',
+    'x y',
+    '$(touch',
+    '/tmp/pwned)',
+    ';',
+    'rm',
+  ]);
   assert.deepEqual(commandArgs(['x'], { ENFORCER_ARGS: 'a "b c"' }), ['a', 'b c']);
   assert.deepEqual(commandArgs(['x'], {}), ['x']);
 });

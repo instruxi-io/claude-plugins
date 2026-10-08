@@ -17,7 +17,15 @@ export function findConfig(start) {
   for (;;) {
     let p = join(d, '.enforcer', 'graph.json');
     if (!existsSync(p)) p = join(d, LEGACY_PROJECT_CONFIG);
-    if (existsSync(p)) { try { const j = JSON.parse(readFileSync(p, 'utf8')); cfg = isObj(j) ? j : {}; } catch { cfg = {}; } break; }
+    if (existsSync(p)) {
+      try {
+        const j = JSON.parse(readFileSync(p, 'utf8'));
+        cfg = isObj(j) ? j : {};
+      } catch {
+        cfg = {};
+      }
+      break;
+    }
     const up = dirname(d);
     if (up === d) break;
     d = up;
@@ -40,12 +48,25 @@ export function findConfig(start) {
 export function toolPayload(resp) {
   let r = resp;
   if (isObj(r) && 'content' in r && !r.state) r = r.content;
-  if (Array.isArray(r)) r = r.filter((b) => isObj(b) && b.text).map((b) => b.text).join('\n');
+  if (Array.isArray(r))
+    r = r
+      .filter((b) => isObj(b) && b.text)
+      .map((b) => b.text)
+      .join('\n');
   if (typeof r === 'string') {
     const s = r.trim();
-    try { const j = JSON.parse(s); return isObj(j) ? j : {}; } catch {}
-    const a = s.indexOf('{'), b = s.lastIndexOf('}');
-    if (a >= 0 && b > a) { try { const j = JSON.parse(s.slice(a, b + 1)); return isObj(j) ? j : {}; } catch {} }
+    try {
+      const j = JSON.parse(s);
+      return isObj(j) ? j : {};
+    } catch {}
+    const a = s.indexOf('{'),
+      b = s.lastIndexOf('}');
+    if (a >= 0 && b > a) {
+      try {
+        const j = JSON.parse(s.slice(a, b + 1));
+        return isObj(j) ? j : {};
+      } catch {}
+    }
     return {};
   }
   return isObj(r) ? r : {};
@@ -61,36 +82,62 @@ export function markAttested(...keys) {
 
 export function actorTranscript(inp) {
   const { transcript_path: tp, agent_id: aid, session_id: sid } = inp || {};
-  if (tp && aid && sid) { const sub = join(dirname(tp), sid, 'subagents', `agent-${aid}.jsonl`); if (existsSync(sub)) return sub; }
+  if (tp && aid && sid) {
+    const sub = join(dirname(tp), sid, 'subagents', `agent-${aid}.jsonl`);
+    if (existsSync(sub)) return sub;
+  }
   return tp;
 }
 
 /** Tokens, model and tool calls in a transcript since an ISO time; null when nothing found. */
 export function transcriptUsage(path, since) {
   if (!path) return null;
-  const seen = new Set(), tools = new Set();
+  const seen = new Set(),
+    tools = new Set();
   const tot = { input_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0, output_tokens: 0 };
-  let chars = 0, model = null, text;
-  try { text = readFileSync(path, 'utf8'); } catch { return null; }
+  let chars = 0,
+    model = null,
+    text;
+  try {
+    text = readFileSync(path, 'utf8');
+  } catch {
+    return null;
+  }
   for (const line of text.split('\n')) {
-    let rec; try { rec = JSON.parse(line); } catch { continue; }
+    let rec;
+    try {
+      rec = JSON.parse(line);
+    } catch {
+      continue;
+    }
     if (!isObj(rec) || rec.type !== 'assistant' || (since && (rec.timestamp || '') < since)) continue;
     const msg = rec.message || {};
     for (const b of Array.isArray(msg.content) ? msg.content : []) {
       if (!isObj(b)) continue;
-      if (b.type === 'tool_use' && b.id) { if (!tools.has(b.id)) chars += JSON.stringify(b.input || {}).length; tools.add(b.id); }
-      else if (b.type === 'text' || b.type === 'thinking') chars += (b.text || b.thinking || '').length;
+      if (b.type === 'tool_use' && b.id) {
+        if (!tools.has(b.id)) chars += JSON.stringify(b.input || {}).length;
+        tools.add(b.id);
+      } else if (b.type === 'text' || b.type === 'thinking') chars += (b.text || b.thinking || '').length;
     }
     const u = msg.usage;
     if (!msg.id || seen.has(msg.id) || !isObj(u)) continue;
-    seen.add(msg.id); model = msg.model || model;
+    seen.add(msg.id);
+    model = msg.model || model;
     for (const k of Object.keys(tot)) tot[k] += Math.trunc(Number(u[k]) || 0);
   }
   if (!seen.size) return null;
-  const recorded = tot.output_tokens; delete tot.output_tokens;
+  const recorded = tot.output_tokens;
+  delete tot.output_tokens;
   const est = Math.max(recorded, Math.floor(chars / 4));
-  return { model, messages: seen.size, tool_uses: tools.size, ...tot, output_tokens_recorded: recorded, output_tokens_est: est,
-    total_tokens: Object.values(tot).reduce((a, b) => a + b, 0) + est };
+  return {
+    model,
+    messages: seen.size,
+    tool_uses: tools.size,
+    ...tot,
+    output_tokens_recorded: recorded,
+    output_tokens_est: est,
+    total_tokens: Object.values(tot).reduce((a, b) => a + b, 0) + est,
+  };
 }
 
 export function typedUsage(u) {

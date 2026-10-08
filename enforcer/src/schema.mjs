@@ -4,7 +4,9 @@ export const SCHEMA_VERSION = 1;
 
 export class SchemaError extends Error {
   constructor(what, found) {
-    super(`${what} was written by a newer enforcer (schema_version ${found}, this plugin reads up to ${SCHEMA_VERSION}); update the plugin instead of downgrading`);
+    super(
+      `${what} was written by a newer enforcer (schema_version ${found}, this plugin reads up to ${SCHEMA_VERSION}); update the plugin instead of downgrading`,
+    );
     this.name = 'SchemaError';
     this.found = found;
   }
@@ -18,4 +20,7 @@ export function assertSchema(doc, what = 'this state file') {
 }
 
 /** The document with the current schema_version first. */
-export const stamp = (doc) => { const { schema_version: _old, ...rest } = doc || {}; return { schema_version: SCHEMA_VERSION, ...rest }; };
+export const stamp = (doc) => {
+  const { schema_version: _old, ...rest } = doc || {};
+  return { schema_version: SCHEMA_VERSION, ...rest };
+};

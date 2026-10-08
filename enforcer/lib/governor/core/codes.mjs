@@ -19,7 +19,8 @@ export const CODES = Object.freeze({
   force_push: 'a force-push (--force, -f or a +refspec)',
   destructive_delete: 'rm -rf of a whole tree',
   destructive_git: 'history rewrite: reset --hard or filter-branch',
-  secret_in_command: 'the action reads or writes a credentials file (.env, keys, credentials.json, ~/.aws, ~/.ssh): a shell command on such a path or an edit of one — naming it in text is not access',
+  secret_in_command:
+    'the action reads or writes a credentials file (.env, keys, credentials.json, ~/.aws, ~/.ssh): a shell command on such a path or an edit of one — naming it in text is not access',
   deploy_publish: 'publish or deploy (npm publish, vercel --prod, kubectl apply/delete, terraform apply)',
   custom_rule: 'a rule from config.json with no code of its own',
 
@@ -52,7 +53,7 @@ export const CODES = Object.freeze({
   retry_storm: 'failing and retrying faster than the retry mark',
   client_limit: "a client's spend limit is reached",
   spend_limit: "the agent's spend limit is reached",
-  spend_warning: "the agent passed the warn-me mark of its spend limit",
+  spend_warning: 'the agent passed the warn-me mark of its spend limit',
 
   // ── no objection ─────────────────────────────────────────────────────────
   no_rule_matched: 'no rule objected and spend is within limits',
@@ -75,7 +76,9 @@ const RULE_CODES = Object.freeze({
   'governor.settings': 'settings_write',
 });
 
-export function isCode(c) { return Object.prototype.hasOwnProperty.call(CODES, c); }
+export function isCode(c) {
+  return Object.prototype.hasOwnProperty.call(CODES, c);
+}
 
 export function ruleCode(rule) {
   if (rule && isCode(rule.code)) return rule.code;

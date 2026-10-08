@@ -50,7 +50,7 @@ export function compose(cap, central) {
     return Verdict.ask(central.reason || 'the tenant policy asks for confirmation', { ...base, source: POLICY, code: 'tenant_policy' });
   }
   if (central.opinion === 'allow' && cap.action === 'ask') {
-    return null;   // the tenant waived the confirmation; economics still runs
+    return null; // the tenant waived the confirmation; economics still runs
   }
   // silent, unreachable, or an allow that may not lift this verdict: the local
   // answer stands, and the receipt records that the tenant was asked.
@@ -121,24 +121,30 @@ export function gate(ev, cfg = {}, deps = {}) {
   // spend tracking silently gave up `curl | sh` and `rm -rf` as well. Nothing
   // in the suite pinned it, which is why it survived.
   if (checksOff(cfg)) {
-    return Verdict.allow('spend checks are switched off',
-      { code: 'checks_off', source: ECONOMICS, checked: [CAPABILITY, ECONOMICS], policy: waived ? 'allow' : null });
+    return Verdict.allow('spend checks are switched off', {
+      code: 'checks_off',
+      source: ECONOMICS,
+      checked: [CAPABILITY, ECONOMICS],
+      policy: waived ? 'allow' : null,
+    });
   }
 
   // withState hands back a `reading` alongside the state: what this session has
   // cost so far. It is passed IN rather than computed here on purpose — that is
   // the seam where the harness's own total_cost_usd replaces our arithmetic
   // without a single check in economics.mjs knowing the difference.
-  const held = typeof deps.withState === 'function'
-    ? deps.withState((state, reading) => deps.economics(state, { ...ev, ...(reading || {}) }, cfg))
-    : { ok: false };
+  const held =
+    typeof deps.withState === 'function' ? deps.withState((state, reading) => deps.economics(state, { ...ev, ...(reading || {}) }, cfg)) : { ok: false };
 
   // The blind path. Capability already had its say above and found nothing, so
   // the honest answer is "allowed, and I did not look at the money" — recorded
   // as such via checked[], not buried in a sentence a reader has to parse.
   if (!held.ok) {
-    return Verdict.allow('Enforcer could not read its own state, so spend was not checked. Nothing is blocked.',
-      { source: ECONOMICS, checked: [CAPABILITY], policy: waived ? 'allow' : null });
+    return Verdict.allow('Enforcer could not read its own state, so spend was not checked. Nothing is blocked.', {
+      source: ECONOMICS,
+      checked: [CAPABILITY],
+      policy: waived ? 'allow' : null,
+    });
   }
 
   const econ = held.value;

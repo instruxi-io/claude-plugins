@@ -69,7 +69,13 @@ const TENANT_SILENT_DENY = 'tenant policy did not allow it';
 const ACCOUNT_PREFIX = /^account policy:\s*/i;
 const isPlatformReason = (r) => /^[a-z_]+$/.test(String(r || ''));
 
-const readCache = () => { try { return JSON.parse(readFileSync(CACHE(), 'utf8')) || {}; } catch { return {}; } };
+const readCache = () => {
+  try {
+    return JSON.parse(readFileSync(CACHE(), 'utf8')) || {};
+  } catch {
+    return {};
+  }
+};
 // Read-modify-write under the shared lock, tmp+rename, mode 0600. `mutate`
 // gets a fresh read so concurrent hooks do not clobber each other.
 async function updateCache(mutate) {
@@ -83,14 +89,21 @@ async function updateCache(mutate) {
     writeFileSync(tmp, JSON.stringify(c), { mode: 0o600 });
     chmodSync(tmp, 0o600);
     renameSync(tmp, CACHE());
-  } catch { /* a cache that cannot be written only costs a round trip */ }
-  finally { if (release) release(); }
+  } catch {
+    /* a cache that cannot be written only costs a round trip */
+  } finally {
+    if (release) release();
+  }
 }
 
 async function call(fetchImpl, url, init, timeoutMs) {
   const res = await fetchImpl(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
   let body = null;
-  try { body = await res.json(); } catch { /* non-JSON is handled by status */ }
+  try {
+    body = await res.json();
+  } catch {
+    /* non-JSON is handled by status */
+  }
   return { status: res.status, body };
 }
 
@@ -140,7 +153,13 @@ export async function consult(rule, cfg = {}, { fetchImpl = hookFetch, now = Dat
   const cacheKey = createHash('sha256').update(`${base}|${cred}|${id}|${action}`).digest('hex').slice(0, 24);
 
   const cache = readCache();
-  const host = (() => { try { return new URL(base).host; } catch { return base; } })();
+  const host = (() => {
+    try {
+      return new URL(base).host;
+    } catch {
+      return base;
+    }
+  })();
   const neg = cache.negative?.[host];
   if (neg && Number.isFinite(neg.at) && neg.at <= now() && now() - neg.at < NEGATIVE_TTL_MS) {
     return { opinion: UNREACHABLE, detail: neg.detail || 'Enforcer could not be reached', cached: true };
@@ -171,11 +190,16 @@ export async function consult(rule, cfg = {}, { fetchImpl = hookFetch, now = Dat
     }
 
     // api-used: sends action,resource.type,resource.id,resource.owner_id,resource.tenant_id
-    const r = await call(fetchImpl, `${base}${API}/authz/check`, {
-      method: 'POST',
-      headers: { ...headers, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action, resource: { type: RESOURCE_TYPE, id, owner_id: who.account_id, tenant_id: who.tenant_id } }),
-    }, timeoutMs);
+    const r = await call(
+      fetchImpl,
+      `${base}${API}/authz/check`,
+      {
+        method: 'POST',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, resource: { type: RESOURCE_TYPE, id, owner_id: who.account_id, tenant_id: who.tenant_id } }),
+      },
+      timeoutMs,
+    );
 
     const result = r.status === 200 ? interpret(r.body) : { opinion: UNREACHABLE, detail: `HTTP ${r.status}` };
     // Only real answers are cached. Caching "unreachable" would pin a blip for
@@ -189,7 +213,9 @@ export async function consult(rule, cfg = {}, { fetchImpl = hookFetch, now = Dat
     return result;
   } catch (e) {
     const detail = e?.name === 'TimeoutError' || e?.name === 'AbortError' ? `no answer within ${timeoutMs}ms` : 'Enforcer could not be reached';
-    await updateCache((c) => { c.negative = { ...(c.negative || {}), [host]: { at: now(), detail } }; });
+    await updateCache((c) => {
+      c.negative = { ...(c.negative || {}), [host]: { at: now(), detail } };
+    });
     return { opinion: UNREACHABLE, detail };
   }
 }

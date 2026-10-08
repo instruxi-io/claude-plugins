@@ -47,10 +47,16 @@ export function installId() {
   try {
     const id = JSON.parse(readFileSync(INSTALL(), 'utf8'))?.id;
     if (typeof id === 'string' && id) return id;
-  } catch { /* first run */ }
+  } catch {
+    /* first run */
+  }
   const id = randomUUID();
-  try { mkdirSync(DIR, { recursive: true }); writeFileSync(INSTALL(), JSON.stringify({ id, created_at: new Date().toISOString() })); }
-  catch { /* an unwritable dir still ships this run under this id */ }
+  try {
+    mkdirSync(DIR, { recursive: true });
+    writeFileSync(INSTALL(), JSON.stringify({ id, created_at: new Date().toISOString() }));
+  } catch {
+    /* an unwritable dir still ships this run under this id */
+  }
   return id;
 }
 
@@ -101,15 +107,20 @@ export function toOtlp(lines, prev, install, version = '') {
     // it from the harness would misfile every receipt. Lines written before
     // receipts named a harness get neither attribute.
     if (typeof entry.harness === 'string' && entry.harness) record.attributes.push(kv('enforcer.receipt.harness', entry.harness));
-    if (typeof entry.adapter_version === 'string' && entry.adapter_version) record.attributes.push(kv('enforcer.receipt.adapter_version', entry.adapter_version));
+    if (typeof entry.adapter_version === 'string' && entry.adapter_version)
+      record.attributes.push(kv('enforcer.receipt.adapter_version', entry.adapter_version));
     records.push(record);
   }
   return {
     body: {
-      resourceLogs: [{
-        resource: { attributes: [kv('service.name', 'enforcer-governor'), kv('enforcer.install_id', install), ...(version ? [kv('service.version', version)] : [])] },
-        scopeLogs: [{ scope: { name: RECEIPT_SCOPE }, logRecords: records }],
-      }],
+      resourceLogs: [
+        {
+          resource: {
+            attributes: [kv('service.name', 'enforcer-governor'), kv('enforcer.install_id', install), ...(version ? [kv('service.version', version)] : [])],
+          },
+          scopeLogs: [{ scope: { name: RECEIPT_SCOPE }, logRecords: records }],
+        },
+      ],
     },
     prev,
     count: records.length,
@@ -143,7 +154,11 @@ export async function shipOnce(cfg = {}, { fetchImpl = hookFetch, now = Date.now
     });
     if (res.status === 200) {
       let rejected = 0;
-      try { rejected = Number((await res.json())?.partialSuccess?.rejectedLogRecords) || 0; } catch { /* empty body is full success */ }
+      try {
+        rejected = Number((await res.json())?.partialSuccess?.rejectedLogRecords) || 0;
+      } catch {
+        /* empty body is full success */
+      }
       // Advance even past refused records: the server will never accept them,
       // and holding the watermark would resend them forever. They are still in
       // the local file, where /enforcer-governor:verify names them.
@@ -151,9 +166,10 @@ export async function shipOnce(cfg = {}, { fetchImpl = hookFetch, now = Date.now
       if (rejected) markFailure(`${rejected} receipt(s) refused by the control plane as altered or malformed`);
       return { shipped: count - rejected, rejected, pending: batch.lines.length >= limit };
     }
-    const why = res.status === 401 || res.status === 403
-      ? 'Enforcer did not accept this machine\'s credential; run /enforcer-governor:login'
-      : `control plane answered HTTP ${res.status}`;
+    const why =
+      res.status === 401 || res.status === 403
+        ? "Enforcer did not accept this machine's credential; run /enforcer-governor:login"
+        : `control plane answered HTTP ${res.status}`;
     markFailure(why);
     return { error: why };
   } catch (e) {
@@ -167,30 +183,45 @@ export async function shipOnce(cfg = {}, { fetchImpl = hookFetch, now = Date.now
 export async function shipAll(cfg = {}, deps = {}, maxBatches = 20) {
   if (!takeLock()) return { skipped: 'another shipper is running' };
   try {
-    let total = 0, last = {};
+    let total = 0,
+      last = {};
     for (let i = 0; i < maxBatches; i++) {
       last = await shipOnce(cfg, deps);
       total += last.shipped || 0;
       if (!last.pending) break;
     }
     return { ...last, shipped: total };
-  } finally { dropLock(); }
+  } finally {
+    dropLock();
+  }
 }
 
 // A lock file with a staleness bound: a shipper killed mid-flight must not
 // block every later one.
 const LOCK_STALE_MS = 2 * 60_000;
 function takeLock() {
-  try { mkdirSync(DIR, { recursive: true }); } catch {}
-  try { closeSync(openSync(LOCK(), 'wx')); return true; }
-  catch {
+  try {
+    mkdirSync(DIR, { recursive: true });
+  } catch {}
+  try {
+    closeSync(openSync(LOCK(), 'wx'));
+    return true;
+  } catch {
     try {
-      if (Date.now() - statSync(LOCK()).mtimeMs > LOCK_STALE_MS) { unlinkSync(LOCK()); closeSync(openSync(LOCK(), 'wx')); return true; }
+      if (Date.now() - statSync(LOCK()).mtimeMs > LOCK_STALE_MS) {
+        unlinkSync(LOCK());
+        closeSync(openSync(LOCK(), 'wx'));
+        return true;
+      }
     } catch {}
     return false;
   }
 }
-function dropLock() { try { unlinkSync(LOCK()); } catch {} }
+function dropLock() {
+  try {
+    unlinkSync(LOCK());
+  } catch {}
+}
 
 // The shipper kick() starts when the adapter names none: the core's own, which
 // travels with the core wherever it is installed. It used to be the plugin's
@@ -205,11 +236,15 @@ export const SHIPPER = join(dirname(fileURLToPath(import.meta.url)), 'bin', 'shi
 export function kick(everyMs = 30_000, shipper = SHIPPER) {
   try {
     if (Date.now() - statSync(KICKED()).mtimeMs < everyMs) return false;
-  } catch { /* never kicked */ }
+  } catch {
+    /* never kicked */
+  }
   try {
     mkdirSync(DIR, { recursive: true });
     writeFileSync(KICKED(), String(Date.now()));
     spawn(process.execPath, [shipper], { detached: true, stdio: 'ignore', env: process.env }).unref();
     return true;
-  } catch { return false; }
+  } catch {
+    return false;
+  }
 }
