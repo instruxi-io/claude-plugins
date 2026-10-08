@@ -1,1 +1,1 @@
-doctor builds hook script paths with the native separator, so the dead-hook check passes on Windows (it merged red in #204).
+doctor: dead-hook paths compare as native paths on Windows (test normalises; code fixed in #209).
