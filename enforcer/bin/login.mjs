@@ -2,7 +2,7 @@
 // Sign this machine in to Enforcer — once, for the MCP server and every plugin that reads ~/.enforcer.
 //
 //   login.mjs              browser sign-in (OAuth 2.1, PKCE, loopback redirect)
-//   login.mjs --for work|plan|admin  scope preset (default: the last one used)
+//   login.mjs --for work|plan|agents|admin  scope preset (default: the last one used)
 //   login.mjs --scope "a b" browser sign-in asking for only those scopes
 //   login.mjs scopes       list the scopes this Enforcer offers a sign-in
 //   login.mjs api-key -|FILE  use an existing Enforcer API key, read from stdin (-) or a file; never an argument
@@ -34,8 +34,9 @@ const out = (s) => process.stdout.write(s + '\n');
 export const WORK_SCOPES = ['enforcer:read', 'policy:self', 'enforcer:graph-runs.write', 'enforcer:graph-observations.write',
   'enforcer:graph-nodes.write', 'enforcer:graph-edges.write', 'enforcer:files-files.write',
   'enforcer:workspace.write' /* workspace switch/join; only requested when the server offers it */];
-export const PLAN_SCOPES = [...WORK_SCOPES, 'enforcer:graph-graphs.write', 'enforcer:graph-templates.write', 'enforcer:graph-epochs.write'];
-export const PRESETS = { work: WORK_SCOPES, plan: PLAN_SCOPES, admin: null /* everything offered */ };
+export const PLAN_SCOPES = [...WORK_SCOPES, 'enforcer:graph-graphs.write', 'enforcer:graph-graph-templates.write', 'enforcer:graph-epochs.write'];
+export const AGENTS_SCOPES = ['enforcer:read', 'policy:self', 'enforcer:agents.write', 'enforcer:agents-credentials.write'];
+export const PRESETS = { work: WORK_SCOPES, plan: PLAN_SCOPES, agents: AGENTS_SCOPES, admin: null /* everything offered */ };
 export const DEFAULT_PRESET = 'work';
 
 /** Scope string for a preset: the preset's scopes the server offers; admin = all offered. */
@@ -47,7 +48,7 @@ export function presetScope(meta, preset) {
   return have.length ? have.join(' ') : 'enforcer:read';
 }
 
-/** `--for work|plan|admin` anywhere in argv, removed. */
+/** `--for work|plan|agents|admin` anywhere in argv, removed. */
 export function extractPreset(argv) {
   const rest = [];
   let preset;
@@ -369,7 +370,7 @@ async function main(rawArgv) {
     return;
   }
 
-  out('Usage: /enforcer:login [<WORKSPACE-CODE>] [--for work|plan|admin] [--scope "<scopes>"] | api-key <file>|- | scopes | status | logout  — no argument opens a browser');
+  out('Usage: /enforcer:login [<WORKSPACE-CODE>] [--for work|plan|agents|admin] [--scope "<scopes>"] | api-key <file>|- | scopes | status | logout  — no argument opens a browser');
   process.exitCode = 2;
 }
 

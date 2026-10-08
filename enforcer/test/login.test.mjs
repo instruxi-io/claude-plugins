@@ -135,7 +135,7 @@ await ok('resources come from what the MCP server publishes about itself', async
 });
 
 const OFFERED = ['enforcer:read', 'policy:self', 'enforcer:graph-runs.write', 'enforcer:graph-observations.write', 'enforcer:graph-nodes.write',
-  'enforcer:graph-edges.write', 'enforcer:files-files.write', 'enforcer:graph-graphs.write', 'enforcer:graph-templates.write',
+  'enforcer:graph-edges.write', 'enforcer:files-files.write', 'enforcer:graph-graphs.write', 'enforcer:graph-graph-templates.write',
   'enforcer:graph-epochs.write', 'enforcer:agents-credentials.destructive'];
 
 await ok('presets: work, plan, admin pick exactly their scopes; --for parses; unknown is refused', () => {
@@ -145,12 +145,12 @@ await ok('presets: work, plan, admin pick exactly their scopes; --for parses; un
   assert.ok(!w.includes('enforcer:agents-credentials.destructive'));
   const p = presetScope(meta, 'plan').split(' ');
   assert.deepEqual(p.slice(0, 7), w);
-  assert.deepEqual(p.slice(7), ['enforcer:graph-graphs.write', 'enforcer:graph-templates.write', 'enforcer:graph-epochs.write']);
+  assert.deepEqual(p.slice(7), ['enforcer:graph-graphs.write', 'enforcer:graph-graph-templates.write', 'enforcer:graph-epochs.write']);
   assert.equal(presetScope(meta, 'admin'), OFFERED.join(' '));
   assert.throws(() => presetScope(meta, 'root'), /unknown preset/);
   assert.deepEqual(extractPreset(['--for', 'plan', 'X-1']), { argv: ['X-1'], preset: 'plan' });
   assert.deepEqual(extractPreset(['--for=work']), { argv: [], preset: 'work' });
-  assert.deepEqual(Object.keys(PRESETS), ['work', 'plan', 'admin']);
+  assert.deepEqual(Object.keys(PRESETS), ['work', 'plan', 'agents', 'admin']);
 });
 
 await ok('presets request enforcer:workspace.write for work, plan and admin when the server offers it', () => {
