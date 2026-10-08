@@ -6,6 +6,7 @@ import { guard, input, emit, done } from './lib.mjs';
 import { agentOf } from '../adapters/claude-code/events.mjs';
 import { DEFAULTS } from '../src/policy.mjs';
 import { loadConfig } from '../src/store.mjs';
+import { decisioningLine } from '../src/managed.mjs';
 import { sweep } from '../adapters/claude-code/sweep.mjs';
 import { recordPluginRoot } from '../adapters/claude-code/telemetry.mjs';
 import { governor } from '../adapters/claude-code/index.mjs';
@@ -46,7 +47,12 @@ if (EVENT === 'SessionEnd') done();
 // CLAUDE_ENV_FILE; Codex and Grok run this same shim, and the value is also in the output.
 if (EVENT === 'SessionStart') {
   if (process.env.CLAUDE_ENV_FILE) { try { appendFileSync(process.env.CLAUDE_ENV_FILE, 'export ENFORCER_GOVERNOR=1\n'); } catch {} }
-  emit(EVENT, { env: { ENFORCER_GOVERNOR: '1' } });
+  // One line saying whether decisioning is on; a compact or resume is the same
+  // session, so it is not repeated there.
+  const again = ev.source === 'compact' || ev.source === 'resume';
+  let mode = {};
+  if (!again) { try { mode = { systemMessage: decisioningLine({ ...DEFAULTS, ...loadConfig() }) }; } catch {} }
+  emit(EVENT, { env: { ENFORCER_GOVERNOR: '1' } }, mode);
 }
 emit(EVENT, {});
 });

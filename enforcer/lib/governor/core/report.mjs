@@ -2,7 +2,7 @@
 // Everything the slash commands print. Plain text on stdout -- these are read
 // by a person mid-session, so money first and jargon never.
 import { loadState, loadConfig, saveConfig, saveState, verify, withLock, commit, RECEIPTS } from './store.mjs';
-import { readManaged, merge, envOverrides, ENV_OVERRIDES } from './managed.mjs';
+import { readManaged, merge, envOverrides, ENV_OVERRIDES, decisioningLine } from './managed.mjs';
 import { DEFAULTS, priceOf, dollarsForTokens, burnRate, release } from './policy.mjs';
 import { SETTINGS, GROUPS, RETIRED, validate, parseValue } from './settings.mjs';
 
@@ -153,6 +153,7 @@ if (cmd === 'resume') {
   process.exit(0);
 }
 
+console.log(decisioningLine(cfg));
 if (Object.keys(fromEnv).length) console.log(envLine() + '\n');
 const agents = Object.values(state.agents || {});
 if (!agents.length) { console.log('No agents seen yet.'); process.exit(0); }

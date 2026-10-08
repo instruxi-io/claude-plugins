@@ -9,7 +9,7 @@ import { parseArgs } from 'node:util';
 import { API, APIError } from './api.mjs';
 import { Lease, LEASE_KEY, LEASE_TTL } from './lease.mjs';
 import { worktreeFor, worktreeSetup, BaseMissing, resolveBase, defaultBranch } from './worktree.mjs';
-import { launchCmd, workerEnv, mintWorkerToken, spawnWorker, killGroup, alive, pidAliveGroup, harnessRefusal, HARNESSES, LAND_PR, DEFAULT_WORKER_RULES, WORKER_RULES_MODES } from './launch.mjs';
+import { launchCmd, workerEnv, mintWorkerToken, spawnWorker, killGroup, alive, pidAliveGroup, harnessRefusal, HARNESSES, LAND_PR, DEFAULT_WORKER_RULES, WORKER_RULES_MODES, writeAgentMcpConfig, mcpConfigPath, removeAgentMcpConfigs } from './launch.mjs';
 import { modelFor, nodeMaxTurns } from './model.mjs';
 import { mergeTarget, repoOf, resourcesOf, lapsed, select, affinityOrder } from './select.mjs';
 import { summarize, failedOutcome, workerPrompt, remediationPrompt, harnessLimitText, limitResetAt, judgeLines, denialClass } from './summarize.mjs';
@@ -18,7 +18,7 @@ import { unsafeIdent } from './triage.mjs';
 import HEADLESS_PROFILE from '../../lib/governor/profiles/headless-worker.mjs';
 import { loadRepoBases } from './prune.mjs';
 import { clip, parseTs } from './util.mjs';
-import { writeLog, redactFile, pruneLogs, DEFAULT_LOG_DAYS, DEFAULT_LOG_MAX_BYTES } from './logs.mjs';
+import { writeLog, redactFile, pruneLogs, addSecret, DEFAULT_LOG_DAYS, DEFAULT_LOG_MAX_BYTES } from './logs.mjs';
 
 /** Per-worker spend cap passed as --max-budget-usd unless the operator overrides it. */
 export const DEFAULT_MAX_BUDGET_USD = HEADLESS_PROFILE.spend.defaultMaxBudgetUsd;
@@ -194,7 +194,10 @@ export class Dispatcher {
     if (failures.length) { prompt = remediationPrompt(this.g, n, path, branch, failures); t2 += ` (remediation after ${failures.length} failed attempt(s))`; }
     else prompt = workerPrompt(this.g, n, path, branch);
     const session = randomUUID();
-    const cmd = launchCmd(prompt, model, a, n.key, { session, maxTurns: turnsCap });
+    // An agent run talks to the API through its own MCP connection (see writeAgentMcpConfig), never the stored sign-in.
+    const ownMcp = a.agent && a.agentKey && a.mcpUrl && (a.harness || 'claude') === 'claude';
+    const mcpConfig = ownMcp ? mcpConfigPath(this.state, n.key) : null;
+    const cmd = launchCmd(prompt, model, a, n.key, { session, maxTurns: turnsCap, mcpConfig });
     const res = [...resourcesOf(n)].sort().join(',') || '-';
     if (a.dryRun) {
       this.say(`would launch ${n.key} [${n.type}, tier ${n.data?.tier ?? '-'}] model=${model} worktree=${path} branch=${branch || '-'} (${note}) resources=${res}${turnsCap ? ` max_turns=${turnsCap}` : ''}${t2}`);
@@ -206,7 +209,11 @@ export class Dispatcher {
     let token = null;
     if (this.args.agentKey) token = this.args.agentKey;
     else try { token = typeof this.api.call === 'function' ? await mintWorkerToken(this.api, process.env, `worker-${n.key}`.slice(0, 60)) : null; } catch (e) { this.say(`worker token not minted for ${n.key}: ${e.message}`); }
-    const proc = spawnWorker(cmd, { cwd: path, logPath, env: workerEnv(this.g, process.env, { token, release: n.type === 'release', workerRules: this.args.workerRules }) });
+    if (mcpConfig) {
+      try { writeAgentMcpConfig(this.state, n.key, a.mcpUrl, a.agentKey); } catch (e) { this.say(`refuse ${n.key}: could not write its MCP config: ${e.message}`); return; }
+    }
+    const proc = spawnWorker(cmd, { cwd: path, logPath, env: workerEnv(this.g, process.env, { token, release: n.type === 'release', workerRules: this.args.workerRules }),
+      cleanup: mcpConfig ? [mcpConfig] : [], secrets: a.agentKey ? [a.agentKey] : [] });
     const w = { kind: 'agent', node: n, key: n.key, logPath, proc, started: now(), resources: resourcesOf(n), path, model, turns: 0,
                 maxTurns: Math.max(a.maxTurns, turnsCap || 0), session };
     this.workers.set(n.key, w);
@@ -399,6 +406,7 @@ export class Dispatcher {
       } catch (e) { this.say(`shutdown of ${key}: ${e.name}: ${e.message}`); }
     }
     this.workers.clear();
+    if (this.state) removeAgentMcpConfigs(this.state);
     this.writePids();
     await this.lease.release();
   }
@@ -573,6 +581,8 @@ export async function main(argv, env = process.env) {
     args.agentKey = readAgentKey(args.agent, env);
     if (!args.agentKey) { process.stderr.write(`graph-dispatch: agent "${args.agent}" has no key: set ENFORCER_AGENT_KEY or store one in the OS keychain\n`); return 2; }
     env = { ...env, GRAPH_API_KEY: args.agentKey };
+    addSecret(args.agentKey);
+    args.mcpUrl = resolveConfig({ env }).mcpUrl;
   }
   const { headers } = await import('../preflight.mjs');
   const api = new API(resolveConfig({ env }).graphUrl, { headers: () => headers(env) });
