@@ -1,0 +1,1 @@
+dispatch --agent now gives each claude worker its own MCP connection (a 0600 per-run config with the agent key, launched with --strict-mcp-config), so a stored /mcp sign-in can no longer make claims as the operator; the key is redacted from worker logs and the file is removed when the worker exits.
