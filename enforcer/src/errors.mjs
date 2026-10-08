@@ -17,7 +17,7 @@ export function codeOf(body, status = 0) {
 }
 
 /**
- * @param {{status:number, code?:string, body?:object, message?:string}} err  an ApiError, or {status, body}
+ * @param {{status:number, code?:string, body?:object, message?:string, detail?:string}} err  an ApiError, or {status, body}
  * @param {{run?:boolean}} ctx  `run`: the call was about a run the session holds
  * @returns {{code:string, user:string, model:string, retried:boolean, quiet?:boolean}|null}
  */

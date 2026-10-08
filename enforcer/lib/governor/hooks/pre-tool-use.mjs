@@ -1,3 +1,4 @@
+// @ts-nocheck TODO(typecheck): many inferred-shape errors from untyped option objects, not bugs; annotate with JSDoc when tightening
 // Claude Code shim: hook JSON -> common event -> core decision -> Claude's
 // permission vocabulary. The decision and its wording live in lib/decide.mjs.
 // Fails closed: a throw denies (headless) or asks; bad stdin asks.

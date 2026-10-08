@@ -102,7 +102,7 @@ export function codeOf(v) {
  * person as an ask, carrying the safer command) is recorded as `ask`.
  * Field order is fixed; `run_id` is present only when the session holds a run.
  */
-export function decisionRecord(v, { tool = '', run_id } = {}) {
+export function decisionRecord(v, { tool = '', run_id } = /** @type {any} */ ({})) {
   const decision = v.action === 'rewrite' ? 'ask' : v.action;
   const rec = { decision, code: codeOf(v), rule: v.ruleId || v.rule || null, tool: String(tool || ''), summary: String(v.reason || '') };
   if (run_id) rec.run_id = String(run_id);

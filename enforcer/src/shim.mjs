@@ -8,7 +8,9 @@ export const shimPath = (home = homedir()) => join(home, '.local', 'bin', 'enfor
 export function shimContent(base) {
   return `#!/bin/sh\n# written by \`enforcer harness install\`\nv=$(cat "${base}/VERSION" 2>/dev/null) || { echo "enforcer: no runtime at ${base}; run: enforcer harness install" >&2; exit 1; }\nexec node "${base}/$v/bin/enforcer" "$@"\n`;
 }
-export function installShim({ home = homedir(), base, out = (s) => process.stdout.write(s + '\n'), pathEnv = process.env.PATH || '' } = {}) {
+export function installShim(
+  { home = homedir(), base, out = (s) => process.stdout.write(s + '\n'), pathEnv = process.env.PATH || '' } = /** @type {any} */ ({}),
+) {
   const p = shimPath(home);
   mkdirSync(join(home, '.local', 'bin'), { recursive: true });
   writeFileSync(p, shimContent(base));

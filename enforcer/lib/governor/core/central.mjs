@@ -134,8 +134,8 @@ export function interpret(decision) {
  *
  * @param rule  the matched capability rule
  * @param cfg   config: policyOn, policyTimeoutMs, policyTtlSec, centralUrl
- * @param deps  { fetchImpl, now } — injected so the tests need no network
- * @returns {{opinion, reason?, detail?, cached?}}  never throws
+ * @param deps  fetchImpl and now, injected so the tests need no network
+ * @returns {Promise<{opinion: any, reason?: any, detail?: any, cached?: any}>}  never throws
  */
 export async function consult(rule, cfg = {}, { fetchImpl = hookFetch, now = Date.now } = {}) {
   if (!rule) return null;

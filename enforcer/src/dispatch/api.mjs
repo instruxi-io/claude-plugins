@@ -27,7 +27,10 @@ export class APIError extends Error {
 const one = (d) => (Array.isArray(d) ? d[0] : d);
 
 export class API {
-  constructor(base, { headers = async () => ({}), fetchImpl, retries = 3, baseDelayMs = 1000, sleep, timeoutMs = TIMEOUTS.dispatcher } = {}) {
+  constructor(
+    base,
+    { headers = async () => ({}), fetchImpl, retries = 3, baseDelayMs = 1000, sleep, timeoutMs = TIMEOUTS.dispatcher } = /** @type {any} */ ({}),
+  ) {
     this.base = base.replace(/\/+$/, '');
     this.headers = headers;
     this.o = { fetchImpl, retries, baseDelayMs, timeoutMs, ...(sleep ? { sleep } : {}) };

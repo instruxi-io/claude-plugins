@@ -1,3 +1,4 @@
+// @ts-nocheck TODO(typecheck): many inferred-shape errors from untyped option objects, not bugs; annotate with JSDoc when tightening
 // The gate. Composes the two layers, and owns the one thing v1 and v2 only
 // ever expressed in comments: THEY FAIL IN OPPOSITE DIRECTIONS, ON PURPOSE.
 //

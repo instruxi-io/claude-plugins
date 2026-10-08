@@ -105,7 +105,7 @@ function periodCaps(state, a, ev, cfg) {
   const word = { day: 'today', week: 'this week', month: 'this month' };
   for (const [name] of PERIODS) {
     const cap = caps[name],
-      spent = state.periods[name].usd;
+      spent = state.periods[/** @type {any} */ (name)].usd;
     if (cap > 0 && spent >= cap) {
       ground(a, name);
       return Verdict.deny(`your agents have spent $${spent.toFixed(2)} ${word[name]}, which is your $${cap} limit`, of);

@@ -31,6 +31,7 @@ const SUITES = [
   // the linter and the formatter are suites, so CI (which runs npm test) enforces them
   ['lint (biome)', { cmd: process.execPath, args: [join(ROOT, 'scripts', 'biome.mjs'), 'lint'] }],
   ['format check (biome)', { cmd: process.execPath, args: [join(ROOT, 'scripts', 'biome.mjs'), 'format'] }],
+  ['tsc (plugin source)', { cmd: process.execPath, args: [join(ROOT, 'node_modules/typescript/bin/tsc'), '--noEmit', '-p', 'tsconfig.json'] }],
   ['tsc (generated API types)', { cmd: process.execPath, args: [join(ROOT, 'node_modules/typescript/bin/tsc'), '--noEmit', '-p', 'lib/api/tsconfig.json'] }],
 ];
 

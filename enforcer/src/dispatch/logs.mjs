@@ -7,11 +7,12 @@ import { redact } from '../graph/redact.mjs';
 export const DEFAULT_LOG_DAYS = 14;
 export const DEFAULT_LOG_MAX_BYTES = 2 * 1024 ** 3;
 
+/** @type {[RegExp, string][]} */
 const LEVEL_RE = [
   [/^(REFUSE|BLOCKED|DENIED|FAILED|HARNESS-LIMITED|CI-UNAVAILABLE)\b/, 'error'],
   [/\b(failed|refused|denied|not minted|could not)\b/i, 'warn'],
 ];
-export const levelOf = (msg) => (LEVEL_RE.find(([rx]) => rx.test(msg)) || [0, 'info'])[1];
+export const levelOf = (msg) => (LEVEL_RE.find(([rx]) => /** @type {RegExp} */ (rx).test(msg)) || [0, 'info'])[1];
 const eventOf = (msg) => (msg.match(/^[A-Za-z][\w-]*/) || ['log'])[0].toLowerCase();
 
 /** Literal secrets the dispatcher holds (the agent key): replaced in every log line and worker stream, whatever their shape. */
@@ -37,7 +38,7 @@ const clean = (v) => {
 };
 
 /** One JSON line: {ts (ISO), level, event, key, run, fields}. Secrets in strings are redacted. */
-export function jsonLine(msg, { level, event, key = null, run = null, fields = {} } = {}) {
+export function jsonLine(msg, { level, event, key = null, run = null, fields = {} } = /** @type {any} */ ({})) {
   const f = Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, clean(v)]));
   return (
     JSON.stringify({ ts: new Date().toISOString(), level: level || levelOf(msg), event: event || eventOf(msg), key, run, msg: clean(msg), fields: f }) + '\n'

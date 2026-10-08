@@ -255,7 +255,7 @@ export function commit(state, entry, hash, before = state.prevHash) {
 // that does not add up, so an edit or a deletion anywhere is named -- and
 // still counts every line, so "line 3 of N" says how much of the record
 // sits after the break.
-export function verify(file = RECEIPTS, { state } = {}) {
+export function verify(file = RECEIPTS, { state } = /** @type {any} */ ({})) {
   if (!existsSync(file)) return { ok: true, receipts: 0, brokeAt: 0 };
   let prev = 'genesis',
     n = 0,
