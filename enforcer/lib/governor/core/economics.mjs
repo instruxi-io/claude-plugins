@@ -16,7 +16,6 @@
 
 import { Verdict, ECONOMICS, CAPABILITY, OPERATOR } from './verdict.mjs';
 import { nameOf } from './tools.mjs';
-import { loop as LOOP_PROFILE } from './headless-worker-profile.mjs';
 import {
   PERIODS, burnRate, spawnRate, addSpend, getAgent, setModel, clientFor,
   rollPeriods, modelAdvice, taskShape, BURN_WINDOW, dayKey,
@@ -37,8 +36,6 @@ const asking = (a, reason, now) => {
 // Everything that changes because this call happened, before anything judges
 // it. Kept apart from the checks so that "what we learned" and "what we
 // decided" are not the same forty lines.
-const LOOP_EXEMPT = LOOP_PROFILE.exempt;
-
 export function ingest(state, ev, cfg, now) {
   rollPeriods(state, now);
   const a = getAgent(state, ev.agent || 'default', cfg);
@@ -67,29 +64,16 @@ export function ingest(state, ev, cfg, now) {
   else if (delta !== null) a.tokens += delta;
   if (typeof ev.cost === 'number') a.cost = ev.cost;
   addSpend(state, a, a.tokens - was, now);
-
-  // Keepalives are repetitive by design: a graph worker heartbeats the same run every lease/3 and
-  // polls plan status while it waits on CI or a landing. Counting them as "the same action" stopped
-  // a worker for looping on 2026-10-06 and took the dispatcher down with it. They neither count
-  // toward nor reset the streak.
-  if (LOOP_EXEMPT.test(nameOf(ev) || '')) { if (a.loopStreak === undefined) a.loopStreak = 0; return a; }
-  const sig = ev.action || `${nameOf(ev) || 'tool'}:${JSON.stringify(ev.args ?? '')}`;
-  a.recent.push(sig);
-  if (a.recent.length > cfg.loopWindow) a.recent.shift();
-  a.loopStreak = a.recent.reduce((n, s) => n + (s === sig ? 1 : 0), 0);
   return a;
 }
 
 // ── the checks, in the order they run ───────────────────────────────────────
 // Order is the policy. Read it as one list.
 
-/** A human stop and a loop stop latch; spend stops do not, so raising a limit frees an agent. */
+/** A human stop latches; spend stops do not, so raising a limit frees an agent. */
 function latched(state, a, ev, cfg) {
-  const LATCH = a.groundedBy === 'human' || a.groundedBy === 'loop';
-  if (a.status === 'grounded' && LATCH) {
-    return Verdict.deny(a.groundedBy === 'loop'
-      ? 'it was stopped for looping. Resume it with /enforcer-governor:resume'
-      : 'you stopped this agent. Resume it with /enforcer-governor:resume',
+  if (a.status === 'grounded' && a.groundedBy === 'human') {
+    return Verdict.deny('you stopped this agent. Resume it with /enforcer-governor:resume',
       { ...of, source: OPERATOR });
   }
   if (a.status === 'grounded') { a.status = 'active'; a.groundedBy = undefined; }
@@ -119,14 +103,6 @@ function periodCaps(state, a, ev, cfg) {
     }
   }
   return null;
-}
-
-/** Occurrences in a window, not a consecutive streak: a stuck agent usually alternates. */
-function loop(state, a, ev, cfg) {
-  if (!cfg.loopOn || a.loopStreak < cfg.loopLimit) return null;
-  ground(a, 'loop');
-  return Verdict.deny(
-    `it repeated the same action ${a.loopStreak} times in its last ${a.recent.length} - that is a loop`, of);
 }
 
 /** Speed before totals: by the time a daily cap notices, the day's money is gone. */
@@ -188,9 +164,9 @@ function softLimit(state, a, ev, cfg, now) {
   return Verdict.deny('it passed the warn-me mark, and you set that to stop it', of);
 }
 
-const CHECKS = [latched, declined, periodCaps, loop, burn, fanout, retryStorm, clientCap, hardLimit, softLimit];
+const CHECKS = [latched, declined, periodCaps, burn, fanout, retryStorm, clientCap, hardLimit, softLimit];
 // Each check's machine code (codes.mjs), stamped on the verdict it returns.
-const CHECK_CODES = new Map([[latched, 'agent_stopped'], [declined, 'ask_declined'], [periodCaps, 'period_limit'], [loop, 'loop_detected'],
+const CHECK_CODES = new Map([[latched, 'agent_stopped'], [declined, 'ask_declined'], [periodCaps, 'period_limit'],
   [burn, 'burn_rate'], [fanout, 'fanout_rate'], [retryStorm, 'retry_storm'], [clientCap, 'client_limit'],
   [hardLimit, 'spend_limit'], [softLimit, 'spend_warning']]);
 

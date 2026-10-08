@@ -282,8 +282,6 @@ export const DEFAULTS = {
   model: 'claude-opus-5',     // which model's prices convert dollars -> tokens
   budget: 4000000,            // == $20 at Opus 5 rates. Derived from dollars+model.
   soft: 0.75,         // escalate / warn at this fraction of budget
-  loopLimit: 4,       // identical action repeats that trip a loop block
-  loopWindow: 8,      // how many recent actions to remember
   // Total spend caps across ALL agents, in dollars. 0 means off. These are what
   // bound a team; the per-agent limit only bounds one session.
   dailyLimit: 0,
@@ -316,7 +314,6 @@ export const DEFAULTS = {
   // rules or the tenant policy once someone turns them on. An organisation's
   // managed `on` still wins over these (managed.mjs onWins).
   budgetOn: false,
-  loopOn: true,
   rulesOn: false,     // capability rules: what it may DO
   // Ask the tenant's Enforcer policy about actions a rule matched (central.mjs).
   // Inert when signed out; the local rule stands whenever it cannot answer.
@@ -457,7 +454,7 @@ export function getAgent(state, id, cfg, now = Date.now()) {
       while (state.spawns.length && state.spawns[0].t <= from) state.spawns.shift();
     }
     state.agents[id] = {
-      id, tokens: 0, recent: [], escalated: false, status: 'active',
+      id, tokens: 0, escalated: false, status: 'active',
       budget: cfg.budget, soft: cfg.soft, cost: 0,
     };
   }
@@ -466,11 +463,10 @@ export function getAgent(state, id, cfg, now = Date.now()) {
 
 // The one call. Returns { verdict, reason, receipt, hash, agent }.
 // verdict is one of: allow | deny | escalate.
-// Decisioning is off: spend checks off, and either the loop check or the
-// capability rules off too. The second half is what a fresh install has
-// (budgetOn and rulesOn false by default); loop detection belongs to jev-hooks,
-// so the governor's own loop check does not hold decisioning on by itself.
-export const checksOff = (cfg = {}) => cfg.budgetOn === false && (cfg.loopOn === false || cfg.rulesOn === false);
+// Decisioning is off: spend checks off and capability rules off, which is what
+// a fresh install has (budgetOn and rulesOn false by default). Loop detection
+// belongs to jev-hooks, not the governor.
+export const checksOff = (cfg = {}) => cfg.budgetOn === false && cfg.rulesOn === false;
 
 export function decide(state, ev, config = {}) {
   const cfg = { ...DEFAULTS, ...config };
@@ -516,16 +512,12 @@ export function decide(state, ev, config = {}) {
   // So the spend reasons do not latch. If the agent is still over its limit the
   // check below grounds it again on this very call; if the human raised the
   // limit, it simply carries on. Nothing is lost by re-deriving them, and the
-  // dead end goes away. What DOES latch is a human saying stop, and a loop --
-  // a looping agent that happens not to repeat itself this once is still the
-  // agent you stopped. An old state file with no reason recorded is treated as
-  // re-derivable, so upgrading unsticks anyone already stuck.
-  const LATCHED = a.groundedBy === 'human' || a.groundedBy === 'loop';
-  if (a.status === 'grounded' && LATCHED) {
+  // dead end goes away. What DOES latch is a human saying stop. An old state
+  // file with no reason recorded is treated as re-derivable, so upgrading
+  // unsticks anyone already stuck.
+  if (a.status === 'grounded' && a.groundedBy === 'human') {
     return record(state, a, 'deny',
-      a.groundedBy === 'loop'
-        ? 'it was stopped for looping. Resume it with /enforcer-governor:resume'
-        : 'you stopped this agent. Resume it with /enforcer-governor:resume',
+      'you stopped this agent. Resume it with /enforcer-governor:resume',
       a.tokens);
   }
   if (a.status === 'grounded') { a.status = 'active'; a.groundedBy = undefined; }
@@ -579,21 +571,6 @@ export function decide(state, ev, config = {}) {
     }
   }
 
-  // Loop / waste: the same action signature showing up too often in the recent
-  // window. Counting OCCURRENCES rather than a back-to-back streak matters:
-  // a stuck agent usually alternates (read A, edit A, read A, edit A...), and a
-  // consecutive-only check never fires on that at all.
-  const sig = ev.action || `${ev.tool || 'tool'}:${JSON.stringify(ev.args ?? '')}`;
-  a.recent.push(sig);
-  if (a.recent.length > cfg.loopWindow) a.recent.shift();
-  const repeats = a.recent.reduce((n, s) => n + (s === sig ? 1 : 0), 0);
-  a.loopStreak = repeats;
-
-  if (cfg.loopOn && repeats >= cfg.loopLimit) {
-    a.status = 'grounded'; a.groundedBy = 'loop';
-    return record(state, a, 'deny',
-      `it repeated the same action ${repeats} times in its last ${a.recent.length} - that is a loop`, a.tokens);
-  }
   // Speed, before totals. A runaway is recognisable by how fast it spends
   // long before it reaches any ceiling, and by the time a daily cap notices,
   // the day's money is already gone. Escalating rather than denying is
@@ -700,7 +677,6 @@ export function release(state, agentId, extra = 1.5) {
   a.status = 'active';
   a.groundedBy = undefined;
   a.escalated = false;
-  a.loopStreak = 0;
   a.burnFlagged = a.retryFlagged = state.fanoutFlagged = false;
   a.pendingAsk = undefined;
   return record(state, a, 'allow', 'you resumed it and raised its limit', a.tokens, 'human');
@@ -747,7 +723,7 @@ export function record(state, a, verdict, reason, tokens, authority, operator, e
   state.prevHash = hash;
   return {
     verdict, reason, receipt: 'rcpt_' + hash.slice(0, 12), hash,
-    agent: { id: a.id, tokens: Math.round(a.tokens), budget: a.budget, status: a.status, loopStreak: a.loopStreak || 0 },
+    agent: { id: a.id, tokens: Math.round(a.tokens), budget: a.budget, status: a.status },
     entry,
   };
 }
