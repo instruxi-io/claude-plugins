@@ -101,8 +101,35 @@ export function managedKeys(managed = {}) {
 
 // ── the cache ───────────────────────────────────────────────────────────────
 
-/** The config a decision actually uses: local, floored by the tenant's. */
-export const effective = (cfg = {}) => merge(cfg, readManaged());
+// ── per-process overrides ───────────────────────────────────────────────────
+// config.json is machine-wide, so turning a check off for one harness turned it
+// off for every harness and every dispatched worker. These variables scope a
+// check to one process tree: a dispatcher sets ENFORCER_GOVERNOR_RULES=on for
+// its workers, another launch leaves it unset. Each is `on` or `off`; anything
+// else is ignored. They beat config.json, and they do NOT beat an organisation
+// floor: the managed merge runs after them, so a managed `on` still wins.
+export const ENV_OVERRIDES = Object.freeze({
+  rulesOn: 'ENFORCER_GOVERNOR_RULES',
+  budgetOn: 'ENFORCER_GOVERNOR_BUDGET',
+  policyOn: 'ENFORCER_GOVERNOR_POLICY',
+});
+
+/** The settings this process's environment sets, as { key: boolean }. */
+export function envOverrides(env = process.env) {
+  const out = {};
+  for (const [key, name] of Object.entries(ENV_OVERRIDES)) {
+    const v = String(env?.[name] ?? '').trim().toLowerCase();
+    if (v === 'on') out[key] = true;
+    else if (v === 'off') out[key] = false;
+  }
+  return out;
+}
+
+/** Local config with this process's environment overrides applied. */
+export const withEnv = (cfg = {}, env = process.env) => ({ ...cfg, ...envOverrides(env) });
+
+/** The config a decision actually uses: local, then the environment, floored by the tenant's. */
+export const effective = (cfg = {}) => merge(withEnv(cfg), readManaged());
 
 // How often SessionStart goes to the network. A session start is a foreground
 // moment -- someone is waiting -- so most of them read the cache and return.

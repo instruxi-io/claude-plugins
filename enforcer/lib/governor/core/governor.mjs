@@ -201,7 +201,7 @@ export function createGovernor({ harness = 'unknown', adapterVersion = '', cost 
    */
   function brief(agent) {
     const held = withLock(() => {
-      const cfg = { ...DEFAULTS, ...loadConfig() };
+      const cfg = config();
       const state = loadState();
       const a = (state.agents || {})[agent];
       const b = briefFor(a, cfg);

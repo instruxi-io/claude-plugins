@@ -120,6 +120,8 @@ To switch the governor off without uninstalling it, set any of these in `~/.conf
 
 Shadow mode: with `rulesOn` off and `shadow` on (the default), the capability rules are still evaluated locally and each receipt records what they would have decided as `would: {decision, code, rule}`, while the hook answers allow with `checks_off`. Shadow mode never asks the tenant policy, never reads spend, does not run the graph-worker rules, and an error in it only drops `would`. With `rulesOn` on there is no `would`: the real decision is the receipt. Set `"shadow": false` to stop recording it.
 
+Per process: `ENFORCER_GOVERNOR_RULES`, `ENFORCER_GOVERNOR_BUDGET` and `ENFORCER_GOVERNOR_POLICY`, each `on` or `off`, turn `rulesOn`, `budgetOn` and `policyOn` on or off for that process and its children without touching `config.json` (any other value is ignored). They beat `config.json` but not an organisation floor: a managed `on` still wins. A dispatcher can set `ENFORCER_GOVERNOR_RULES=on` for its workers while another harness leaves it unset. `governor config` marks such a value with `~` and `governor status` names the variables.
+
 ### Settings your organisation sets
 
 An Enforcer tenant can publish a set of these settings for every install it signs in (`GET /api/v1/governance/settings`, written by a tenant admin). They are a **floor, not an override**: for each setting the governor applies whichever of the two is stricter, so a managed $150 beats your $400 and your $40 beats both, and a check the organisation turns on cannot be turned off locally. `node bin/enforcer governor config` marks them with `!` and shows your own value beside them.
