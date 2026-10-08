@@ -8,6 +8,7 @@ import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { assertSchema, stamp } from './schema.mjs';
+import { envBaseUrl, DEFAULT_BASE_URL } from './config.mjs';
 
 // ONE sign-in for everything Enforcer on this machine.
 //
@@ -26,7 +27,7 @@ export const SHARED_DIR = () => process.env.ENFORCER_HOME || join(home(), '.enfo
 export const SHARED_FILE = () => join(SHARED_DIR(), 'credentials.json');
 // Where enforcer-governor kept the credential before the shared file existed.
 const LEGACY_FILE = join(process.env.GOVERNOR_HOME || join(home(), '.enforcer-governor'), 'credentials.json');
-export const DEFAULT_BASE_URL = 'https://api.instruxi.dev';
+export { DEFAULT_BASE_URL };
 
 /** The legacy credential file's path when it still holds a credential, else null. */
 export const legacyCredentialFile = () => { const l = readJson(LEGACY_FILE)?.enforcer; return l && (l.api_key || l.oauth?.access_token) ? LEGACY_FILE : null; };
@@ -66,11 +67,11 @@ export function saveCredentials(doc) {
  * Origins a token_endpoint or saved base_url may point at. Both come from
  * files an agent can write, so without this a planted file would have the
  * refresh token POSTed to an attacker. https only, and only the production
- * origin or the one the operator set in ENFORCER_BASE_URL.
+ * origin or the one the operator set in the environment (see config.mjs).
  */
 export function allowedOrigins() {
   const out = new Set([new URL(DEFAULT_BASE_URL).origin]);
-  try { if (process.env.ENFORCER_BASE_URL) out.add(new URL(process.env.ENFORCER_BASE_URL).origin); } catch { /* ignore */ }
+  try { if (envBaseUrl()) out.add(new URL(envBaseUrl()).origin); } catch { /* ignore */ }
   return out;
 }
 export function isAllowedUrl(u) {
@@ -78,7 +79,7 @@ export function isAllowedUrl(u) {
     const url = new URL(String(u));
     if (!allowedOrigins().has(url.origin)) return false;
     // https required, except for an origin the operator named in the environment.
-    return url.protocol === 'https:' || (!!process.env.ENFORCER_BASE_URL && url.origin === new URL(process.env.ENFORCER_BASE_URL).origin);
+    return url.protocol === 'https:' || (!!envBaseUrl() && url.origin === new URL(envBaseUrl()).origin);
   } catch { return false; }
 }
 

@@ -3,6 +3,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { stateBase, privateDir, privateWrite } from '../state.mjs';
 import { readCredentials } from '../../credentials.mjs';
+import { envBaseUrl } from '../../config.mjs';
 import { LEGACY_PROJECT_CONFIG } from '../../../hooks/claude/paths.mjs';
 
 export const GRAPH_TOOL_PREFIXES = ['mcp__plugin_enforcer_enforcer__graph_', 'mcp__enforcer__graph_', 'mcp__enforcer-graph__graph_'];
@@ -24,7 +25,7 @@ export function findConfig(start) {
   const env = process.env;
   if (env.GRAPH_ID) cfg.graph_id = env.GRAPH_ID;
   if (env.GRAPH_BASE_URL) cfg.base_url = env.GRAPH_BASE_URL;
-  if (env.ENFORCER_BASE_URL) cfg.base_url = env.ENFORCER_BASE_URL;
+  if (envBaseUrl(env)) cfg.base_url = envBaseUrl(env);
   cfg.api_key = env[cfg.api_key_env || 'GRAPH_API_KEY'] || env.GRAPH_API_KEY || '';
   const doc = cfg.api_key ? null : readCredentials();
   if (!cfg.base_url && doc) cfg.base_url = doc.enforcer?.base_url || '';

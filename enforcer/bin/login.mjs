@@ -256,7 +256,7 @@ async function main(rawArgv) {
   const { argv: a1, scope } = extractScope(rawArgv);
   const { argv, preset: forPreset } = extractPreset(a1);
   const [cmd, arg] = parseLoginArgs(argv);
-  // ENFORCER_BASE_URL wins (switch deployments without editing a file), then the
+  // The environment base URL wins (switch deployments without editing a file), then the
   // origin the saved sign-in was made against, then the public one.
   const base = resolveConfig({ flag: flagValue(rawArgv) }).baseUrl;
 

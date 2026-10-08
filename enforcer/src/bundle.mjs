@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { stateBase } from './state.mjs';
 import { readCredentials, keyId, enforcerKey, SHARED_FILE } from './credentials.mjs';
-import { resolveConfig, VARS } from './config.mjs';
+import { resolveConfig, envBaseUrl, BASE_URL_VAR, VARS } from './config.mjs';
 import { redact } from './graph/redact.mjs';
 import { runChecks } from './doctor.mjs';
 import { verify, RECEIPTS } from '../lib/governor/core/store.mjs';
@@ -50,7 +50,7 @@ export async function collect({ network = false, fetchImpl } = {}) {
     const c = resolveConfig({ saved: cred });
     return { resolved: c, sources: [
       { source: 'flag', value: null, note: 'not applicable to a bundle' },
-      { source: 'ENFORCER_BASE_URL', value: process.env.ENFORCER_BASE_URL || null },
+      { source: BASE_URL_VAR, value: envBaseUrl() || null },
       { source: 'saved credentials', value: cred?.enforcer?.base_url || null, file: SHARED_FILE() },
       { source: 'default', value: 'https://api.instruxi.dev' }], winner: c.source };
   }));
