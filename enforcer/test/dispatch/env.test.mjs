@@ -11,8 +11,10 @@ test('worker env contains no key not on the allowlist', () => {
   assert.equal(e.GRAPH_ID, 'g1'); assert.equal(e.PATH, '/bin');
 });
 
-test('ENFORCER_API_KEY is not inherited', () => {
-  assert.equal(workerEnv('g', dirty, { token: 'ag_x' }).ENFORCER_API_KEY, undefined);
+test('ENFORCER_API_KEY is never the operator\'s: absent without a worker token, the worker token with one', () => {
+  assert.equal(workerEnv('g', dirty).ENFORCER_API_KEY, undefined);
+  // the MCP credential helper reads ENFORCER_API_KEY, so the worker token must be there too or claims fall back to the operator's sign-in
+  assert.equal(workerEnv('g', dirty, { token: 'ag_x' }).ENFORCER_API_KEY, 'ag_x');
   assert.equal(workerEnv('g', dirty, { token: 'ag_x' }).GRAPH_API_KEY, 'ag_x');
 });
 

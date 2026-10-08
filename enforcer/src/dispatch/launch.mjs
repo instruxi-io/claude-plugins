@@ -80,7 +80,10 @@ export function workerEnv(graphId, env = process.env, { token = null, release = 
     JEV_HOOKS_HEADLESS: '1', CLAUDE_PLUGIN_ROOT: root, ENFORCER_PLUGIN_ROOT: root });
   if (release) out.ENFORCER_RELEASE_NODE = '1';
   if (runId) { out.GRAPH_RUN_ID = String(runId); out.ENFORCER_GRAPH_RUN_ID = String(runId); }
-  if (token) out.GRAPH_API_KEY = token;
+  // The worker's credential has two readers: the graph hooks read GRAPH_API_KEY, but the plugin's MCP header helper (bin/enforcer-headers.mjs,
+  // src/credentials.mjs) reads ENFORCER_API_KEY and otherwise falls back to the OPERATOR's saved sign-in, so a claim made through the MCP tools
+  // would be attributed to the operator, not the agent. Give both the same token. The operator's own ENFORCER_API_KEY is still never inherited.
+  if (token) { out.GRAPH_API_KEY = token; out.ENFORCER_API_KEY = token; }
   if (env.ENFORCER_WORKER_GH_TOKEN) out.GH_TOKEN = env.ENFORCER_WORKER_GH_TOKEN;
   return out;
 }
