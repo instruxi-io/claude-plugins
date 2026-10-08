@@ -122,6 +122,8 @@ the MCP tools but leaves the governor signed out. The credential is stored in
 `~/.enforcer/credentials.json`; governor records and session state are under
 `~/.config/enforcer/`.
 
+The governor reports first: `enforcer governor status` and `enforcer governor report` show spend, tools, errors and receipts, and the receipts can be read with OpenTelemetry. Its decisioning (capability rules, spend and rate checks, tenant policy) is off by default; turn it on with `enforcer governor enable rules`. See [enforcer/lib/governor/README.md](enforcer/lib/governor/README.md).
+
 That sign-in is also what the graph worker hooks use, so nobody needs an API
 key. It grants the graph's work loop (claim, heartbeat, report, remember) and
 plan authoring (import, templates, nodes, edges); deleting and sharing plans
