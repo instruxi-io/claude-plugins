@@ -1,1 +1,0 @@
-- `npm run bump <version>` now folds changes/*.md into a new CHANGELOG.md section and deletes them, and `node scripts/release.mjs notes <version>` prints that section (release-fold-fragments).

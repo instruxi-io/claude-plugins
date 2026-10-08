@@ -2,6 +2,36 @@
 
 ## Unreleased
 
+## 1.3.0
+
+The governor now reports first: decisioning (capability rules, spend and rate checks, tenant policy) is off by default and only on when configured. This release also adds a linter, formatter and type check to the test run, and improves doctor and the Grok install.
+
+- dispatch --agent now gives workers the agent key as ENFORCER_API_KEY too, so claims made through the MCP tools are attributed to the agent and not to the operator's saved sign-in.
+- dispatch --agent now gives each claude worker its own MCP connection (a 0600 per-run config with the agent key, launched with --strict-mcp-config), so a stored /mcp sign-in can no longer make claims as the operator; the key is redacted from worker logs and the file is removed when the worker exits.
+- enforcer dispatch run takes --worker-rules on|off (default off) and tells you which mode workers run in.
+- enforcer doctor reports hook commands whose script path is missing and a Grok runtime older than the plugin.
+- doctor: the dead-hook path test compares native paths so the Windows CI job passes.
+- enforcer doctor lists project-scope plugin installs whose directory no longer exists (report only).
+- doctor builds hook script paths with the native separator, so the dead-hook check passes on Windows (it merged red in #204).
+- The governor reports first: a fresh install has decisioning off (budgetOn, rulesOn and policyOn default to false), still writes a receipt for every call (allow, code checks_off), and an organisation's on still wins.
+- ENFORCER_GOVERNOR_RULES, ENFORCER_GOVERNOR_BUDGET and ENFORCER_GOVERNOR_POLICY (`on` or `off`) turn a governor check on or off for one process tree over config.json, under any organisation floor; `governor config` marks them with `~` and `governor status` names them.
+- The governor README now leads with reporting (status, report, receipts, OpenTelemetry) and documents decisioning as opt-in.
+- The governor receipt line format is now a written, tested contract (otel/receipt.schema.json) for the OpenTelemetry collector.
+- The governor no longer does loop detection (jev-hooks owns it): loopOn, loopLimit and loopWindow are retired settings and identical repeated tool calls are allowed.
+- Add `enforcer governor report [--since 24h|7d|30d] [--json]`: offline summary of spend, tools, errors and decisions from local cost files and receipts.
+- The governor's settings can be changed with enforcer governor set, enable, disable and telemetry, and /enforcer:governor.
+- The governor records what its capability rules would have decided (`would` on each receipt) while decisioning is off, under the new `shadow` setting (on by default); it never blocks, asks the tenant policy or reads spend.
+- `enforcer governor status` now opens with a Decisioning: ON or OFF line, repeated once in the session-start notice.
+- `enforcer harness install grok` takes --graph-only, --no-hooks, --no-agent and --skills, records them in its manifest, and a plain reinstall reuses them.
+- Add Biome as the linter and formatter (npm run lint, npm run format:check), run as suites of npm test, and format the tree once.
+- Login presets now ask only for scopes the server offers (plan uses graph-graph-templates.write) and `--for agents` covers agent and key creation.
+- `login status` lists the granted scopes, which capability families they cover, and the exact `enforcer login --for ...` command for each missing one.
+- `enforcer event <name> [--graph-only]` is now the one hook command for Claude Code and Grok; `enforcer hook` stays as an alias of `--graph-only`.
+- Add a real claude -p worker end to end test (skipped without ENFORCER_REAL_CLAUDE=1 and ANTHROPIC_API_KEY) with a shared stub graph server.
+- `npm run bump <version>` now folds changes/*.md into a new CHANGELOG.md section and deletes them, and `node scripts/release.mjs notes <version>` prints that section (release-fold-fragments).
+- Every read of the API base URL now goes through src/config.mjs, and a test keeps it so.
+- The hand-written plugin source (src, lib/governor, lib/graph, hooks) is now type-checked in the test run (tsc checkJs baseline).
+
 ## 1.2.0
 
 Dispatched workers can run on their own agent credential instead of your browser sign-in, run the code under test rather than the installed release, and report evidence that survives the hook's time limit. The report hook no longer loses evidence to NUL bytes or timeouts, long commands keep their lease, and the nightly smoke now actually runs.
