@@ -48,13 +48,6 @@ writeFileSync(f, readFileSync(f, 'utf8').replace('mcp__enforcer__graph_report', 
 r = run('--root', d);
 assert.equal(r.status, 1); assert.match(r.stderr, /not under a known enforcer server prefix/); ok('an unknown server prefix fails');
 
-// A Grok matcher naming a tool the server does not register.
-d = copy();
-f = join(d, 'enforcer/harness/grok/hooks/enforcer.json');
-writeFileSync(f, readFileSync(f, 'utf8').replace('enforcer__graph_(next_work|', 'enforcer__graph_(next_job|'));
-r = run('--root', d);
-assert.equal(r.status, 1); assert.match(r.stderr, /"graph_next_job" is not a tool/); ok('a renamed Grok matcher fails');
-
 // A command's allowed-tools other than setup.md.
 d = copy();
 f = join(d, 'enforcer/commands/workspace.md');

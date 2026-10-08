@@ -2,8 +2,8 @@
 // enforcer CLI.
 //   enforcer governor <decide|status|config|limit|verify|set|enable|disable|telemetry>   the governor core
 //   enforcer login|logout|status|workspace                   sign in (wraps bin/login.mjs, bin/enforcer-workspace.mjs)
-//   enforcer event <name>                                    one process per hook event: governor + graph handlers, merged
-//   enforcer hook <event> [handler]                          graph worker hooks (self-gated)
+//   enforcer event <name> [--graph-only]                     one process per hook event: governor + graph handlers, merged
+//   enforcer hook <event> [handler]                          alias of: event <event> --graph-only
 // V8 compile cache (node >= 22.1): the governor's module graph loads in a few ms instead of tens.
 try { process.getBuiltinModule?.('node:module')?.enableCompileCache?.(join(process.getBuiltinModule('node:os').tmpdir(), `enforcer-v8-${process.getuid?.() ?? 0}`)); } catch {}
 const spawnSync = (...a) => process.getBuiltinModule('node:child_process').spawnSync(...a);
@@ -48,26 +48,23 @@ if (area === 'doctor') {
 }
 
 if (area === 'event') {
-  const code = await runEvent(sub);
+  const graphOnly = rest.includes('--graph-only');
+  const code = await runEvent(sub, { graphOnly });
+  await new Promise((done) => process.stdout.write('', done)); // drain a piped stdout before exiting (macOS cut replies at 8192 bytes)
   process.exit(code);
 }
 
+// `enforcer hook <event> [handler]` is a documented alias of `enforcer event <event> --graph-only`
+// (the handler narrows it to one graph handler). Kept so existing Grok installs keep working.
 if (area === 'hook' && HOOKS[sub]) {
-  let input = '';
-  try { input = readFileSync(0, 'utf8'); } catch {}
-  let ev = {};
-  try { ev = JSON.parse(input || '{}') || {}; } catch {}
   if (sub === 'session-start') { // announce the governor (ENFORCER_GOVERNOR=1) even with no graph context
     if (process.env.CLAUDE_ENV_FILE) { try { appendFileSync(process.env.CLAUDE_ENV_FILE, 'export ENFORCER_GOVERNOR=1\n'); } catch {} }
     process.env.ENFORCER_GOVERNOR = '1';
   }
-  if (sub !== 'session-start' && !graphContextLive(ev)) process.exit(0); // no graph context: no output
   const only = rest[0] ? rest[0].replace(/-/g, '_') : null;
-  const handlers = HOOKS[sub].filter((h) => !only || h === only);
-  const r = await native(handlers, ev, Date.now() + 9000);
-  // exit only once stdout has drained: a pipe is asynchronous on macOS and process.exit() cut a long reply at 8192 bytes
-  if (r.out) await new Promise((done) => process.stdout.write(JSON.stringify(r.out) + '\n', done));
-  process.exit(r.code);
+  const code = await runEvent(sub, { graphOnly: true, only });
+  await new Promise((done) => process.stdout.write('', done));
+  process.exit(code);
 }
 
 if (area === 'dispatch') {
@@ -130,5 +127,5 @@ if (area === 'harness' && (sub === 'install' || sub === 'uninstall') && rest[0] 
   process.exit(r.ok ? 0 : 1);
 }
 
-process.stderr.write(`usage: enforcer doctor\n       enforcer uninstall [--purge] [--yes]\n       enforcer login [args] | logout | status | workspace <list|switch|current>\n       enforcer event <${EVENT_NAMES.join('|')}>\n       enforcer governor <${GOV.join('|')}> [args]\n         set <name> <value> | enable|disable <${Object.keys(CHECKS).join('|')}> | telemetry [on|off|status]\n       enforcer harness <install|uninstall> <grok|codex> [--dry-run] [--yes]\n       enforcer hook <${Object.keys(HOOKS).join('|')}> [handler]\n`);
+process.stderr.write(`usage: enforcer doctor\n       enforcer uninstall [--purge] [--yes]\n       enforcer login [args] | logout | status | workspace <list|switch|current>\n       enforcer event <${EVENT_NAMES.join('|')}> [--graph-only]\n       enforcer governor <${GOV.join('|')}> [args]\n         set <name> <value> | enable|disable <${Object.keys(CHECKS).join('|')}> | telemetry [on|off|status]\n       enforcer harness <install|uninstall> <grok|codex> [--dry-run] [--yes]\n       enforcer hook <${Object.keys(HOOKS).join('|')}> [handler]\n`);
 process.exit(2);

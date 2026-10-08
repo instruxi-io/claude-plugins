@@ -71,7 +71,7 @@ for (const [event, groups] of Object.entries(grokHooks)) {
     if (m) for (const t of m[1].split('|')) { sources.push([`enforcer/harness/grok/hooks/enforcer.json ${event}`, `enforcer__graph_${t}`]); grokMatchers++; }
   }
 }
-if (grokMatchers === 0) { console.error('FAIL no Grok enforcer__graph_ matchers found in enforcer/harness/grok/hooks/enforcer.json'); process.exit(1); }
+// The Grok template runs one `enforcer event` command per event; the graph-tool matchers live in enforcer/src/event.mjs.
 // 4. Hook matchers: each alternative of a graph_(a|b|c) group is a tool name.
 const hooks = JSON.parse(read('enforcer/hooks/hooks.json')).hooks;
 for (const [event, groups] of Object.entries(hooks)) {

@@ -1,4 +1,4 @@
-// Grok Build shim: node shim.mjs <claude-shim.mjs | hook <event> [handler]>
+// Grok Build shim: node shim.mjs <event <name> [--graph-only] | hook <event> [handler] | claude-shim.mjs>
 // Grok's stdin already carries the common fields (hook_event_name, session_id,
 // tool_name, tool_input ...). Only tool names differ: map them to the names the
 // governor's rules and the graph hooks know, then hand over to the shared core.
@@ -30,7 +30,7 @@ export function normalize(ev) {
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const root = fileURLToPath(new URL('../../', import.meta.url));
   const [target, ...rest] = process.argv.slice(2);
-  const pre = target === 'governor-pre-tool-use.mjs';
+  const pre = target === 'governor-pre-tool-use.mjs' || (target === 'event' && rest[0] === 'pre-tool-use' && !rest.includes('--graph-only'));
   // A governor that cannot run must not be an allow: for the tool-gating hook
   // an unspawnable child is a deny, unreadable stdin is an ask.
   const answer = (decision, why) => {
@@ -43,7 +43,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   try { ev = normalize(JSON.parse(raw)); if (!ev || typeof ev !== 'object') throw 0; } catch { bad = true; ev = {}; }
   if (pre && bad) answer('ask', 'unreadable or empty hook input');
   process.env.ENFORCER_HARNESS = 'grok';
-  const argv = target === 'hook' ? [`${root}bin/enforcer`, 'hook', ...rest] : [`${root}hooks/claude/${target}`];
+  const argv = target === 'hook' || target === 'event' ? [`${root}bin/enforcer`, target, ...rest] : [`${root}hooks/claude/${target}`];
   const r = spawnSync(process.execPath, argv, { input: JSON.stringify(ev), env: process.env, stdio: ['pipe', 'inherit', 'inherit'] });
   if (r.status === null || r.error) {
     process.stderr.write(`enforcer-governor: hook child did not run to completion (${r.error?.message || r.signal})\n`);
