@@ -50,6 +50,7 @@ if (area === 'doctor') {
 if (area === 'event') {
   const graphOnly = rest.includes('--graph-only');
   const code = await runEvent(sub, { graphOnly });
+  await new Promise((done) => process.stdout.write('', done)); // drain a piped stdout before exiting (macOS cut replies at 8192 bytes)
   process.exit(code);
 }
 
@@ -62,6 +63,7 @@ if (area === 'hook' && HOOKS[sub]) {
   }
   const only = rest[0] ? rest[0].replace(/-/g, '_') : null;
   const code = await runEvent(sub, { graphOnly: true, only });
+  await new Promise((done) => process.stdout.write('', done));
   process.exit(code);
 }
 
