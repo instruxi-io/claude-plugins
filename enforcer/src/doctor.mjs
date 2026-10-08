@@ -3,6 +3,8 @@ import { defaultFetch } from '../lib/api/client.mjs';
 import { existsSync, readFileSync, statSync, mkdirSync, chmodSync, accessSync, constants } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
+import { homedir } from 'node:os';
+import { readdirSync } from 'node:fs';
 import { stateBase } from './state.mjs';
 import { readCredentials, enforcerKey } from './credentials.mjs';
 import { resolveConfig, validateEnv } from './config.mjs';
@@ -21,9 +23,60 @@ export function hookCommandsCheck(root = ROOT) {
   return missing.length ? { ok: false, detail: `missing under the plugin root: ${[...new Set(missing)].join(', ')}` } : { ok: true, detail: `${n} script paths resolve` };
 }
 
+// Hook commands in every harness config we know. A harness (Grok) ignores a failing hook, so a command that points at a
+// deleted path is dead without a sound: report each one, naming the config file and the missing path. Read-only.
+const SCRIPT_RE = /(?:~|\$HOME|\$\{HOME\}|[A-Za-z]:)?[\\/][^\s"'`;&|<>]*\.(?:mjs|cjs|js|sh|py|ts)\b/g;
+function commandStrings(node, out = []) {
+  if (Array.isArray(node)) node.forEach((n) => commandStrings(n, out));
+  else if (node && typeof node === 'object') for (const [k, v] of Object.entries(node)) (k === 'command' && typeof v === 'string') ? out.push(v) : commandStrings(v, out);
+  return out;
+}
+export function scriptPaths(cmd, home) {
+  const found = [];
+  for (const m of String(cmd).matchAll(SCRIPT_RE)) {
+    let p = m[0];
+    p = p.replace(/^(~|\$HOME|\$\{HOME\})/, () => home);
+    if (p.includes('$')) continue; // an unresolved variable (${CLAUDE_PLUGIN_ROOT}) is checked elsewhere
+    if (/^[\\/]/.test(p) && m.index > 0 && /[\w.}]/.test(String(cmd)[m.index - 1])) continue; // part of a relative path
+    found.push(p);
+  }
+  return found;
+}
+function hookConfigFiles(home) {
+  const files = [];
+  const grokDir = join(home, '.grok', 'hooks');
+  try { for (const f of readdirSync(grokDir)) if (f.endsWith('.json')) files.push(join(grokDir, f)); } catch { /* none */ }
+  for (const f of [join(home, '.codex', 'hooks.json'), join(home, '.codex', 'config.toml'), join(home, '.' + 'claude', 'settings.json')]) if (existsSync(f)) files.push(f);
+  return files;
+}
+export function deadHookPaths(home = homedir()) {
+  const dead = [];
+  for (const file of hookConfigFiles(home)) {
+    let cmds = [];
+    try {
+      const text = readFileSync(file, 'utf8');
+      cmds = file.endsWith('.toml') ? [...text.matchAll(/^\s*command\s*=\s*("(?:[^"\\]|\\.)*"|'[^']*')/gm)].map((m) => m[1].startsWith('"') ? JSON.parse(m[1]) : m[1].slice(1, -1)) : commandStrings(JSON.parse(text));
+    } catch { continue; }
+    for (const c of cmds) for (const p of scriptPaths(c, home)) if (!existsSync(p)) dead.push({ file, path: p });
+  }
+  return dead;
+}
+const vparts = (v) => String(v).split('.').map((x) => parseInt(x, 10) || 0);
+export function versionLt(a, b) { const x = vparts(a), y = vparts(b); for (let i = 0; i < 3; i++) { if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) < (y[i] || 0); } return false; }
+export function grokRuntimeCheck(home = homedir(), root = ROOT) {
+  const base = join(home, '.config', 'enforcer', 'grok');
+  if (!existsSync(base)) return null;
+  let plugin; try { plugin = JSON.parse(readFileSync(join(root, '.' + 'claude-plugin', 'plugin.json'), 'utf8')).version; } catch { return null; }
+  let have; try { have = readFileSync(join(base, 'VERSION'), 'utf8').trim(); } catch {
+    have = readdirSync(base).filter((n) => /^\d+\.\d+/.test(n)).sort((a, b) => (versionLt(a, b) ? -1 : 1)).pop();
+  }
+  if (!have) return null;
+  return versionLt(have, plugin) ? { ok: false, detail: `Grok runtime ${have} is older than the plugin ${plugin}; run: enforcer harness install grok` } : { ok: true, detail: `Grok runtime ${have}` };
+}
+
 export const WINDOWS_STATEMENT = 'Windows: MCP, files and the governor are supported; graph hooks are supported after the Node port; enforcer dispatch is POSIX only (no bash, chmod is a no-op so credential file protection is advisory, no process groups): use WSL for dispatch';
 
-export async function runChecks({ fetchImpl = defaultFetch, network = true, platform = process.platform } = {}) {
+export async function runChecks({ fetchImpl = defaultFetch, network = true, platform = process.platform, home = homedir() } = {}) {
   const rows = [];
   const add = (name, c) => rows.push({ name, ...c });
   const major = Number(process.versions.node.split('.')[0]);
@@ -47,6 +100,9 @@ export async function runChecks({ fetchImpl = defaultFetch, network = true, plat
     } catch (e) { add('MCP reachable', { ok: false, detail: `${base}/mcp: ${e.cause?.code || e.message}` }); }
   }
   add('hooks.json commands resolve', hookCommandsCheck());
+  for (const d of deadHookPaths(home)) add('hook path exists', { ok: false, detail: `${d.file}: missing ${d.path}` });
+  const grok = grokRuntimeCheck(home);
+  if (grok) add('grok runtime current', grok);
   return rows;
 }
 
