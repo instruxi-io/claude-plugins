@@ -25,9 +25,6 @@ const PCT = (a) => (a.budget > 0 ? a.tokens / a.budget : 0);
 function situationOf(a, cfg) {
   if (!a) return null;
   if (a.status === 'grounded') return 'stopped';
-  if (cfg.loopOn !== false && a.loopStreak >= Math.max(2, cfg.loopLimit - 1) && a.loopStreak < cfg.loopLimit) {
-    return 'repeating';
-  }
   if (cfg.budgetOn === false) return null;
   const pct = PCT(a);
   if (pct >= cfg.soft) return 'near-limit';
@@ -42,8 +39,6 @@ const LINES = {
     `Enforcer: this session is at ${pct}% of its spend limit. Prefer finishing work in progress over starting anything new.`,
   'near-limit': (a, pct) =>
     `Enforcer: this session is at ${pct}% of its spend limit and will be stopped at 100%. Wrap up and summarise what is done rather than beginning new work.`,
-  repeating: (a) =>
-    `Enforcer: you have run the same action ${a.loopStreak} times. Change approach — repeating it again will be blocked as a loop.`,
   stopped: () =>
     `Enforcer: this agent is stopped and further tool calls will be refused. Say what you completed and what remains.`,
 };

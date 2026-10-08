@@ -40,6 +40,7 @@ A change under `enforcer/` needs a `changes/<slug>.md` fragment (one line) or a 
 - **Plugin must be enabled.** `claude plugin enable enforcer@instruxi`. A disabled plugin = no hooks, and `graph_*` answers carry a `hooks_inactive` warning.
 - **Headless (`claude -p`).** `graph_next_work`, `graph_heartbeat`, `graph_report` and `graph_remember` carry no `requiresUserInteraction`, so a headless worker can run the whole loop; other hosted write tools are refused. A worker denied a push/PR/tool is logged `DENIED <key> ... Worktree: <path>` and is not relaunched that session; land it by hand. A failed node is relaunched once as a REMEDIATION launch, then triaged once; see SKILL.md "When a node fails".
 - **Evidence is merged by the hook.** Captured tool results of THIS run come first, then your own verbatim command/file/artifact records that are not duplicates; prose `note` records are dropped. Run the evidence commands as the LAST commands before reporting.
+- **No loop check in the governor.** Repeated heartbeats and plan-status polls are never denied for repeating; `jev-hooks` owns loop detection. `loopOn`, `loopLimit` and `loopWindow` are retired settings.
 - **Hooks fail open.** A hook swallows errors and prints nothing; a test that expects output must assert it, silence is not a pass.
 - `hooks/hooks.json` is JSON: a trailing comma disables every hook with no error.
 

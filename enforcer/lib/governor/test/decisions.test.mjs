@@ -116,7 +116,7 @@ ok('tenant policy: its deny and ask carry tenant_policy and still name the rule'
 ok('no objection is a record too: in budget, unchecked, checks off', () => {
   assert.deepEqual(record(bash('ls')), ALLOWED);
   assert.equal(record(bash('ls'), {}, { withState: () => ({ ok: false }) }).code, 'spend_unchecked');
-  assert.equal(record(bash('ls'), { budgetOn: false, loopOn: false }).code, 'checks_off');
+  assert.equal(record(bash('ls'), { budgetOn: false, rulesOn: false }).code, 'checks_off');
 });
 
 // ── the headless graph-worker rules ─────────────────────────────────────────

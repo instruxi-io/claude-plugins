@@ -4,8 +4,8 @@ import { brief, markTold } from '../src/brief.mjs';
 
 let pass = 0;
 const ok = (label, fn) => { fn(); pass++; console.log('  ok  ' + label); };
-const cfg = { budgetOn: true, loopOn: true, soft: 0.75, loopLimit: 4 };
-const agent = (over) => ({ tokens: 0, budget: 1000, loopStreak: 0, status: 'active', ...over });
+const cfg = { budgetOn: true, soft: 0.75 };
+const agent = (over) => ({ tokens: 0, budget: 1000, status: 'active', ...over });
 
 ok('says nothing on an ordinary call', () => {
   assert.equal(brief(agent({ tokens: 100 }), cfg), null);
@@ -37,12 +37,6 @@ ok('speaks again when the situation changes', () => {
   markTold(a, brief(a, cfg).situation);
   a.tokens = 800;
   assert.equal(brief(a, cfg).situation, 'near-limit');
-});
-
-ok('warns about a loop before blocking it', () => {
-  const b = brief(agent({ loopStreak: 3 }), cfg);
-  assert.equal(b.situation, 'repeating');
-  assert.match(b.text, /change approach/i);
 });
 
 ok('stays silent when the budget check is off', () => {

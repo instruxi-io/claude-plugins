@@ -208,6 +208,10 @@ State lives in `$ENFORCER_STATE_DIR`, else the directory the harness gives the
 plugin (`${CLAUDE_PLUGIN_DATA}`), else `~/.config/enforcer/sessions/<harness>`
 (`src/state.mjs` `stateBase()`).
 
+The governor does no loop detection: repeated heartbeats, `graph_plan_status`
+polls or any other identical calls are never denied for repeating. Loop
+detection belongs to the `jev-hooks` plugin.
+
 ## Evidence the model did not author
 
 Verification used to judge prose, and prose can be invented: a fabricated

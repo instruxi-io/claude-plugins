@@ -36,24 +36,12 @@ ok('soft cap auto-deny mode blocks instead', () => {
   assert.equal(r.verdict, 'deny');
 });
 
-ok('detects a loop and grounds the agent', () => {
+ok('repeated identical actions are allowed (jev-hooks owns loop detection)', () => {
   const s = makeState();
   const verdicts = [];
-  for (let i = 0; i < 5; i++) verdicts.push(decide(s, { agent: 'loopy', tokens: 1000 + i, action: 'GET /same' }, { loopLimit: 4, budget: 1e9 }));
-  const loopDeny = verdicts.find(v => /loop/.test(v.reason));
-  assert.ok(loopDeny, 'a loop-block receipt should exist');
-  assert.equal(loopDeny.verdict, 'deny');
-  // once grounded, every later call is denied
-  const next = decide(s, { agent: 'loopy', tokens: 9999, action: 'GET /other' }, { budget: 1e9 });
-  assert.equal(next.verdict, 'deny');
-  assert.match(next.reason, /stopped/);
-});
-
-ok('varied actions do NOT trip the loop guard', () => {
-  const s = makeState();
-  let last;
-  for (let i = 0; i < 6; i++) last = decide(s, { agent: 'busy', tokens: 1000 + i, action: 'step ' + i }, { loopLimit: 4, budget: 1e9 });
-  assert.equal(last.verdict, 'allow');
+  for (let i = 0; i < 8; i++) verdicts.push(decide(s, { agent: 'same', tokens: 1000 + i, action: 'GET /same' }, { budget: 1e9 }));
+  assert.ok(verdicts.every(v => v.verdict === 'allow'));
+  assert.equal(s.agents.same.status, 'active');
 });
 
 ok('kill switch grounds immediately with a human receipt', () => {
@@ -92,27 +80,6 @@ assert(tokensForDollars(20, 5) === 4_000_000, '$20 at $5/Mtok is 4M effective to
 assert(tokensForDollars(20, 1) === 20_000_000, '$20 at $1/Mtok is 20M effective tokens');
 assert(Math.abs(dollarsForTokens(4_000_000, 5) - 20) < 1e-9, 'and back again');
 console.log('  dollar budget conversion ok');
-
-// ── Loop detection catches alternating loops, not just back-to-back ────────
-// A stuck agent usually ping-pongs between two actions. A consecutive-streak
-// check never fires on that, which let a loop burn the whole budget.
-{
-  let s = makeState(), v;
-  for (let i = 0; i < 12; i++) {
-    v = decide(s, { agent: 'ab', deltaTokens: 100, action: i % 2 ? 'Read:x' : 'Edit:x' });
-    if (v.verdict === 'deny') break;
-  }
-  assert(v.verdict === 'deny', 'alternating A-B-A-B loop is caught');
-}
-{
-  // Genuine varied work must still pass -- the guard is worthless if it
-  // grounds an agent doing its job.
-  let s = makeState(), v;
-  const work = ['Read:a', 'Edit:b', 'Bash:test', 'Read:c', 'Edit:d', 'Grep:e', 'Read:f', 'Write:g'];
-  for (const act of work) v = decide(s, { agent: 'ok', deltaTokens: 100, action: act });
-  assert(v.verdict === 'allow', 'varied real work is not mistaken for a loop');
-}
-console.log('  alternating-loop detection ok');
 
 // ── Cross-provider pricing ────────────────────────────────────────────────
 // The old code assumed output is always 5x input. That is true of every
@@ -542,30 +509,6 @@ console.log('  model advice is conservative ok');
   assert(a.status === 'active', 'and clear the stopped status');
   assert(a.groundedBy === undefined, 'and clear the recorded reason');
   console.log('raising the limit frees an agent stopped for spending ok');
-}
-
-// A loop is not re-derivable: an agent that happens not to repeat itself on this
-// one call is still the agent you stopped. So it latches, and raising the limit
-// must not free it -- only a human saying so.
-{
-  const state = makeState();
-  const cfg = { ...DEFAULTS, dollars: 20 };
-  const same = { agent: 'l1', action: 'Bash:same', tool: 'Bash', model: 'claude-opus-5', tokens: 10, cwd: '/tmp' };
-  for (let i = 0; i < 5; i++) decide(state, same, cfg);
-  const a = state.agents['l1'];
-  assert(a.status === 'grounded', 'a repeated action is stopped as a loop');
-  assert(a.groundedBy === 'loop', `the reason must be loop, got ${a.groundedBy}`);
-
-  const rich = decide(state, { ...same, action: 'Bash:different' }, { ...cfg, dollars: 999 });
-  assert(rich.verdict === 'deny', 'raising the limit must NOT free a looping agent');
-  assert(/enforcer-governor:resume/.test(rich.reason), `the way out must be named, got: ${rich.reason}`);
-
-  // release() is the way out, and it has to actually be reachable.
-  const freed = release(state, 'l1');
-  assert(freed.verdict === 'allow', 'release must free it');
-  assert(a.status === 'active' && a.groundedBy === undefined, 'release must clear status and reason');
-  assert(decide(state, { ...same, action: 'Bash:new' }, cfg).verdict === 'allow', 'and it runs again after');
-  console.log('a loop stays latched until a human resumes it ok');
 }
 
 // A human stopping an agent must also latch: kill() means stop, and a raised
