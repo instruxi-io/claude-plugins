@@ -43,7 +43,7 @@ await t('every check reports, healthy plan passes', async () => {
   const e = env();
   mkdirSync(join(repoRoot, 'absent-repo', '.git'), { recursive: true });
   const res = await preflight({ graph: 'g1', repoRoot, env: e, pluginRoot: ROOT });
-  assert.deepEqual(res.map((r) => r.name), ['credential', 'gh', 'repos', 'governor-lander', 'identity', 'worker-plugin', 'frontier']);
+  assert.deepEqual(res.map((r) => r.name), ['credential', 'gh', 'repos', 'governor-lander', 'worker-rules', 'identity', 'worker-plugin', 'frontier']);
   assert.ok(res.every((r) => r.ok), JSON.stringify(res.filter((r) => !r.ok)));
   rmSync(join(repoRoot, 'absent-repo'), { recursive: true });
 });
@@ -81,7 +81,7 @@ await t('CLI prints one line per check and exits 2 on a failure', async () => {
   const code = await new Promise((r) => p.on('close', r));
   assert.equal(code, 2);
   const lines = out.trim().split('\n');
-  assert.equal(lines.length, 7, out);
+  assert.equal(lines.length, 8, out);
   assert.match(out, /fail {2}repos: missing: absent-repo/);
   console.log(out.trimEnd().replace(/^/gm, '    '));
 });

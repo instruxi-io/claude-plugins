@@ -63,8 +63,15 @@ export function pluginDirs(extra = []) {
 }
 
 /** The only inherited variables: the operator's keys (ENFORCER_API_KEY, GRAPH_API_KEY, cloud keys, gh tokens) never pass. */
-export const ENV_ALLOW = ['PATH', 'HOME', 'LANG', 'TERM', 'TMPDIR', 'SHELL', 'USER', 'LOGNAME', 'GRAPH_ID', 'ENFORCER_PROFILE', 'ENFORCER_HARNESS', 'JEV_HOOKS_HEADLESS', 'CLAUDE_PLUGIN_ROOT', 'ENFORCER_PLUGIN_ROOT'];
+export const ENV_ALLOW = ['PATH', 'HOME', 'LANG', 'TERM', 'TMPDIR', 'SHELL', 'USER', 'LOGNAME', 'GRAPH_ID', 'ENFORCER_PROFILE', 'ENFORCER_GOVERNOR_RULES', 'ENFORCER_HARNESS', 'JEV_HOOKS_HEADLESS', 'CLAUDE_PLUGIN_ROOT', 'ENFORCER_PLUGIN_ROOT'];
 export const ENV_ALLOW_PREFIX = ['CLAUDE_', 'LC_'];
+/** The owner's default for whether dispatched workers run with the worker rules on: decisioning is off unless configured. The one place to change it. */
+export const DEFAULT_WORKER_RULES = 'off';
+export const WORKER_RULES_MODES = ['on', 'off'];
+/** The one preflight line that states the mode. */
+export const workerRulesLine = (mode = DEFAULT_WORKER_RULES) => mode === 'on'
+  ? 'workers run with the worker rules ON (pass --worker-rules off to relax them)'
+  : 'workers run with the worker rules OFF (pass --worker-rules on to enforce them)';
 /** Scopes a worker token may carry: graph only. */
 export const WORKER_SCOPES = ['graph:read', 'graph:write'];
 
@@ -72,12 +79,13 @@ const allowed = (k) => ENV_ALLOW.includes(k) || ENV_ALLOW_PREFIX.some((p) => k.s
 
 /** The worker environment: the allowlist, the run's worker-scoped token (as GRAPH_API_KEY) and, if the operator
  *  provides one, a repo-scoped GH_TOKEN (ENFORCER_WORKER_GH_TOKEN). Nothing else. */
-export function workerEnv(graphId, env = process.env, { token = null, release = false, runId = null } = {}) {
+export function workerEnv(graphId, env = process.env, { token = null, release = false, runId = null, workerRules = DEFAULT_WORKER_RULES } = {}) {
   const root = pluginDirs()[0];
   const out = {};
   for (const [k, v] of Object.entries(env)) if (allowed(k) && v !== undefined) out[k] = v;
   Object.assign(out, { GRAPH_ID: graphId, ENFORCER_PROFILE: PROFILE_NAME, // = PROFILE_ENV
     JEV_HOOKS_HEADLESS: '1', CLAUDE_PLUGIN_ROOT: root, ENFORCER_PLUGIN_ROOT: root });
+  out.ENFORCER_GOVERNOR_RULES = workerRules === 'on' ? 'on' : 'off'; // always set from the flag: an inherited value never decides
   if (release) out.ENFORCER_RELEASE_NODE = '1';
   if (runId) { out.GRAPH_RUN_ID = String(runId); out.ENFORCER_GRAPH_RUN_ID = String(runId); }
   // The worker's credential has two readers: the graph hooks read GRAPH_API_KEY, but the plugin's MCP header helper (bin/enforcer-headers.mjs,

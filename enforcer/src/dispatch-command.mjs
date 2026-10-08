@@ -10,7 +10,7 @@ import { resolveConfig } from './config.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 export const DEFAULTS = { workers: 3, model: 'sonnet', salvage: 'on', triage: 'on', warm: 'off' };
-export const HELP = `usage: enforcer dispatch <graph> [--workers N] [--model M] [--repo-root dir]   preflight, then start the dispatcher in the background
+export const HELP = `usage: enforcer dispatch <graph> [--workers N] [--model M] [--repo-root dir] [--worker-rules on|off]   preflight, then start the dispatcher in the background
        enforcer dispatch status [<graph>]                                              what it is doing and what it needs from you
        enforcer dispatch prune [--yes] [--repo-root dir]                               list (or with --yes remove) worktrees whose PR merged and no live worker holds
        enforcer dispatch stop <graph>                                                  finish running workers, start no new ones, then exit
@@ -26,24 +26,26 @@ const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { retu
 const tailLine = (p) => { try { return readFileSync(p, 'utf8').split('\n').filter(Boolean).at(-1) || ''; } catch { return ''; } };
 
 export async function start(argv, env = process.env) {
-  const graph = argv.find((a, i) => !a.startsWith('-') && !['--workers', '--model', '--repo-root'].includes(argv[i - 1]));
+  const graph = argv.find((a, i) => !a.startsWith('-') && !['--workers', '--model', '--repo-root', '--worker-rules'].includes(argv[i - 1]));
   const flag = (n) => { const i = argv.indexOf(n); return i >= 0 ? argv[i + 1] : undefined; };
   const repoRoot = flag('--repo-root');
+  const workerRules = flag('--worker-rules');
+  if (workerRules !== undefined && !['on', 'off'].includes(workerRules)) { process.stderr.write('enforcer dispatch: --worker-rules must be on or off\n'); return 2; }
   if (process.platform === 'win32') { process.stderr.write('enforcer dispatch: not supported on Windows (workers need process groups and POSIX signals); use WSL\n'); return 2; }
   if (argv.includes('--dry-run')) { // plan only: nothing is claimed, created, launched or written
     const { main: runtime } = await import('./dispatch/run.mjs');
     return runtime(['--graph', graph, ...argv.filter((a) => a !== graph)], env);
   }
-  const res = await preflight({ graph, env, ...(repoRoot ? { repoRoot } : {}) });
+  const res = await preflight({ graph, env, ...(workerRules ? { workerRules } : {}), ...(repoRoot ? { repoRoot } : {}) });
   for (const r of res) process.stdout.write(`${r.ok ? 'ok  ' : 'fail'}  ${r.name}: ${r.line}\n`);
   if (res.some((r) => !r.ok)) { process.stderr.write('enforcer dispatch: preflight failed, nothing started\n'); return 2; }
   const dir = stateDir(graph, env);
   mkdirSync(dir, { recursive: true });
   const old = readJson(join(dir, 'pids.json'));
   if (old?.dispatcher && alive(old.dispatcher)) { process.stderr.write(`enforcer dispatch: already running for ${graph} (pid ${old.dispatcher}); see: enforcer dispatch status ${graph}\n`); return 3; }
-  const extra = argv.filter((a, i) => a !== graph && !['--workers', '--model', '--repo-root'].includes(a) && !['--workers', '--model', '--repo-root'].includes(argv[i - 1]));
+  const extra = argv.filter((a, i) => a !== graph && !['--workers', '--model', '--repo-root', '--worker-rules'].includes(a) && !['--workers', '--model', '--repo-root', '--worker-rules'].includes(argv[i - 1]));
   const args = [join(HERE, '../bin/enforcer'), 'dispatch', 'run', '--graph', graph, '--workers', String(flag('--workers') || DEFAULTS.workers),
-    '--model', flag('--model') || DEFAULTS.model, '--state-dir', dir, ...(repoRoot ? ['--repo-root', repoRoot] : []), ...extra];
+    '--model', flag('--model') || DEFAULTS.model, '--state-dir', dir, ...(workerRules ? ['--worker-rules', workerRules] : []), ...(repoRoot ? ['--repo-root', repoRoot] : []), ...extra];
   const out = openSync(join(dir, 'dispatcher.out'), 'a');
   const child = spawn(process.execPath, args, { detached: true, stdio: ['ignore', out, out], env });
   child.unref();

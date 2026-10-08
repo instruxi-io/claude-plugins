@@ -9,7 +9,7 @@ import { parseArgs } from 'node:util';
 import { API, APIError } from './api.mjs';
 import { Lease, LEASE_KEY, LEASE_TTL } from './lease.mjs';
 import { worktreeFor, worktreeSetup, BaseMissing, resolveBase, defaultBranch } from './worktree.mjs';
-import { launchCmd, workerEnv, mintWorkerToken, spawnWorker, killGroup, alive, pidAliveGroup, harnessRefusal, HARNESSES, LAND_PR } from './launch.mjs';
+import { launchCmd, workerEnv, mintWorkerToken, spawnWorker, killGroup, alive, pidAliveGroup, harnessRefusal, HARNESSES, LAND_PR, DEFAULT_WORKER_RULES, WORKER_RULES_MODES } from './launch.mjs';
 import { modelFor, nodeMaxTurns } from './model.mjs';
 import { mergeTarget, repoOf, resourcesOf, lapsed, select, affinityOrder } from './select.mjs';
 import { summarize, failedOutcome, workerPrompt, remediationPrompt, harnessLimitText, limitResetAt, judgeLines, denialClass } from './summarize.mjs';
@@ -44,7 +44,7 @@ export function defaultArgs(o = {}) {
   return { workers: 3, repoRoot: join(homedir(), 'apps'), repoBases: null, dryRun: false, model: null, maxTurns: 150, maxBudgetUsd: DEFAULT_MAX_BUDGET_USD,
     maxAttempts: 2, types: DEFAULT_TYPES, interval: 30, exitWhenIdle: false, heartbeat: 120, landTimeout: 3000, stateDir: null, stopFile: null,
     onLimit: 'wait', limitBackoff: 1800, ciBackoff: 300, ciProbeInterval: 300, ciStatusUrl: CI_STATUS_URL, pluginDir: [], takeover: false,
-    noLease: false, harness: 'claude', experimental: false, agentBin: null, grok: null, codex: null, leaseRenew: LEASE_TTL / 3, killGrace: 30,
+    noLease: false, workerRules: DEFAULT_WORKER_RULES, harness: 'claude', experimental: false, agentBin: null, grok: null, codex: null, leaseRenew: LEASE_TTL / 3, killGrace: 30,
     ...o };
 }
 
@@ -206,7 +206,7 @@ export class Dispatcher {
     let token = null;
     if (this.args.agentKey) token = this.args.agentKey;
     else try { token = typeof this.api.call === 'function' ? await mintWorkerToken(this.api, process.env, `worker-${n.key}`.slice(0, 60)) : null; } catch (e) { this.say(`worker token not minted for ${n.key}: ${e.message}`); }
-    const proc = spawnWorker(cmd, { cwd: path, logPath, env: workerEnv(this.g, process.env, { token, release: n.type === 'release' }) });
+    const proc = spawnWorker(cmd, { cwd: path, logPath, env: workerEnv(this.g, process.env, { token, release: n.type === 'release', workerRules: this.args.workerRules }) });
     const w = { kind: 'agent', node: n, key: n.key, logPath, proc, started: now(), resources: resourcesOf(n), path, model, turns: 0,
                 maxTurns: Math.max(a.maxTurns, turnsCap || 0), session };
     this.workers.set(n.key, w);
@@ -530,7 +530,7 @@ const OPTS = { graph: { type: 'string' }, workers: { type: 'string' }, 'repo-roo
   heartbeat: { type: 'string' }, 'land-timeout': { type: 'string' }, 'state-dir': { type: 'string' }, 'stop-file': { type: 'string' },
   'on-limit': { type: 'string' }, 'limit-backoff': { type: 'string' }, 'ci-backoff': { type: 'string' }, 'ci-probe-interval': { type: 'string' },
   'ci-status-url': { type: 'string' }, 'plugin-dir': { type: 'string', multiple: true }, takeover: { type: 'boolean' }, 'no-lease': { type: 'boolean' },
-  agent: { type: 'string' }, 'allow-browser-signin': { type: 'boolean' }, harness: { type: 'string' }, experimental: { type: 'boolean' }, grok: { type: 'string' }, codex: { type: 'string' }, claude: { type: 'string' },
+  'worker-rules': { type: 'string' }, agent: { type: 'string' }, 'allow-browser-signin': { type: 'boolean' }, harness: { type: 'string' }, experimental: { type: 'boolean' }, grok: { type: 'string' }, codex: { type: 'string' }, claude: { type: 'string' },
   // accepted for compatibility with the Python dispatcher's front door; the features they tune are not in the Node runtime yet
   'no-salvage': { type: 'boolean' }, 'no-triage': { type: 'boolean' }, 'no-warm': { type: 'boolean' }, 'triage-grace': { type: 'string' },
   'triage-model': { type: 'string' }, 'check-acceptance': { type: 'boolean' }, 'warm-max-nodes': { type: 'string' }, 'warm-max-age': { type: 'string' } };
@@ -545,6 +545,8 @@ export function parseDispatchArgs(argv, env = process.env) {
   if (!HARNESSES.includes(harness)) throw new Error(`--harness must be one of ${HARNESSES.join(', ')}`);
   const why = harnessRefusal(harness, v.experimental);
   if (why) throw new Error(why);
+  const workerRules = v['worker-rules'] ?? DEFAULT_WORKER_RULES;
+  if (!WORKER_RULES_MODES.includes(workerRules)) throw new Error('--worker-rules must be on or off');
   const workers = num(v.workers, 3);
   if (!(workers >= 1)) throw new Error('--workers must be >= 1');
   const cfg = env.ENFORCER_CONFIG_HOME || join(homedir(), '.config', 'enforcer');
@@ -557,7 +559,7 @@ export function parseDispatchArgs(argv, env = process.env) {
     stateDir, stopFile: v['stop-file'] || join(stateDir, 'STOP'), onLimit: v['on-limit'] === 'exit' ? 'exit' : 'wait',
     limitBackoff: num(v['limit-backoff'], d.limitBackoff), ciBackoff: num(v['ci-backoff'], d.ciBackoff),
     ciProbeInterval: num(v['ci-probe-interval'], d.ciProbeInterval), ciStatusUrl: v['ci-status-url'] || d.ciStatusUrl,
-    pluginDir: v['plugin-dir'] || [], takeover: !!v.takeover, noLease: !!v['no-lease'], harness, experimental: !!v.experimental,
+    pluginDir: v['plugin-dir'] || [], workerRules, takeover: !!v.takeover, noLease: !!v['no-lease'], harness, experimental: !!v.experimental,
     agent: v.agent || null, allowBrowserSignin: !!v['allow-browser-signin'], grok: v.grok || null, codex: v.codex || null, agentBin: v['claude'] || null };
 }
 
