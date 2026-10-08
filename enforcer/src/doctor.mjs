@@ -61,6 +61,15 @@ export function deadHookPaths(home = homedir()) {
   }
   return dead;
 }
+export function staleProjectInstalls(home = homedir()) {
+  let reg; try { reg = JSON.parse(readFileSync(join(home, '.' + 'claude', 'plugins', 'installed_plugins.json'), 'utf8')); } catch { return []; }
+  const out = [];
+  for (const [key, list] of Object.entries(reg?.plugins || {})) {
+    if (!/^enforcer@/.test(key) || !Array.isArray(list)) continue;
+    for (const i of list) if (i?.scope === 'project' && i.projectPath && !existsSync(i.projectPath)) out.push({ plugin: key, version: i.version || 'unknown', path: i.projectPath });
+  }
+  return out;
+}
 const vparts = (v) => String(v).split('.').map((x) => parseInt(x, 10) || 0);
 export function versionLt(a, b) { const x = vparts(a), y = vparts(b); for (let i = 0; i < 3; i++) { if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) < (y[i] || 0); } return false; }
 export function grokRuntimeCheck(home = homedir(), root = ROOT) {
@@ -101,6 +110,9 @@ export async function runChecks({ fetchImpl = defaultFetch, network = true, plat
   }
   add('hooks.json commands resolve', hookCommandsCheck());
   for (const d of deadHookPaths(home)) add('hook path exists', { ok: false, detail: `${d.file}: missing ${d.path}` });
+  const stale = staleProjectInstalls(home);
+  for (const x of stale) add('stale project install', { ok: false, detail: `${x.plugin} ${x.version} for ${x.path} (directory gone)` });
+  if (stale.length) add('stale project installs', { ok: false, detail: `${stale.length} found. Report only, nothing was changed. To remove one, recreate its directory and run: claude plugin uninstall enforcer@instruxi --scope project (from that directory)` });
   const grok = grokRuntimeCheck(home);
   if (grok) add('grok runtime current', grok);
   return rows;
