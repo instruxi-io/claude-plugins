@@ -1,7 +1,7 @@
 // Launching workers: the claude/grok/codex command lines, the worker environment, detached spawn,
 // and process-group kill (SIGTERM, a grace period, then SIGKILL) by process.kill(-pid).
 import { spawn } from 'node:child_process';
-import { readFileSync, closeSync, realpathSync } from 'node:fs';
+import { readFileSync, closeSync, realpathSync, openSync, writeSync, chmodSync, rmSync, readdirSync } from 'node:fs';
 import { openStream, redactFile } from './logs.mjs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -104,8 +104,32 @@ export async function mintWorkerToken(api, env = process.env, name = 'graph-work
   return r?.data?.secret || null;
 }
 
+/** The worker's own MCP connection when it runs as an agent: Claude Code prefers its stored `/mcp` OAuth sign-in for the plugin's
+ *  server over the headersHelper, so the environment cannot make the plugin's server speak as the agent. A per-run config with the
+ *  agent key as a header, launched with --strict-mcp-config, leaves the stored sign-in and every other MCP server out of the picture. */
+export const agentMcpConfig = (mcpUrl, agentKey) => ({ mcpServers: { enforcer: { type: 'http', url: mcpUrl, headers: { 'X-API-Key': agentKey } } } });
+export const mcpConfigPath = (stateDir, key) => join(stateDir, `mcp-${key}.json`);
+
+/** Write `<stateDir>/mcp-<key>.json` at 0600 (created with that mode, never world-readable for a moment); returns its path. */
+export function writeAgentMcpConfig(stateDir, key, mcpUrl, agentKey) {
+  const p = mcpConfigPath(stateDir, key);
+  rmSync(p, { force: true });
+  const fd = openSync(p, 'wx', 0o600);
+  try { writeSync(fd, JSON.stringify(agentMcpConfig(mcpUrl, agentKey))); } finally { closeSync(fd); }
+  try { chmodSync(p, 0o600); } catch { /* best effort on platforms without modes */ }
+  return p;
+}
+
+/** Remove one config file, or with no key every `mcp-*.json` left in the state dir (dispatcher shutdown). */
+export function removeAgentMcpConfigs(stateDir, key = null) {
+  if (key) { rmSync(mcpConfigPath(stateDir, key), { force: true }); return; }
+  let names = [];
+  try { names = readdirSync(stateDir); } catch { return; }
+  for (const n of names) if (/^mcp-.+\.json$/.test(n)) rmSync(join(stateDir, n), { force: true });
+}
+
 /** The argv of a worker launch. `session` names (or with `resume`, continues) a claude session. */
-export function launchCmd(prompt, model, args, key, { session = null, resume = false, maxTurns = null } = {}) {
+export function launchCmd(prompt, model, args, key, { session = null, resume = false, maxTurns = null, mcpConfig = null } = {}) {
   const harness = args.harness || 'claude';
   if (harness === 'grok') {
     const cmd = [args.grok || process.env.GROK_BIN || 'grok', '-p', prompt, '--output-format', 'streaming-messages-json'];
@@ -120,6 +144,8 @@ export function launchCmd(prompt, model, args, key, { session = null, resume = f
   const cmd = [args.agentBin || process.env.CLAUDE_BIN || 'claude', '-p', prompt, '--agent', AGENT, '--model', model];
   for (const d of pluginDirs(args.pluginDir)) cmd.push('--plugin-dir', d);
   cmd.push('--settings', workerSettings());
+  // Only an agent run gets its own connection: the path is in argv, the key is only inside the 0600 file.
+  if (args.agent && mcpConfig) cmd.push('--mcp-config', mcpConfig, '--strict-mcp-config');
   if (session) cmd.push(resume ? '--resume' : '--session-id', session);
   if (maxTurns) cmd.push('--max-turns', String(maxTurns));
   cmd.push('--allowedTools', allowedTools().join(','), '--permission-prompts', 'none', '--output-format', 'stream-json', '--verbose', '--name', 'graph:' + key);
@@ -129,16 +155,18 @@ export function launchCmd(prompt, model, args, key, { session = null, resume = f
 
 /** A launched process: `detached` (its own session and group, group id = pid), output to a log file.
  *  .exited is null while it runs, then {code, signal}; .done resolves at exit. */
-export function spawnWorker(cmd, { cwd, logPath, env = process.env }) {
+export function spawnWorker(cmd, { cwd, logPath, env = process.env, cleanup = [], secrets = [] }) {
+  const tidy = () => { for (const f of cleanup) try { rmSync(f, { force: true }); } catch { /* gone */ } };
   const fd = openStream(logPath);
   let child;
   try { child = spawn(cmd[0], cmd.slice(1), { cwd, env, detached: true, stdio: ['ignore', fd, fd] }); } finally { closeSync(fd); }
   const p = { child, pid: child.pid, exited: null, returncode: null };
   p.done = new Promise((res) => {
-    child.on('error', (e) => { if (!p.exited) { p.exited = { code: 127, signal: null, error: e }; p.returncode = 127; res(p.exited); } });
+    child.on('error', (e) => { if (!p.exited) { tidy(); p.exited = { code: 127, signal: null, error: e }; p.returncode = 127; res(p.exited); } });
     child.on('exit', (code, signal) => {
+      tidy();
       p.exited = { code, signal };
-      redactFile(logPath);
+      redactFile(logPath, secrets);
       p.returncode = code ?? (signal === 'SIGKILL' ? 137 : 143);
       res(p.exited);
     });

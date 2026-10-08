@@ -11,9 +11,22 @@ const LEVEL_RE = [[/^(REFUSE|BLOCKED|DENIED|FAILED|HARNESS-LIMITED|CI-UNAVAILABL
 export const levelOf = (msg) => (LEVEL_RE.find(([rx]) => rx.test(msg)) || [0, 'info'])[1];
 const eventOf = (msg) => (msg.match(/^[A-Za-z][\w-]*/) || ['log'])[0].toLowerCase();
 
+/** Literal secrets the dispatcher holds (the agent key): replaced in every log line and worker stream, whatever their shape. */
+const SECRETS = new Set();
+export function addSecret(s) { if (typeof s === 'string' && s.length >= 8) SECRETS.add(s); }
+export function scrubSecrets(text, extra = []) {
+  if (typeof text !== 'string' || !text) return [text, 0];
+  let n = 0;
+  for (const s of new Set([...SECRETS, ...extra.filter((x) => typeof x === 'string' && x.length >= 8)])) {
+    const parts = text.split(s);
+    if (parts.length > 1) { n += parts.length - 1; text = parts.join('[redacted:secret]'); }
+  }
+  return [text, n];
+}
+const clean = (v) => { if (typeof v !== 'string') return v; return redact(scrubSecrets(v)[0])[0]; };
+
 /** One JSON line: {ts (ISO), level, event, key, run, fields}. Secrets in strings are redacted. */
 export function jsonLine(msg, { level, event, key = null, run = null, fields = {} } = {}) {
-  const clean = (v) => (typeof v === 'string' ? redact(v)[0] : v);
   const f = Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, clean(v)]));
   return JSON.stringify({ ts: new Date().toISOString(), level: level || levelOf(msg), event: event || eventOf(msg), key, run, msg: clean(msg), fields: f }) + '\n';
 }
@@ -23,7 +36,7 @@ export function writeLog(state, human, msg, opts) {
   const write = (name, text) => {
     try { const p = join(state, name); appendFileSync(p, text, { mode: 0o600 }); chmodSync(p, 0o600); } catch { /* state dir gone */ }
   };
-  write('dispatcher.log', human);
+  write('dispatcher.log', scrubSecrets(human)[0]);
   write('dispatcher.jsonl', jsonLine(msg, opts));
 }
 
@@ -35,9 +48,11 @@ export function openStream(path) {
 }
 
 /** Redact a finished stream in place (tool outputs may echo a token); returns the redaction count. */
-export function redactFile(path) {
+export function redactFile(path, secrets = []) {
   try {
-    const [text, n] = redact(readFileSync(path, 'utf8'));
+    const [lit, k] = scrubSecrets(readFileSync(path, 'utf8'), secrets);
+    const [text, m] = redact(lit);
+    const n = k + m;
     if (n) writeFileSync(path, text, { mode: 0o600 });
     chmodSync(path, 0o600);
     return n;
