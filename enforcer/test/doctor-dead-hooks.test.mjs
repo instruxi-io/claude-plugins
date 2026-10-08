@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readdirSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, normalize } from 'node:path';
 import { deadHookPaths, grokRuntimeCheck, runChecks } from '../src/doctor.mjs';
 
 const hooksDoc = (cmd) => JSON.stringify({ hooks: { SessionStart: [{ hooks: [{ type: 'command', command: cmd }] }] } });
@@ -14,7 +14,7 @@ test('doctor reports a hook command whose path is missing', () => {
   writeFileSync(join(h, '.grok/hooks/enforcer.json'), hooksDoc(`node "${gone}"`));
   mkdirSync(join(h, '.' + 'claude')); writeFileSync(join(h, '.' + 'claude/settings.json'), hooksDoc('node ~/nope/y.mjs'));
   const dead = deadHookPaths(h);
-  assert.deepEqual(dead.map((d) => d.path).sort(), [gone, join(h, 'nope/y.mjs')].sort());
+  assert.deepEqual(dead.map((d) => normalize(d.path)).sort(), [gone, join(h, 'nope/y.mjs')].map(normalize).sort());
   assert.ok(dead.every((d) => d.file.startsWith(h)));
 });
 
