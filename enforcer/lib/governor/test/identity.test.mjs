@@ -38,7 +38,7 @@ const signIn = (clientId) => writeFileSync(join(process.env.ENFORCER_HOME, 'cred
   enforcer: { base_url: base, oauth: { client_id: clientId, access_token: 'at-1', expires_at: '2999-01-01T00:00:00Z' } },
 }));
 const signOut = () => writeFileSync(join(process.env.ENFORCER_HOME, 'credentials.json'), JSON.stringify({ enforcer: {} }));
-const setConfig = (c) => writeFileSync(join(process.env.GOVERNOR_HOME, 'config.json'), JSON.stringify({ shipOn: false, ...c }));
+const setConfig = (c) => writeFileSync(join(process.env.GOVERNOR_HOME, 'config.json'), JSON.stringify({ shipOn: false, budgetOn: true, rulesOn: true, policyOn: true, ...c }));
 
 const { createGovernor, NO_COST } = await import('../core/index.mjs');
 const { signedInOperator } = await import('../core/identity.mjs');

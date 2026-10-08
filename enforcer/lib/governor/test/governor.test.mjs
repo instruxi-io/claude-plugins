@@ -7,6 +7,9 @@ import { tmpdir } from 'node:os';
 const home = mkdtempSync(join(tmpdir(), 'gov-api-'));
 process.env.GOVERNOR_HOME = home; process.env.ENFORCER_HOME = join(home, 'e');
 delete process.env.ENFORCER_API_KEY;
+// The checks are off by default; this suite drives them, so it turns them on.
+const { writeChecksOn } = await import('./fixtures/checks-on.mjs');
+writeChecksOn(home);
 
 const { createGovernor, NO_COST, verify, ALLOW, ASK, DENY, REWRITE } = await import('../core/index.mjs');
 const assert = (c, m) => { if (!c) { console.error('FAIL: ' + m); process.exit(1); } };

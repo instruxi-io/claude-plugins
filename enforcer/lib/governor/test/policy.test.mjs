@@ -1,7 +1,12 @@
 // One runnable check for the brain. `node test/policy.test.mjs`.
 // No framework: asserts that fail throw and exit non-zero.
 import assert from 'node:assert/strict';
-import { makeState, decide, resolve, kill, release, verifyChain, addSpend, setModel, getAgent, DEFAULTS, burnRate, spawnRate } from '../src/policy.mjs';
+import { makeState, decide as decideWith, resolve, kill, release, verifyChain, addSpend, setModel, getAgent, DEFAULTS as SHIPPED, burnRate, spawnRate } from '../src/policy.mjs';
+
+import { CHECKS_ON } from './fixtures/checks-on.mjs';
+// The checks are off by default; this suite tests them, so it turns them on.
+const DEFAULTS = { ...SHIPPED, ...CHECKS_ON };
+const decide = (s, ev, cfg = {}) => decideWith(s, ev, { ...CHECKS_ON, ...cfg });
 
 let pass = 0;
 const ok = (label, fn) => { fn(); pass++; console.log('  ok  ' + label); };
