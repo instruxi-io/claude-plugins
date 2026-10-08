@@ -4,7 +4,6 @@
 //
 //   allow  what a worker may do with nobody to ask
 //   deny   what it may never do (unless the dispatcher marked a gate-approved release node)
-//   loop   tools that never count toward the loop detector
 //   spend  the per-worker budget default
 //   framing the untrusted-content wrapper for node-authored text
 
@@ -43,11 +42,6 @@ export const deny = Object.freeze({
   egress: 'only origin; every other delivery or network shape is refused',
 });
 
-export const loop = Object.freeze({
-  // keepalives and status reads neither count toward nor reset the repeat streak
-  exempt: /__graph_(heartbeat|plan_status)$/,
-});
-
 export const spend = Object.freeze({ defaultMaxBudgetUsd: 5 });
 
 export const framing = Object.freeze({ open: '<<<NODE_DATA', close: 'NODE_DATA>>>' });
@@ -64,4 +58,4 @@ export function untrustedBlock(fields) {
     open, body, close].join('\n');
 }
 
-export default Object.freeze({ name: PROFILE_NAME, env: PROFILE_ENV, allow, deny, loop, spend, framing });
+export default Object.freeze({ name: PROFILE_NAME, env: PROFILE_ENV, allow, deny, spend, framing });

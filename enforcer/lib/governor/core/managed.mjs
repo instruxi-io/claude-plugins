@@ -69,10 +69,7 @@ const MERGE = {
   fleetBurnLimit: cap,
   fanoutLimit: cap,
   retryLimit: cap,
-  loopLimit: cap,
-  loopWindow: managedWins,     // the window is a measurement, not a limit
   budgetOn: onWins,
-  loopOn: onWins,
   rulesOn: onWins,
   policyOn: onWins,
   shipOn: onWins,

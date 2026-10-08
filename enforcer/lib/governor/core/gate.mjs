@@ -60,7 +60,7 @@ export function compose(cap, central) {
 
 /**
  * @param ev    {{action,tool,input,agent,cwd,model,task}}  what the agent wants to do
- * @param cfg   config (rulesOn / budgetOn / loopOn / rules ...)
+ * @param cfg   config (rulesOn / budgetOn / rules ...)
  * @param deps  {{ withState, economics }}
  *   withState(fn) -> { ok, value }   run fn under the lock; never throws
  *   economics(state, ev, cfg) -> Verdict|null   Layer B; null means no opinion
@@ -111,9 +111,9 @@ export function gate(ev, cfg = {}, deps = {}) {
   if (cap && cap.action !== 'allow') return cap;
   const waived = deps.central?.opinion === 'allow' && !cap;
 
-  // Spend and loop off does NOT mean capability off — hence this sitting below
+  // Spend off does NOT mean capability off, hence this sitting below
   // the call above rather than at the top of the function, which is where v2
-  // had it. There it returned early on `budgetOn === false && loopOn === false`
+  // had it. There it returned early when spend and the old loop check were off
   // and took the capability rules down with it, whatever `rulesOn` said. The
   // README has always described three independent switches ("rulesOn the
   // capability rules ... all three off is fully inert"), so the code and the
@@ -121,7 +121,7 @@ export function gate(ev, cfg = {}, deps = {}) {
   // spend tracking silently gave up `curl | sh` and `rm -rf` as well. Nothing
   // in the suite pinned it, which is why it survived.
   if (checksOff(cfg)) {
-    return Verdict.allow('spend and loop checks are switched off',
+    return Verdict.allow('spend checks are switched off',
       { code: 'checks_off', source: ECONOMICS, checked: [CAPABILITY, ECONOMICS], policy: waived ? 'allow' : null });
   }
 

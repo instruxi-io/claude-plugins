@@ -68,16 +68,10 @@ export const SETTINGS = {
   retryLimit: { group: 'rates', type: 'number', unit: 'errors/min', check: num(0, 1000),
     describe: 'Upstream errors in a minute before asking. 0 is off.',
     hint: 'A rate-limited call fails cheaply; the retry after it is what costs.' },
-  loopLimit: { group: 'rates', type: 'number', unit: 'repeats', check: num(2, 100),
-    describe: 'Identical actions in the recent window that count as a loop.' },
-  loopWindow: { group: 'rates', type: 'number', unit: 'actions', check: num(2, 500),
-    describe: 'How many recent actions are remembered when looking for a loop.' },
 
   // ── checks ────────────────────────────────────────────────────────────────
   budgetOn: { group: 'checks', type: 'boolean', check: bool(),
     describe: 'The spend and rate checks. Off by default.' },
-  loopOn: { group: 'checks', type: 'boolean', check: bool(),
-    describe: 'The loop check.' },
   rulesOn: { group: 'checks', type: 'boolean', check: bool(),
     describe: 'The capability rules: what an agent may DO. Off by default.',
     hint: 'Independent of the others: spend off still leaves curl|sh and rm -rf guarded.' },
@@ -121,6 +115,9 @@ export const RETIRED = {
   fallbackModel: 'see rerouteOn',
   fallbackHeaders: 'see rerouteOn',
   enforceModel: 'only ever worked on the proxy; never applied to Claude Code',
+  loopOn: 'jev-hooks owns loop detection',
+  loopLimit: 'jev-hooks owns loop detection',
+  loopWindow: 'jev-hooks owns loop detection',
 };
 
 /** @returns {string|null} an error message, or null when the value is good. */

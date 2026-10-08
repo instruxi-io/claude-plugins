@@ -113,10 +113,10 @@ An agent stopped for **spending** is freed by raising the limit — `node bin/en
 To switch the governor off without uninstalling it, set any of these in `~/.config/enforcer/governor/config.json`. That file already holds your other settings (limits, model), so change these keys in place rather than replacing the file:
 
 ```json
-{"budgetOn": false, "loopOn": false, "rulesOn": false}
+{"budgetOn": false, "rulesOn": false}
 ```
 
-`budgetOn` covers the spend and rate checks, `loopOn` the loop check, `rulesOn` the capability rules. The three are independent: turning spend tracking off leaves `curl | sh` and `rm -rf` still guarded. All three off is fully inert — **unless your organisation publishes a floor**, below. Do not delete `state.json` to unstick something: it holds the head of the receipt chain, so the next receipt hashes against nothing and `verify` correctly reports the record as broken.
+`budgetOn` covers the spend and rate checks, `rulesOn` the capability rules. The two are independent: turning spend tracking off leaves `curl | sh` and `rm -rf` still guarded. Loop detection belongs to `jev-hooks`; the old loop settings are retired. Both off is fully inert, **unless your organisation publishes a floor**, below. Do not delete `state.json` to unstick something: it holds the head of the receipt chain, so the next receipt hashes against nothing and `verify` correctly reports the record as broken.
 
 ### Settings your organisation sets
 
@@ -181,10 +181,9 @@ The record is written three places: as the `decision` field, last, on the hash-c
 | `settings_write` | an edit to plugin or governor settings |
 | `protected_path` | a headless worker changing `.github/`, release or deploy scripts, or secret files (a release node, marked by the dispatcher, may) |
 | `tenant_policy` | the organisation's Enforcer policy decided |
-| `agent_stopped` | the agent was stopped by a person or for looping, and stays stopped until resumed |
+| `agent_stopped` | the agent was stopped by a person, and stays stopped until resumed |
 | `ask_declined` | the agent was paused to ask you something and the answer was not yes; it stays denied until resumed or the day rolls |
 | `period_limit` | the daily, weekly or monthly spend limit is reached |
-| `loop_detected` | the agent repeated the same action past the loop limit |
 | `burn_rate` | spending faster than the per-minute mark |
 | `fanout_rate` | starting subagents faster than the fan-out mark |
 | `retry_storm` | failing and retrying faster than the retry mark |
@@ -193,7 +192,7 @@ The record is written three places: as the `decision` field, last, on the hash-c
 | `spend_warning` | the agent passed the warn-me mark of its spend limit |
 | `no_rule_matched` | no rule objected and spend is within limits |
 | `spend_unchecked` | no rule objected; the governor could not read its state, so spend was not checked |
-| `checks_off` | no rule objected; spend and loop checks are switched off |
+| `checks_off` | no rule objected; spend checks are switched off |
 
 ### Headless graph workers
 

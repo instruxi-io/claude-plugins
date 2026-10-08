@@ -44,15 +44,14 @@ ok('in-worktree delete allowed, outside denied', () => {
   }
 });
 
-ok('heartbeats never loop', () => {
-  const cfg = { loopOn: true, loopLimit: 4, loopWindow: 8, budgetOn: false };
+ok('heartbeats are never denied', () => {
+  const cfg = { budgetOn: false };
   const hb = { tool: 'x', name: 'mcp__plugin_enforcer_enforcer__graph_heartbeat', action: 'hb', args: { run_id: 'r' }, agent: 'a', session: 's' };
   const state = { agents: {} };
   for (let i = 0; i < 20; i++) ingest(state, hb, cfg, 1000 + i);
   const v = econ(state, hb, cfg, 2000);
   assert.ok(!v || v.action !== 'deny');
-  assert.ok(profile.loop.exempt.test('mcp__enforcer__graph_plan_status'));
-  assert.ok(!profile.loop.exempt.test('Bash'));
+  assert.equal(profile.loop, undefined, 'jev-hooks owns loop detection');
 });
 
 ok('workflow edit denied', () => {
