@@ -100,7 +100,7 @@ export async function native(handlers, ev, deadline) {
   return { out, code: 0 };
 }
 
-export async function runEvent(name) {
+export async function runEvent(name, opts = {}) {
   const event = NAMES[name];
   if (!event) { process.stderr.write(`usage: enforcer event <${EXIT_NAMES()}>\n`); return 2; }
   const spec = EVENTS[event];
@@ -111,7 +111,7 @@ export async function runEvent(name) {
   if (!isObj(ev)) ev = {};
   // The harness names the event itself; a shim routed an event it does not own stays silent.
   let out = null;
-  if (spec.gov) out = await governor(spec.gov, raw);
+  if (spec.gov && !opts.graphOnly) out = await governor(spec.gov, raw);
   const denied = out?.hookSpecificOutput?.permissionDecision === 'deny';
   let handlers = [];
   const tool = ev.tool_name || '';
@@ -123,6 +123,7 @@ export async function runEvent(name) {
   else if (event === 'SessionStart' && (!ev.source || /^(startup|resume|compact|clear)$/.test(ev.source))) handlers = ['session_start'];
   else if (event === 'PreCompact') handlers = ['remember_on_compact'];
   else if (event === 'Stop' || event === 'SubagentStop') handlers = ['stop_ticker', 'open_run_guard'];
+  if (opts.only) handlers = handlers.filter((h) => h === opts.only);
   if (denied) handlers = [];
   let code = 0;
   if (handlers.length && (event === 'SessionStart' || graphContextLive(ev))) { // session-start notices print with or without a graph
