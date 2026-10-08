@@ -21,6 +21,7 @@
 import { Verdict, ECONOMICS, CAPABILITY, POLICY } from './verdict.mjs';
 import { evaluate as capability, DEFAULT_RULES, resolveRules } from './capability.mjs';
 import { evaluate as worker } from './worker.mjs';
+import { checksOff } from './policy.mjs';
 
 /**
  * Fold the tenant's answer (central.mjs) into the local capability verdict.
@@ -119,7 +120,7 @@ export function gate(ev, cfg = {}, deps = {}) {
   // documented contract disagreed, and the code was the wrong one: turning off
   // spend tracking silently gave up `curl | sh` and `rm -rf` as well. Nothing
   // in the suite pinned it, which is why it survived.
-  if (cfg.budgetOn === false && cfg.loopOn === false) {
+  if (checksOff(cfg)) {
     return Verdict.allow('spend and loop checks are switched off',
       { code: 'checks_off', source: ECONOMICS, checked: [CAPABILITY, ECONOMICS], policy: waived ? 'allow' : null });
   }

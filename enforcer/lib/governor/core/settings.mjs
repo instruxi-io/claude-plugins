@@ -75,14 +75,14 @@ export const SETTINGS = {
 
   // ── checks ────────────────────────────────────────────────────────────────
   budgetOn: { group: 'checks', type: 'boolean', check: bool(),
-    describe: 'The spend and rate checks.' },
+    describe: 'The spend and rate checks. Off by default.' },
   loopOn: { group: 'checks', type: 'boolean', check: bool(),
     describe: 'The loop check.' },
   rulesOn: { group: 'checks', type: 'boolean', check: bool(),
-    describe: 'The capability rules — what an agent may DO.',
+    describe: 'The capability rules: what an agent may DO. Off by default.',
     hint: 'Independent of the others: spend off still leaves curl|sh and rm -rf guarded.' },
   policyOn: { group: 'checks', type: 'boolean', check: bool(),
-    describe: "Ask your organisation's Enforcer policy about actions a rule matched.",
+    describe: "Ask your organisation's Enforcer policy about actions a rule matched. Off by default.",
     hint: 'Only matched actions are asked, so ordinary tool calls never wait on the network. Signed out, it does nothing.' },
   policyTimeoutMs: { group: 'checks', type: 'number', unit: 'ms', check: num(100, 10000),
     describe: 'How long to wait for the policy before the local rule decides alone.',

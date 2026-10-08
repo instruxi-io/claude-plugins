@@ -311,12 +311,16 @@ export const DEFAULTS = {
   fallbackUrl: '',        // e.g. http://localhost:1234/v1/chat/completions
   fallbackModel: '',      // e.g. qwen3.8-27b-mlx
   fallbackHeaders: {},
-  budgetOn: true,
+  // Decisioning is OFF by default: a fresh install reports data first (cost
+  // records and receipts for every call) and only checks spend, capability
+  // rules or the tenant policy once someone turns them on. An organisation's
+  // managed `on` still wins over these (managed.mjs onWins).
+  budgetOn: false,
   loopOn: true,
-  rulesOn: true,      // capability rules: what it may DO
+  rulesOn: false,     // capability rules: what it may DO
   // Ask the tenant's Enforcer policy about actions a rule matched (central.mjs).
   // Inert when signed out; the local rule stands whenever it cannot answer.
-  policyOn: true,
+  policyOn: false,
   policyTimeoutMs: 1500,
   policyTtlSec: 30,
   centralUrl: 'https://api.instruxi.dev',
@@ -462,6 +466,12 @@ export function getAgent(state, id, cfg, now = Date.now()) {
 
 // The one call. Returns { verdict, reason, receipt, hash, agent }.
 // verdict is one of: allow | deny | escalate.
+// Decisioning is off: spend checks off, and either the loop check or the
+// capability rules off too. The second half is what a fresh install has
+// (budgetOn and rulesOn false by default); loop detection belongs to jev-hooks,
+// so the governor's own loop check does not hold decisioning on by itself.
+export const checksOff = (cfg = {}) => cfg.budgetOn === false && (cfg.loopOn === false || cfg.rulesOn === false);
+
 export function decide(state, ev, config = {}) {
   const cfg = { ...DEFAULTS, ...config };
   const now = ev.ts || Date.now();
@@ -489,7 +499,7 @@ export function decide(state, ev, config = {}) {
   // Master switch wins over everything, including a grounded agent. Turning the
   // governor off in the dashboard has to actually let work through, otherwise
   // there is no way back and the user is stuck.
-  if (cfg.budgetOn === false && cfg.loopOn === false) {
+  if (checksOff(cfg)) {
     a.status = 'active'; a.escalated = false;
     return record(state, a, 'allow', 'checks are switched off', a.tokens, 'human');
   }
