@@ -7,7 +7,7 @@ import { actorKey, stateBase, tightenState, privateDir, privateWrite } from '../
 import { loadRun } from '../run.mjs';
 import { sweepSessions, prFooter } from '../evidence.mjs';
 import { http } from '../http.mjs';
-import { readCredentials, signInProblem } from '../../credentials.mjs';
+import { readCredentials, signInProblem, isFederated } from '../../credentials.mjs';
 import { envBaseUrl } from '../../config.mjs';
 import { configDir } from '../../../hooks/claude/paths.mjs';
 import { findConfig, markAttested, isObj } from './common.mjs';
@@ -25,9 +25,16 @@ export function marketplaceName() {
 
 export const baseUrl = () => String(envBaseUrl() || (readCredentials()?.enforcer || {}).base_url || DEFAULT_BASE);
 
-export async function notices(health) {
+// Any credential this install would send: the shared sign-in, ENFORCER_API_KEY,
+// or the graph hooks' GRAPH_API_KEY.
+const hasCredential = () => isFederated() || !!String(process.env.GRAPH_API_KEY || '').trim();
+
+export async function notices(health, signedIn = hasCredential) {
   const cfgdir = configDir(),
     mkt = marketplaceName();
+  // A machine that never signed in makes no network calls (lib/governor/README.md):
+  // without a credential the health fetch is skipped, and with it the tool-drift check.
+  if (health == null && !signedIn()) health = false;
   const installed = (load(join(cfgdir, 'plugins', 'installed_plugins.json')) || {}).plugins || {};
   const out = (await report(cfgdir, mkt, pluginVersion(), readCredentials(), baseUrl(), null, health)).map((l) => [`drift:${l}`, l]);
   if (`enforcer-graph@${mkt}` in installed && !(`enforcer@${mkt}` in installed)) {

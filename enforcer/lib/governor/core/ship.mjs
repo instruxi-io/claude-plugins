@@ -21,12 +21,12 @@
 // tool call. Delivery is at-least-once; the server skips a receipt it holds.
 
 import { hookFetch } from './http.mjs';
-import { readFileSync, writeFileSync, mkdirSync, openSync, closeSync, unlinkSync, statSync } from 'node:fs';
+import { readFileSync, writeFileSync, openSync, closeSync, unlinkSync, statSync } from 'node:fs';
 import { createHash, randomUUID } from 'node:crypto';
 const spawn = (...a) => process.getBuiltinModule('node:child_process').spawn(...a); // lazy: only the throttled kick spawns
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { DIR } from './store.mjs';
+import { DIR, privateDir, FILE_MODE } from './store.mjs';
 import { pending, markShipped, markFailure } from './outbox.mjs';
 import { authHeaders, baseUrl, isFederated } from './credentials.mjs';
 
@@ -52,8 +52,8 @@ export function installId() {
   }
   const id = randomUUID();
   try {
-    mkdirSync(DIR, { recursive: true });
-    writeFileSync(INSTALL(), JSON.stringify({ id, created_at: new Date().toISOString() }));
+    privateDir(DIR);
+    writeFileSync(INSTALL(), JSON.stringify({ id, created_at: new Date().toISOString() }), { mode: FILE_MODE });
   } catch {
     /* an unwritable dir still ships this run under this id */
   }
@@ -201,16 +201,16 @@ export async function shipAll(cfg = {}, deps = {}, maxBatches = 20) {
 const LOCK_STALE_MS = 2 * 60_000;
 function takeLock() {
   try {
-    mkdirSync(DIR, { recursive: true });
+    privateDir(DIR);
   } catch {}
   try {
-    closeSync(openSync(LOCK(), 'wx'));
+    closeSync(openSync(LOCK(), 'wx', FILE_MODE));
     return true;
   } catch {
     try {
       if (Date.now() - statSync(LOCK()).mtimeMs > LOCK_STALE_MS) {
         unlinkSync(LOCK());
-        closeSync(openSync(LOCK(), 'wx'));
+        closeSync(openSync(LOCK(), 'wx', FILE_MODE));
         return true;
       }
     } catch {}
@@ -240,8 +240,8 @@ export function kick(everyMs = 30_000, shipper = SHIPPER) {
     /* never kicked */
   }
   try {
-    mkdirSync(DIR, { recursive: true });
-    writeFileSync(KICKED(), String(Date.now()));
+    privateDir(DIR);
+    writeFileSync(KICKED(), String(Date.now()), { mode: FILE_MODE });
     spawn(process.execPath, [shipper], { detached: true, stdio: 'ignore', env: process.env }).unref();
     return true;
   } catch {

@@ -32,9 +32,15 @@
 // hook rewrites every session.
 //
 // Prompts are NOT exported: Claude Code redacts them unless OTEL_LOG_USER_PROMPTS
-// is set, and this never sets it.
+// is set, and tool parameters unless OTEL_LOG_TOOL_DETAILS is. enable() never
+// sets either and REMOVES both when they are already in the settings file, so a
+// key left there by hand cannot send prompt text to the endpoint; status() warns
+// when one is present.
+//
+// The settings file keeps its own mode across a rewrite (it often holds secrets,
+// and is commonly 0600); a file this creates is 0600.
 
-import { readFileSync, writeFileSync, mkdirSync, renameSync, copyFileSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, renameSync, copyFileSync, existsSync, statSync, chmodSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -55,6 +61,9 @@ const ENV_KEYS = [
   'OTEL_EXPORTER_OTLP_ENDPOINT',
   'CLAUDE_CODE_OTEL_HEADERS_HELPER_DEBOUNCE_MS',
 ];
+
+/** Env keys that make Claude Code export prompt text or tool parameters: never kept while on. */
+export const SENSITIVE_KEYS = ['OTEL_LOG_USER_PROMPTS', 'OTEL_LOG_TOOL_DETAILS'];
 
 /** How long Claude Code may reuse the helper's headers: under an OAuth token's 15-minute life. */
 export const HEADERS_REFRESH_MS = '600000';
@@ -104,12 +113,20 @@ const readSettings = () => {
   return JSON.parse(readFileSync(p, 'utf8')); // a malformed file throws: never overwrite what we cannot read
 };
 
-function writeSettings(s) {
+export function writeSettings(s) {
   const p = CLAUDE_SETTINGS();
   mkdirSync(dirname(p), { recursive: true });
-  if (existsSync(p)) copyFileSync(p, p + '.enforcer-backup');
+  let mode = 0o600;
+  if (existsSync(p)) {
+    mode = statSync(p).mode & 0o777;
+    copyFileSync(p, p + '.enforcer-backup');
+    try {
+      chmodSync(p + '.enforcer-backup', mode);
+    } catch {}
+  }
   const tmp = p + `.${process.pid}.tmp`;
-  writeFileSync(tmp, JSON.stringify(s, null, 2) + '\n');
+  writeFileSync(tmp, JSON.stringify(s, null, 2) + '\n', { mode });
+  chmodSync(tmp, mode); // the umask narrowed the create mode; set it exactly
   renameSync(tmp, p);
 }
 
@@ -119,6 +136,8 @@ export function enable(cfg = {}) {
   recordPluginRoot();
   writeShim();
   const s = readSettings();
+  const removed = SENSITIVE_KEYS.filter((k) => s.env && Object.hasOwn(s.env, k));
+  for (const k of removed) delete s.env[k];
   s.env = {
     ...(s.env || {}),
     CLAUDE_CODE_ENABLE_TELEMETRY: '1',
@@ -130,7 +149,7 @@ export function enable(cfg = {}) {
   };
   s.otelHeadersHelper = `node "${SHIM()}"`;
   writeSettings(s);
-  return { endpoint, settings: CLAUDE_SETTINGS(), helper: s.otelHeadersHelper };
+  return { endpoint, settings: CLAUDE_SETTINGS(), helper: s.otelHeadersHelper, removed };
 }
 
 /** Turn it off: remove exactly the keys enable() wrote, nothing else. */
@@ -157,5 +176,6 @@ export function status() {
     on: env.CLAUDE_CODE_ENABLE_TELEMETRY === '1' && !!env.OTEL_EXPORTER_OTLP_ENDPOINT,
     endpoint: env.OTEL_EXPORTER_OTLP_ENDPOINT || null,
     ours: typeof s.otelHeadersHelper === 'string' && s.otelHeadersHelper.includes('otel-headers.mjs'),
+    sensitive: SENSITIVE_KEYS.filter((k) => Object.hasOwn(env, k)),
   };
 }

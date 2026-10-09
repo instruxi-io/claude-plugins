@@ -6,7 +6,7 @@
 // stopped, so cost is O(what changed) no matter how long the session runs.
 import { readFileSync, writeFileSync, statSync, openSync, readSync, closeSync } from 'node:fs';
 import { join } from 'node:path';
-import { DIR } from '../../core/store.mjs';
+import { DIR, FILE_MODE } from '../../core/store.mjs';
 import { priceOf } from '../../core/policy.mjs';
 
 const cursorFile = (id) => join(DIR, `cursor-${String(id).replace(/[^\w-]/g, '')}.json`);
@@ -105,7 +105,7 @@ export function readUsage(sessionId, transcriptPath) {
     }
     cur.seen = [...seen].slice(-SEEN_MAX);
     try {
-      writeFileSync(cf, JSON.stringify(cur));
+      writeFileSync(cf, JSON.stringify(cur), { mode: FILE_MODE });
     } catch {}
   }
 

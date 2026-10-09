@@ -25,7 +25,7 @@
 
 import { readFileSync, writeFileSync, statSync, openSync, readSync, closeSync } from 'node:fs';
 import { join } from 'node:path';
-import { DIR, RECEIPTS } from './store.mjs';
+import { DIR, RECEIPTS, FILE_MODE } from './store.mjs';
 
 const MARK = join(DIR, 'outbox.json');
 
@@ -44,7 +44,7 @@ const readMark = () => {
 
 const writeMark = (m) => {
   try {
-    writeFileSync(MARK, JSON.stringify(m));
+    writeFileSync(MARK, JSON.stringify(m), { mode: FILE_MODE });
     return true;
   } catch {
     return false;

@@ -19,9 +19,9 @@
 // and the only honest one: a governor that refused to decide because a settings
 // endpoint was slow would stop work over its own configuration.
 import { hookFetch } from './http.mjs';
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { FIXED_DIR } from './store.mjs';
+import { FIXED_DIR, privateDir, FILE_MODE } from './store.mjs';
 import { normalizeBooleans, isOn, isOff } from './bool.mjs';
 import { baseUrl, authHeaders, credentialId } from './credentials.mjs';
 
@@ -217,8 +217,8 @@ export function readManaged({ now = Date.now } = {}) {
 
 function writeManaged(settings, at) {
   try {
-    mkdirSync(FIXED_DIR, { recursive: true });
-    writeFileSync(CACHE, JSON.stringify({ at, cred: credentialId(), settings }));
+    privateDir(FIXED_DIR);
+    writeFileSync(CACHE, JSON.stringify({ at, cred: credentialId(), settings }), { mode: FILE_MODE });
   } catch {
     /* a cache we cannot write is a floor we do not apply */
   }
