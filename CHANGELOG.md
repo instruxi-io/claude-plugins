@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+## 1.3.1
+
+This release is security hardening from an independent audit: the governor fails closed when its config is unreadable, the organisation floor cannot be redirected away, and an environment variable can no longer silently turn rules off. Telemetry never exports prompts, and the dispatcher only runs allow-listed acceptance commands.
+
+- Acceptance lines from a graph run only when they fully match a short shared allow list of read-only command shapes (src/acceptance-allowlist.mjs), without a shell, with a minimal environment and a temporary HOME, in evidence run, plan check, the report hook and the landing completion.
+- A merge node lands only a pull request in its own data.repo (or --merge-allow) whose head is graph/<key of this graph>, the lander gets the worker env allowlist, orphan reaping verifies start time and launch nonce before killing, and node keys and repos are validated in worktreeFor, mcpConfigPath and preflight.
+- Workers receive a minted worker token (not the agent key) when ENFORCER_WORKER_AGENT_ID is set; startup removes stale mcp configs and redacts old logs; the state dir is 0700; the env passes named CLAUDE and LC variables only.
+- The whole repository is now licensed under FSL-1.1-ALv2 (root LICENSE, package licence fields, README section); the governor already was.
+- Data minimization: `telemetry on` removes OTEL_LOG_USER_PROMPTS and OTEL_LOG_TOOL_DETAILS (status warns) and keeps the settings file mode; governor dirs are 0700 and files 0600; verify fails when receipts.jsonl is missing but state has a head; no health fetch without a credential; the report labels built-in rules by their code.
+- Governor docs, collector config and receipt schema now match the code: localhost receivers, correct receipts path, no debug exporter, strict receipt schema.
+- Governor: an environment `on` (ENFORCER_GOVERNOR_RULES, _BUDGET, _POLICY) always turns a check on, but an environment `off` is honored only when config.json sets the new `allowEnvOff` setting; an ignored `off` or an unrecognised value prints one stderr notice per process and shows in `governor status` and `governor config`.
+- Governor fails closed on an unreadable or garbage config.json (capability rules stay on, one stderr notice), keeps the organisation floor cache at a fixed per-user path that GOVERNOR_HOME and ENFORCER_CONFIG_HOME cannot redirect, keeps the last floor on an ENFORCER_API_KEY change until a refresh succeeds, and asks before chmod, mv, rm or ln against the governor directory (rule governor.home).
+- A boolean setting reads one way everywhere (true/on/yes/1 and false/off/no/0, any case), so governor status cannot disagree with the gate; an organisation floor sent as a string is honored; an unrecognised value is ignored with a notice.
+
 ## 1.3.0
 
 The governor now reports first: decisioning (capability rules, spend and rate checks, tenant policy) is off by default and only on when configured. This release also adds a linter, formatter and type check to the test run, and improves doctor and the Grok install.

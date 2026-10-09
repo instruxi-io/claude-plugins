@@ -1,1 +1,0 @@
-Acceptance lines from a graph run only when they fully match a short shared allow list of read-only command shapes (src/acceptance-allowlist.mjs), without a shell, with a minimal environment and a temporary HOME, in evidence run, plan check, the report hook and the landing completion.

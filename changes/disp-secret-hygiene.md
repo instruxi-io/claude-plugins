@@ -1,1 +1,0 @@
-Workers receive a minted worker token (not the agent key) when ENFORCER_WORKER_AGENT_ID is set; startup removes stale mcp configs and redacts old logs; the state dir is 0700; the env passes named CLAUDE and LC variables only.
