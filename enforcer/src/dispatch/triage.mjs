@@ -4,19 +4,10 @@ import { clip, pyJson, isObj } from './util.mjs';
 export const TRIAGE_ACTIONS = ['revise', 'prerequisite', 'gate'];
 export const TRIAGE_TYPES = ['task', 'bug', 'chore', 'gate'];
 export const TRIAGE_DATA_KEYS = ['repo', 'acceptance', 'brief', 'tier'];
-export const SAFE_IDENT = /^[A-Za-z0-9._-]+$/;
+import { SAFE_IDENT, safeIdent as safe, pyRepr, unsafeIdent } from './ident.mjs';
 
-const safe = (x) => typeof x === 'string' && SAFE_IDENT.test(x) && x !== '.' && x !== '..';
-const pyRepr = (x) => (typeof x === 'string' ? "'" + x.replace(/\\/g, '\\\\').replace(/'/g, "\\'") + "'" : String(x));
+export { SAFE_IDENT, unsafeIdent };
 const truthyStr = (x) => String(x ?? '').trim() !== '';
-
-/** Why a node's key or data.repo may not reach a path or branch name, or ''. */
-export function unsafeIdent(node) {
-  if (!safe(node.key)) return `key ${pyRepr(node.key)} does not match ^[A-Za-z0-9._-]+$`;
-  const repo = (node.data || {}).repo;
-  if (repo !== undefined && repo !== null && !safe(repo)) return `data.repo ${pyRepr(repo)} does not match ^[A-Za-z0-9._-]+$`;
-  return '';
-}
 
 export function triagePrompt(graph, tnode, failed, history) {
   const nfail = (history.failures || []).length;

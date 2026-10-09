@@ -3,6 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, statSync, lstatSync, copyFileSync, realpathSync, readFileSync, symlinkSync, appendFileSync } from 'node:fs';
 import { join, dirname, normalize, isAbsolute, sep, resolve } from 'node:path';
 import { git, originRef, ghPrState } from './prune.mjs';
+import { assertIdent } from './ident.mjs';
 
 export class BaseMissing extends Error {}
 
@@ -74,8 +75,9 @@ export function checkBase(ref, source, cwd) {
 
 /** [path, branch, note]. A node with a data.repo checkout under repoRoot gets <repoRoot>/<repo>-<key> on graph/<key>. */
 export function worktreeFor(node, repoRoot, stateDir, { dry = false, graphBases = null, registry = null } = {}) {
-  const key = node.key;
+  const key = assertIdent(node.key, 'node key'); // the key and repo become paths and a branch: never trust a caller to have checked
   const repo = (node.data || {}).repo;
+  if (repo !== undefined && repo !== null) assertIdent(repo, 'data.repo');
   const branch = 'graph/' + key;
   const gitMarker = repo && repoRoot ? join(repoRoot, repo, '.git') : null;
   if (!repo || !repoRoot || !(isDir(gitMarker) || isFile(gitMarker))) {

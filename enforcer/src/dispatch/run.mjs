@@ -2,7 +2,8 @@
 // The dispatcher runtime: one pass (tick), reaping, the lease, pids.json, usage-limit and CI holds,
 // SIGTERM/SIGINT drain, and `main` (the `enforcer dispatch` entry).
 // Warm sessions, salvage, landing-blocked and triage launches live in the sibling modules.
-import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, rmSync, appendFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { existsSync, chmodSync, mkdirSync, readFileSync, writeFileSync, renameSync, rmSync, appendFileSync } from 'node:fs';
 import { hostname, homedir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -18,6 +19,8 @@ import {
   killGroup,
   alive,
   pidAliveGroup,
+  verifyWorker,
+  killNonce,
   harnessRefusal,
   HARNESSES,
   LAND_PR,
@@ -28,14 +31,14 @@ import {
   removeAgentMcpConfigs,
 } from './launch.mjs';
 import { modelFor, nodeMaxTurns } from './model.mjs';
-import { mergeTarget, repoOf, resourcesOf, lapsed, select, affinityOrder } from './select.mjs';
+import { mergeTarget, mergeRefusal, repoOf, resourcesOf, lapsed, select, affinityOrder } from './select.mjs';
 import { summarize, failedOutcome, workerPrompt, remediationPrompt, harnessLimitText, limitResetAt, judgeLines, denialClass } from './summarize.mjs';
 import { countTurns } from './stream.mjs';
-import { unsafeIdent } from './triage.mjs';
+import { unsafeIdent } from './ident.mjs';
 import HEADLESS_PROFILE from '../../lib/governor/profiles/headless-worker.mjs';
 import { loadRepoBases } from './prune.mjs';
 import { clip, parseTs } from './util.mjs';
-import { writeLog, redactFile, pruneLogs, addSecret, DEFAULT_LOG_DAYS, DEFAULT_LOG_MAX_BYTES } from './logs.mjs';
+import { writeLog, redactFile, redactLogsDir, pruneLogs, addSecret, DEFAULT_LOG_DAYS, DEFAULT_LOG_MAX_BYTES } from './logs.mjs';
 
 /** Per-worker spend cap passed as --max-budget-usd unless the operator overrides it. */
 export const DEFAULT_MAX_BUDGET_USD = HEADLESS_PROFILE.spend.defaultMaxBudgetUsd;
@@ -57,6 +60,36 @@ export async function actionsStatus(fetchText = null, url = CI_STATUS_URL) {
   } catch {
     return null;
   }
+}
+
+/** Where gh keeps its configuration: not secrets, passed to the lander so gh finds the operator's sign-in. */
+const GH_CONFIG_ENV = ['GH_CONFIG_DIR', 'XDG_CONFIG_HOME', 'GH_HOST'];
+
+/** What gh says about a pull request (headRefName, url, isCrossRepository), or null when it cannot be read. */
+export function ghPrView(pr, slug, cwd) {
+  const r = spawnSync('gh', ['pr', 'view', String(pr), ...(slug ? ['-R', slug] : []), '--json', 'headRefName,url,isCrossRepository'], {
+    cwd,
+    encoding: 'utf8',
+    timeout: 60000,
+  });
+  if (r.status !== 0) return null;
+  try {
+    return JSON.parse(r.stdout);
+  } catch {
+    return null;
+  }
+}
+
+/** --merge-allow owner/repo (repeatable) and --merge-allow-file (one owner/repo per line, # comments): repos a merge node may land in. */
+export function mergeAllowList(flags = [], file = null) {
+  const out = [...(flags || [])];
+  if (file)
+    for (const l of readFileSync(file, 'utf8').split('\n')) {
+      const s = l.replace(/#.*/, '').trim();
+      if (s) out.push(s);
+    }
+  for (const s of out) if (!/^[\w.-]+\/[\w.-]+$/.test(s)) throw new Error(`--merge-allow ${JSON.stringify(s)} is not owner/repo`);
+  return out;
 }
 
 export function defaultArgs(o = {}) {
@@ -92,6 +125,8 @@ export function defaultArgs(o = {}) {
     codex: null,
     leaseRenew: LEASE_TTL / 3,
     killGrace: 30,
+    mergeAllow: [],
+    prView: null,
     ...o,
   };
 }
@@ -189,6 +224,7 @@ export class Dispatcher {
 
   async tick() {
     const nodes = await this.api.nodes(this.g);
+    this.graphKeys = new Set(nodes.map((n) => n.key).filter(Boolean));
     const cands = await this.candidates(nodes);
     const slots = this.args.workers - [...this.workers.values()].filter((w) => w.kind === 'agent').length;
     const held = this.heldElsewhere(nodes);
@@ -303,17 +339,19 @@ export class Dispatcher {
     const attempt = (this.attempts.get(n.key) || 0) + 1;
     this.attempts.set(n.key, attempt);
     const logPath = join(this.logs, `${n.key}.${attempt}.jsonl`);
+    // The worker gets a minted one-day token when ENFORCER_WORKER_AGENT_ID is set; the agent key stays in the dispatcher.
+    // Without it the agent key is the only credential there is, so it is passed on (see docs/graph/DISPATCHER.md).
     let token = null;
-    if (this.args.agentKey) token = this.args.agentKey;
-    else
-      try {
-        token = typeof this.api.call === 'function' ? await mintWorkerToken(this.api, process.env, `worker-${n.key}`.slice(0, 60)) : null;
-      } catch (e) {
-        this.say(`worker token not minted for ${n.key}: ${e.message}`);
-      }
+    try {
+      token = typeof this.api.call === 'function' ? await mintWorkerToken(this.api, process.env, `worker-${n.key}`.slice(0, 60)) : null;
+    } catch (e) {
+      this.say(`worker token not minted for ${n.key}: ${e.message}`);
+    }
+    if (token) addSecret(token);
+    else if (this.args.agentKey) token = this.args.agentKey;
     if (mcpConfig) {
       try {
-        writeAgentMcpConfig(this.state, n.key, a.mcpUrl, a.agentKey);
+        writeAgentMcpConfig(this.state, n.key, a.mcpUrl, token || a.agentKey);
       } catch (e) {
         this.say(`refuse ${n.key}: could not write its MCP config: ${e.message}`);
         return;
@@ -324,7 +362,7 @@ export class Dispatcher {
       logPath,
       env: workerEnv(this.g, process.env, { token, release: n.type === 'release', workerRules: this.args.workerRules }),
       cleanup: mcpConfig ? [mcpConfig] : [],
-      secrets: a.agentKey ? [a.agentKey] : [],
+      secrets: [a.agentKey, token].filter(Boolean),
     });
     const w = {
       kind: 'agent',
@@ -354,6 +392,12 @@ export class Dispatcher {
       this.say(`would land ${n.key} [merge, no agent]${tag}: ${cmd.join(' ')} (cwd ${cwd})`);
       return;
     }
+    const why = mergeRefusal(n, (a.prView || ghPrView)(pr, slug, cwd), { allow: a.mergeAllow, graphKeys: this.graphKeys || null });
+    if (why) {
+      if (this.lastSkip.get(n.key) !== 'refused: ' + why) this.say(`REFUSE ${n.key}: will not land ${slug ? slug + '#' : ''}${pr}: ${why}`);
+      this.lastSkip.set(n.key, 'refused: ' + why);
+      return;
+    }
     this.attempts.set(n.key, (this.attempts.get(n.key) || 0) + 1);
     let card;
     try {
@@ -363,7 +407,10 @@ export class Dispatcher {
       return;
     }
     const logPath = join(this.logs, `${n.key}.${this.attempts.get(n.key)}.log`);
-    const proc = spawnWorker(cmd, { cwd, logPath, env: { ...process.env, GRAPH_RUN_ID: card.run_id } });
+    // the lander gets the worker allowlist like every other worker (gh reads its sign-in from HOME), never the full environment
+    const env = workerEnv(this.g, process.env, { runId: card.run_id, workerRules: a.workerRules });
+    for (const k of GH_CONFIG_ENV) if (process.env[k]) env[k] = process.env[k];
+    const proc = spawnWorker(cmd, { cwd, logPath, env });
     this.workers.set(n.key, {
       kind: 'merge',
       node: n,
@@ -559,16 +606,22 @@ export class Dispatcher {
   // ---- pids and orphans
   writePids() {
     try {
-      const workers = Object.fromEntries([...this.workers].filter(([, w]) => w.proc).map(([k, w]) => [k, w.proc.pid]));
+      const live = [...this.workers].filter(([, w]) => w.proc);
+      const workers = Object.fromEntries(live.map(([k, w]) => [k, w.proc.pid]));
+      // what proves a pid is still the worker we launched: its start time and the launch nonce in its environment
+      const meta = Object.fromEntries(live.map(([k, w]) => [k, { start: w.proc.start ?? null, nonce: w.proc.nonce ?? null }]));
       const p = join(this.state, 'pids.json');
-      writeFileSync(p + '.tmp', JSON.stringify({ dispatcher: process.pid, host: hostname(), workers }));
+      writeFileSync(p + '.tmp', JSON.stringify({ dispatcher: process.pid, host: hostname(), workers, meta }), { mode: 0o600 });
+      chmodSync(p + '.tmp', 0o600);
       renameSync(p + '.tmp', p);
     } catch {
       /* state dir gone */
     }
   }
 
-  /** Startup: kill workers a dead earlier dispatcher left in pids.json (they run in their own session). */
+  /** Startup: kill workers a dead earlier dispatcher left in pids.json (they run in their own session). A pid is killed only
+   *  when its start time and the launch nonce in its environment both match what was recorded at launch: a stale file naming
+   *  a reused pid (any login shell or tmux session leads its own group) is left alone, and so is one that cannot be verified. */
   async reapOrphans() {
     const path = join(this.state, 'pids.json');
     let rec;
@@ -582,6 +635,12 @@ export class Dispatcher {
     const reaped = [];
     for (const [key, pid] of Object.entries(rec.workers || {})) {
       if (!Number.isInteger(pid) || pid === process.pid || !pidAliveGroup(pid)) continue;
+      const meta = (rec.meta || {})[key];
+      const notOurs = verifyWorker(pid, meta);
+      if (notOurs) {
+        this.say(`not reaping ${key} pid ${pid} from pids.json: ${notOurs}; left running (kill it by hand if it is a stale worker)`);
+        continue;
+      }
       for (const sg of ['SIGTERM', 'SIGKILL']) {
         try {
           process.kill(-pid, sg);
@@ -591,6 +650,7 @@ export class Dispatcher {
         for (let i = 0; i < 20 && pidAliveGroup(pid); i++) await sleepMs(100);
         if (!pidAliveGroup(pid)) break;
       }
+      killNonce(meta.nonce);
       this.say(`reaped orphan worker ${key} pid ${pid} from a previous dispatcher`);
       reaped.push(key);
     }
@@ -641,8 +701,16 @@ export class Dispatcher {
     }
     try {
       if (!a.dryRun) {
-        mkdirSync(this.state, { recursive: true });
+        mkdirSync(this.state, { recursive: true, mode: 0o700 });
+        chmodSync(this.state, 0o700);
         await this.reapOrphans();
+        removeAgentMcpConfigs(this.state); // a SIGKILLed dispatcher leaves the per-run configs (and their key) behind
+        try {
+          mkdirSync(this.logs, { recursive: true, mode: 0o700 });
+          redactLogsDir(this.logs, [a.agentKey].filter(Boolean));
+        } catch {
+          /* best effort */
+        }
         if (existsSync(a.stopFile)) {
           rmSync(a.stopFile, { force: true });
           this.say(`removed a stale stop file at startup: ${a.stopFile}`);
@@ -821,6 +889,8 @@ const OPTS = {
   'ci-probe-interval': { type: 'string' },
   'ci-status-url': { type: 'string' },
   'plugin-dir': { type: 'string', multiple: true },
+  'merge-allow': { type: 'string', multiple: true },
+  'merge-allow-file': { type: 'string' },
   takeover: { type: 'boolean' },
   'no-lease': { type: 'boolean' },
   'worker-rules': { type: 'string' },
@@ -883,6 +953,7 @@ export function parseDispatchArgs(argv, env = process.env) {
     ciProbeInterval: num(v['ci-probe-interval'], d.ciProbeInterval),
     ciStatusUrl: v['ci-status-url'] || d.ciStatusUrl,
     pluginDir: v['plugin-dir'] || [],
+    mergeAllow: mergeAllowList(v['merge-allow'], v['merge-allow-file']),
     workerRules,
     takeover: !!v.takeover,
     noLease: !!v['no-lease'],
@@ -919,7 +990,7 @@ export async function main(argv, env = process.env) {
   }
   const { headers } = await import('../preflight.mjs');
   const api = new API(resolveConfig({ env }).graphUrl, { headers: () => headers(env) });
-  if (!args.dryRun) mkdirSync(args.stateDir, { recursive: true });
+  if (!args.dryRun) mkdirSync(args.stateDir, { recursive: true, mode: 0o700 });
   try {
     return await new Dispatcher(api, args).run();
   } catch (e) {

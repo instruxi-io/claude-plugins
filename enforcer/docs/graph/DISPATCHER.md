@@ -85,6 +85,18 @@ and, for each ready node, up to `--workers` at once:
   - 5 usage error (bad arguments);
   - 6 finished, but failed or denied nodes remain.
   A stale stop file is removed at startup; `pids.json` is written atomically and removed on exit.
+  Each worker gets a launch nonce (`ENFORCER_LAUNCH_NONCE`) in its environment; `pids.json` records it with the
+  worker's start time. At startup an orphan from a dead dispatcher is killed only when both still match, so a stale
+  file naming a reused pid (a login shell, a tmux session) kills nothing; a pid that cannot be verified is left
+  running and logged. After a worker's group is killed, any process still carrying its nonce (one that left the
+  group with `setsid`) is killed too, where `/proc` exists (Linux); on macOS and Windows such a process survives.
+- **Merge nodes land only this graph's pull requests.** Before claiming, the dispatcher reads the PR with
+  `gh pr view` and refuses (`REFUSE <key>: will not land ...`) unless it is in the node's `data.repo` (or a repo
+  named with `--merge-allow owner/repo`, repeatable, or `--merge-allow-file <path>`, one per line), its head is a
+  branch of that repo (not a fork), and the head is `graph/<key>` for the merge node's key or another key in this
+  graph. The lander runs with the worker environment allowlist, not the dispatcher's full environment.
+- Node keys and `data.repo` are validated (`^[A-Za-z0-9._-]+$`, not `.` or `..`) by every function that turns them
+  into a path (`worktreeFor`, the agent MCP config path, preflight's repo check), not only by the launcher.
 
 ### Headless workers: the graph tools are refused in `claude -p` (2026-10-02)
 
@@ -163,3 +175,10 @@ Workers run the dispatcher's checkout; humans run the installed release. Each wo
 `enforcer dispatch run <graph> --agent <name>` runs every worker on a Tier 2 agent credential (issued with `agent_credential_issue`) instead of your browser sign-in, which stops refreshing during long unattended plans. The key is read from `ENFORCER_AGENT_KEY`, else the OS keychain (macOS `security` service `enforcer-agent`, account `<name>`; Linux `secret-tool` with `service enforcer-agent account <name>`); it is never taken from argv. Workers receive it as their only credential (`GRAPH_API_KEY`), runs are attributed to the agent, and you are the steward. Preflight prints an `identity` line saying which identity workers will use. Without `--agent`, a plan estimated over 2 hours (30 minutes per unfinished node, or `data.estimate_minutes`, divided by `--workers`) is refused unless you pass `--allow-browser-signin`.
 
 Claude Code prefers a stored `/mcp` OAuth sign-in for the plugin's MCP server over its header helper, so the environment alone cannot make that server speak as the agent. With `--agent`, each claude worker therefore gets its own MCP connection: the dispatcher writes `<state-dir>/mcp-<node-key>.json` (mode 0600) holding a server named `enforcer` with the agent key as its `X-API-Key` header, and launches the worker with `--mcp-config <file> --strict-mcp-config`, which leaves the stored sign-in and every other MCP server out. The key is never in argv, it is redacted from worker streams and `dispatcher.jsonl`, and the file is removed when the worker exits and on dispatcher shutdown. Without `--agent` nothing changes.
+
+## Secret hygiene and what a worker can read
+
+- The agent key stays in the dispatcher. When `ENFORCER_WORKER_AGENT_ID` is set, each worker gets a minted one-day token (scopes `graph:read`, `graph:write`) as `GRAPH_API_KEY` and `ENFORCER_API_KEY`, and in its MCP config. When it is not set, the agent key is the only credential there is and is passed to workers as before: the trust boundary is that a worker, its Bash tool and any test it runs can print it. Set the variable to avoid that.
+- On start the dispatcher removes every stale `mcp-*.json`, redacts every existing `logs/*.jsonl`, and sets the state dir to 0700 and `pids.json` to 0600. Redaction also removes any bare `ag_` or `env3_` token.
+- A worker's environment is an explicit list: `PATH`, `HOME`, `LANG`, `TERM`, `TMPDIR`, `SHELL`, `USER`, `LOGNAME`, `LC_ALL`, `LC_CTYPE`, `LC_MESSAGES`, `CLAUDE_CONFIG_DIR`, `CLAUDE_CODE_OAUTH_TOKEN`, `CLAUDE_CODE_USE_BEDROCK`, `CLAUDE_CODE_USE_VERTEX`, the plugin and graph variables, and `GH_TOKEN` only from `ENFORCER_WORKER_GH_TOKEN`. No `CLAUDE_*` or `LC_*` prefix passes.
+- A worker keeps the operator's `HOME`, so `gh`, `git` and `ssh` credentials there are reachable. A per-worker `HOME` was considered and not done: copying Claude's single-use refresh token into another `HOME` would sign the operator out.

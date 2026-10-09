@@ -30,6 +30,11 @@ export function scrubSecrets(text, extra = []) {
       text = parts.join('[redacted:secret]');
     }
   }
+  // any bare agent or worker token, whatever the surrounding text
+  text = text.replace(/\b(?:ag|env3)_[A-Za-z0-9_-]{8,}/g, () => {
+    n++;
+    return '[redacted:secret]';
+  });
   return [text, n];
 }
 const clean = (v) => {
@@ -83,6 +88,19 @@ export function redactFile(path, secrets = []) {
   } catch {
     return 0;
   }
+}
+
+/** Redact every existing stream in `dir` (a SIGKILLed dispatcher left them unredacted); returns the number of files changed. */
+export function redactLogsDir(dir, secrets = []) {
+  let names = [];
+  try {
+    names = readdirSync(dir);
+  } catch {
+    return 0;
+  }
+  let files = 0;
+  for (const n of names) if (n.endsWith('.jsonl') && redactFile(join(dir, n), secrets)) files++;
+  return files;
 }
 
 /** Remove streams older than `days` and, oldest first, enough to fit `maxBytes`. `skip` = paths of live workers. */

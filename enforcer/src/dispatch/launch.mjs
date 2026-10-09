@@ -1,6 +1,8 @@
 // Launching workers: the claude/grok/codex command lines, the worker environment, detached spawn,
 // and process-group kill (SIGTERM, a grace period, then SIGKILL) by process.kill(-pid).
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
+import { assertIdent } from './ident.mjs';
 import { readFileSync, closeSync, realpathSync, openSync, writeSync, chmodSync, rmSync, readdirSync } from 'node:fs';
 import { openStream, redactFile } from './logs.mjs';
 import { join, dirname } from 'node:path';
@@ -97,8 +99,16 @@ export const ENV_ALLOW = [
   'JEV_HOOKS_HEADLESS',
   'CLAUDE_PLUGIN_ROOT',
   'ENFORCER_PLUGIN_ROOT',
+  // named locale and Claude variables (no CLAUDE_* or LC_* prefix passes: an unknown variable may carry a secret)
+  'LC_ALL',
+  'LC_CTYPE',
+  'LC_MESSAGES',
+  'CLAUDE_CONFIG_DIR',
+  'CLAUDE_CODE_OAUTH_TOKEN',
+  'CLAUDE_CODE_USE_BEDROCK',
+  'CLAUDE_CODE_USE_VERTEX',
 ];
-export const ENV_ALLOW_PREFIX = ['CLAUDE_', 'LC_'];
+export const ENV_ALLOW_PREFIX = [];
 /** The owner's default for whether dispatched workers run with the worker rules on: decisioning is off unless configured. The one place to change it. */
 export const DEFAULT_WORKER_RULES = 'off';
 export const WORKER_RULES_MODES = ['on', 'off'];
@@ -154,7 +164,7 @@ export async function mintWorkerToken(api, env = process.env, name = 'graph-work
  *  server over the headersHelper, so the environment cannot make the plugin's server speak as the agent. A per-run config with the
  *  agent key as a header, launched with --strict-mcp-config, leaves the stored sign-in and every other MCP server out of the picture. */
 export const agentMcpConfig = (mcpUrl, agentKey) => ({ mcpServers: { enforcer: { type: 'http', url: mcpUrl, headers: { 'X-API-Key': agentKey } } } });
-export const mcpConfigPath = (stateDir, key) => join(stateDir, `mcp-${key}.json`);
+export const mcpConfigPath = (stateDir, key) => join(stateDir, `mcp-${assertIdent(key, 'node key')}.json`);
 
 /** Write `<stateDir>/mcp-<key>.json` at 0600 (created with that mode, never world-readable for a moment); returns its path. */
 export function writeAgentMcpConfig(stateDir, key, mcpUrl, agentKey) {
@@ -214,9 +224,110 @@ export function launchCmd(prompt, model, args, key, { session = null, resume = f
   return cmd;
 }
 
+/** The variable carrying a worker's launch nonce: recorded in pids.json, checked before a reap, and swept for after a kill. */
+export const NONCE_ENV = 'ENFORCER_LAUNCH_NONCE';
+const hasProc = () => {
+  try {
+    readFileSync('/proc/self/stat');
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+/** A process's start time as an opaque string, or null when it cannot be read: field 22 of /proc/<pid>/stat
+ *  (clock ticks since boot) where /proc exists, `ps -o lstart=` elsewhere (macOS). A reused pid has a different one. */
+export function procStartTime(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return null;
+  if (hasProc()) {
+    try {
+      const s = readFileSync(`/proc/${pid}/stat`, 'utf8');
+      const f = s.slice(s.lastIndexOf(')') + 2).split(' '); // f[0] is field 3 (state), so field 22 is f[19]
+      return f[19] ? 'proc:' + f[19] : null;
+    } catch {
+      return null;
+    }
+  }
+  if (process.platform === 'win32') return null;
+  const r = spawnSync('ps', ['-o', 'lstart=', '-p', String(pid)], { encoding: 'utf8' });
+  const t = (r.stdout || '').trim();
+  return r.status === 0 && t ? 'ps:' + t : null;
+}
+
+/** The launch nonce in a process's environment: the value, '' when it carries none, null when the environment cannot be read
+ *  (/proc/<pid>/environ on Linux, `ps eww` on macOS; nothing elsewhere). */
+export function procNonce(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return null;
+  if (hasProc()) {
+    try {
+      const e = readFileSync(`/proc/${pid}/environ`, 'utf8')
+        .split('\0')
+        .find((x) => x.startsWith(NONCE_ENV + '='));
+      return e ? e.slice(NONCE_ENV.length + 1) : '';
+    } catch {
+      return null;
+    }
+  }
+  if (process.platform !== 'darwin') return null;
+  const r = spawnSync('ps', ['eww', '-o', 'command=', '-p', String(pid)], { encoding: 'utf8' });
+  if (r.status !== 0) return null;
+  const m = new RegExp(`(?:^|\\s)${NONCE_ENV}=([0-9a-f-]+)`).exec(r.stdout || '');
+  return m ? m[1] : '';
+}
+
+/** '' when `pid` is provably the worker recorded as `rec` ({start, nonce} from pids.json), else why it is not (and must not be killed). */
+export function verifyWorker(pid, rec) {
+  if (!rec || typeof rec !== 'object' || !rec.start || !rec.nonce) return 'no recorded start time and launch nonce';
+  const st = procStartTime(pid);
+  if (st === null) return 'its start time cannot be read';
+  if (st !== rec.start) return 'its start time differs from the recorded one (the pid was reused)';
+  const n = procNonce(pid);
+  if (n === null) return 'its environment cannot be read to check the launch nonce';
+  if (n !== rec.nonce) return 'its environment does not carry the recorded launch nonce';
+  return '';
+}
+
+/** Pids whose environment carries this launch nonce (a worker's descendant that left the group with setsid still does).
+ *  Needs /proc: null where it is not available (macOS, Windows), which is the documented limit of the sweep. */
+export function pidsWithNonce(nonce) {
+  if (!nonce || !hasProc()) return nonce ? null : [];
+  let names;
+  try {
+    names = readdirSync('/proc');
+  } catch {
+    return null;
+  }
+  const needle = `${NONCE_ENV}=${nonce}`;
+  const out = [];
+  for (const n of names) {
+    if (!/^\d+$/.test(n) || Number(n) === process.pid) continue;
+    try {
+      if (readFileSync(`/proc/${n}/environ`, 'utf8').split('\0').includes(needle)) out.push(Number(n));
+    } catch {
+      /* gone, or not ours */
+    }
+  }
+  return out;
+}
+
+/** SIGKILL every process carrying the nonce; returns the pids signalled (null when /proc is not available). */
+export function killNonce(nonce) {
+  const pids = pidsWithNonce(nonce);
+  for (const pid of pids || [])
+    try {
+      process.kill(pid, 'SIGKILL');
+    } catch {
+      /* already gone */
+    }
+  return pids;
+}
+
 /** A launched process: `detached` (its own session and group, group id = pid), output to a log file.
- *  .exited is null while it runs, then {code, signal}; .done resolves at exit. */
+ *  .exited is null while it runs, then {code, signal}; .done resolves at exit. .nonce is the launch nonce put in its
+ *  environment (NONCE_ENV) and .start its start time, both recorded in pids.json so a later reap can prove the pid is ours. */
 export function spawnWorker(cmd, { cwd, logPath, env = process.env, cleanup = [], secrets = [] }) {
+  const nonce = randomUUID();
+  env = { ...env, [NONCE_ENV]: nonce };
   const tidy = () => {
     for (const f of cleanup)
       try {
@@ -232,7 +343,7 @@ export function spawnWorker(cmd, { cwd, logPath, env = process.env, cleanup = []
   } finally {
     closeSync(fd);
   }
-  const p = { child, pid: child.pid, exited: null, returncode: null };
+  const p = { child, pid: child.pid, exited: null, returncode: null, nonce, start: procStartTime(child.pid) };
   p.done = new Promise((res) => {
     child.on('error', (e) => {
       if (!p.exited) {
@@ -264,7 +375,9 @@ const sig = (pid, n) => {
   }
 };
 
-/** SIGTERM the worker's process group, wait `grace` ms, then SIGKILL it. Resolves once it has exited (or 10 s after KILL). */
+/** SIGTERM the worker's process group, wait `grace` ms, then SIGKILL it. Resolves once it has exited (or 10 s after KILL).
+ *  Then, where /proc exists, SIGKILL any process still carrying the worker's launch nonce (one that left the group with setsid);
+ *  on macOS and Windows such a process survives. */
 export async function killGroup(p, grace = 30000, killWait = 10000) {
   if (!alive(p)) return;
   const wait = (ms) =>
@@ -280,6 +393,7 @@ export async function killGroup(p, grace = 30000, killWait = 10000) {
     sig(p.pid, 'SIGKILL');
     await wait(killWait);
   }
+  killNonce(p.nonce);
 }
 
 /** True when pid is alive and a session leader (pgid == pid): how a worker we launched looks; a recycled pid usually is not. */

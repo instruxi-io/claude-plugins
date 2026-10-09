@@ -15,6 +15,31 @@ export function mergeTarget(node) {
   return [s, null];
 }
 
+/** The owner/repo slug of a GitHub pull request URL, or null. */
+export const prSlug = (url) => /^https:\/\/github\.com\/([^/]+\/[^/]+)\/pull\/\d+/.exec(String(url || ''))?.[1] || null;
+
+/** Why the dispatcher must not land a merge node's pull request, or ''. `pr` is what `gh pr view --json
+ *  headRefName,url,isCrossRepository` said about it (null when it could not be read). The PR must live in the node's own
+ *  data.repo (or a repo the operator allowed with --merge-allow), come from a branch in that repo (not a fork), and have the head
+ *  `graph/<key>` for this node's key or the key of another node in this graph (`graphKeys`): a node cannot point the
+ *  dispatcher's gh credential at somebody else's pull request. */
+export function mergeRefusal(node, pr, { allow = [], graphKeys = null } = {}) {
+  if (!pr || typeof pr !== 'object') return 'cannot read the pull request with gh pr view';
+  const slug = prSlug(pr.url);
+  if (!slug) return `cannot tell which repo the pull request is in (url ${JSON.stringify(pr.url ?? null)})`;
+  const repo = (node.data || {}).repo;
+  const allowed = new Set((allow || []).map((s) => String(s).toLowerCase()));
+  const name = slug.split('/')[1].toLowerCase();
+  if (!allowed.has(slug.toLowerCase()) && !(repo && String(repo).toLowerCase() === name))
+    return `the pull request is in ${slug}, not this node's data.repo (${repo ?? 'none'}) or a repo allowed with --merge-allow`;
+  if (pr.isCrossRepository) return `the pull request's head is on a fork, not a branch of ${slug}`;
+  const head = String(pr.headRefName || '');
+  const m = /^graph\/(.+)$/.exec(head);
+  const own = m && (m[1] === node.key || (graphKeys && graphKeys.has(m[1])));
+  if (!own) return `the pull request's head is ${JSON.stringify(head)}, not graph/${node.key} or graph/<a key in this graph>`;
+  return '';
+}
+
 export function repoOf(node) {
   return (node.data || {}).repo || null;
 }

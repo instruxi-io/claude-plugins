@@ -10,6 +10,7 @@ import { authHeaders, signInProblem } from './credentials.mjs';
 import { DEFAULT_WORKER_RULES, workerRulesLine } from './dispatch/launch.mjs';
 import { identityCheck, readAgentKey } from './dispatch/agent.mjs';
 import { DOT } from '../hooks/claude/paths.mjs';
+import { safeIdent, pyRepr, unsafeIdent } from './dispatch/ident.mjs';
 
 const OWN_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 export const DISPATCH_TYPES = 'task,bug,chore,merge,scout,milestone,ops'.split(',');
@@ -149,16 +150,26 @@ export async function preflight(
   } else add('repos', false, 'skipped: no credential, cannot read the plan');
   if (nodes) {
     const repos = new Map();
+    const unsafe = [];
     for (const n of nodes) {
       const d = n.data || {};
+      const why = unsafeIdent(n);
+      if (why) {
+        unsafe.push(`node ${n.id || '?'}: ${why}`);
+        continue;
+      }
       if (d.repo) {
         const s = repos.get(d.repo) || new Set();
         if (d.base) s.add(String(d.base).replace(/^origin\//, ''));
         repos.set(d.repo, s);
       }
     }
-    const bad = [];
+    const bad = [...unsafe];
     for (const [repo, bases] of repos) {
+      if (!safeIdent(repo)) {
+        bad.push(`${pyRepr(repo)} (data.repo does not match ^[A-Za-z0-9._-]+$)`);
+        continue;
+      }
       const dir = join(repoRoot, repo);
       if (!existsSync(join(dir, '.git'))) {
         bad.push(`${repo} (no checkout at ${dir})`);
