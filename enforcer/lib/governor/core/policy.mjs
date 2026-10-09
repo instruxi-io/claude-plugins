@@ -339,6 +339,11 @@ export const DEFAULTS = {
   // Ask the tenant's Enforcer policy about actions a rule matched (central.mjs).
   // Inert when signed out; the local rule stands whenever it cannot answer.
   policyOn: false,
+  // Let ENFORCER_GOVERNOR_RULES/_BUDGET/_POLICY=off turn a check off for a
+  // process tree. Off by default: a project can set environment variables for
+  // its sessions, so an environment `off` needs this machine's own opt-in.
+  // Read only from config.json (managed.mjs envReading), never the environment.
+  allowEnvOff: false,
   policyTimeoutMs: 1500,
   policyTtlSec: 30,
   centralUrl: 'https://api.instruxi.dev',

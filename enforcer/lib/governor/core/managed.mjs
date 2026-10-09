@@ -111,30 +111,76 @@ export function managedKeys(managed = {}) {
 // config.json is machine-wide, so turning a check off for one harness turned it
 // off for every harness and every dispatched worker. These variables scope a
 // check to one process tree: a dispatcher sets ENFORCER_GOVERNOR_RULES=on for
-// its workers, another launch leaves it unset. Each is `on` or `off`; anything
-// else is ignored. They beat config.json, and they do NOT beat an organisation
-// floor: the managed merge runs after them, so a managed `on` still wins.
+// its workers, another launch leaves it unset.
+//
+// ONLY `on` IS TRUSTED. A project's own harness settings file can set
+// environment variables for every session opened in it, so a repository could
+// switch a user's rules off just by being opened. `on` is honored always (it
+// only tightens); `off` is honored only when this machine's own config.json
+// sets allowEnvOff: true (store.mjs reads that from the fixed per-user path,
+// never from the environment). An ignored `off`, and any value that is neither
+// word, is said once per process on stderr and shown by status and config. The
+// managed merge runs after all of this, so an organisation `on` still wins.
 export const ENV_OVERRIDES = Object.freeze({
   rulesOn: 'ENFORCER_GOVERNOR_RULES',
   budgetOn: 'ENFORCER_GOVERNOR_BUDGET',
   policyOn: 'ENFORCER_GOVERNOR_POLICY',
 });
 
-/** The settings this process's environment sets, as { key: boolean }. */
-export function envOverrides(env = process.env) {
-  const out = {};
+/**
+ * What this process's environment says, split by what is done with it.
+ * `applied` is { key: boolean } (the overrides that take effect), `ignoredOff`
+ * lists keys whose `off` was refused for want of allowEnvOff, `unrecognised`
+ * is { key: raw } for a set variable that is neither `on` nor `off`.
+ */
+export function envReading(env = process.env, cfg = {}) {
+  const applied = {};
+  const ignoredOff = [];
+  const unrecognised = {};
+  const allowOff = cfg?.allowEnvOff === true;
   for (const [key, name] of Object.entries(ENV_OVERRIDES)) {
-    const v = String(env?.[name] ?? '')
-      .trim()
-      .toLowerCase();
-    if (v === 'on') out[key] = true;
-    else if (v === 'off') out[key] = false;
+    if (env?.[name] === undefined) continue;
+    const raw = String(env[name]);
+    const v = raw.trim().toLowerCase();
+    if (v === 'on') applied[key] = true;
+    else if (v === 'off') {
+      if (allowOff) applied[key] = false;
+      else ignoredOff.push(key);
+    } else unrecognised[key] = raw;
   }
-  return out;
+  return { applied, ignoredOff, unrecognised };
+}
+
+/** The settings this process's environment sets, as { key: boolean }. */
+export const envOverrides = (env = process.env, cfg = {}) => envReading(env, cfg).applied;
+
+/** One line per variable this environment sets that is NOT applied, for status and config. */
+export function envIgnoredLines(env = process.env, cfg = {}) {
+  const { ignoredOff, unrecognised } = envReading(env, cfg);
+  return [
+    ...ignoredOff.map((k) => `${ENV_OVERRIDES[k]}=off is ignored: config.json does not set allowEnvOff (enforcer governor set allowEnvOff true)`),
+    ...Object.entries(unrecognised).map(([k, raw]) => `${ENV_OVERRIDES[k]}=${JSON.stringify(raw)} is ignored: expected on or off`),
+  ];
+}
+
+// Once per process per variable: a hook process decides once, and status or
+// config call withEnv more than once.
+const noticed = new Set();
+function notice(env, cfg) {
+  for (const line of envIgnoredLines(env, cfg)) {
+    if (noticed.has(line)) continue;
+    noticed.add(line);
+    try {
+      process.stderr.write(`enforcer-governor: ${line}\n`);
+    } catch {}
+  }
 }
 
 /** Local config with this process's environment overrides applied. */
-export const withEnv = (cfg = {}, env = process.env) => ({ ...cfg, ...envOverrides(env) });
+export const withEnv = (cfg = {}, env = process.env) => {
+  notice(env, cfg);
+  return { ...cfg, ...envOverrides(env, cfg) };
+};
 
 /** The config a decision actually uses: local, then the environment, floored by the tenant's. */
 export const effective = (cfg = {}) => merge(withEnv(cfg), readManaged());
@@ -212,7 +258,7 @@ const CHECK_NAMES = Object.freeze({ rulesOn: 'rules', budgetOn: 'budget', policy
  * The organisation wins when both apply, since it is the floor.
  */
 export function decisioningLine(cfg = {}, { managed = readManaged(), env = process.env } = {}) {
-  const fromEnv = envOverrides(env);
+  const fromEnv = envOverrides(env, cfg);
   const applied = merge(withEnv(cfg, env), managed);
   const on = Object.keys(CHECK_NAMES)
     .filter((k) => applied[k] === true)

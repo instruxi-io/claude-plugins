@@ -1,6 +1,8 @@
 // Per-process overrides: ENFORCER_GOVERNOR_RULES, _BUDGET and _POLICY turn a
 // decision check on or off for one process tree without touching the
-// machine-wide config.json. They beat config.json, not an organisation floor.
+// machine-wide config.json. `on` beats config.json; `off` does only with
+// allowEnvOff in config.json (env-override-opt-in.test.mjs). Neither beats an
+// organisation floor.
 // `node --test lib/governor/test/env-overrides.test.mjs`. No network, temp HOME.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -49,12 +51,16 @@ test('ENFORCER_GOVERNOR_RULES=on turns the rules on over a config that says off'
   assert.equal(on.rule, 'fs.delete_tree');
   // ...and the machine-wide file is untouched.
   assert.equal(configText(m), before);
-  // The other direction: off beats a config that says on, for this process only.
-  const m2 = machine({ rulesOn: true });
+  // The other direction: off beats a config that says on, for this process
+  // only, when config.json opts in with allowEnvOff.
+  const m2 = machine({ rulesOn: true, allowEnvOff: true });
   assert.equal(decide(m2).decision, 'ask');
   assert.equal(decide(m2, { ENFORCER_GOVERNOR_RULES: 'off' }).code, 'checks_off');
   // The other two variables map to their own settings.
-  assert.deepEqual(envOverrides({ ENFORCER_GOVERNOR_BUDGET: 'on', ENFORCER_GOVERNOR_POLICY: 'off' }), { budgetOn: true, policyOn: false });
+  assert.deepEqual(envOverrides({ ENFORCER_GOVERNOR_BUDGET: 'on', ENFORCER_GOVERNOR_POLICY: 'off' }, { allowEnvOff: true }), {
+    budgetOn: true,
+    policyOn: false,
+  });
 });
 
 test('an organisation floor of on beats ENFORCER_GOVERNOR_RULES=off', () => {
