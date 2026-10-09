@@ -156,3 +156,12 @@ to `api.instruxi.dev`.
 ## Windows
 
 Windows support: MCP, files and the governor are supported. The graph hooks are Node and supported. `enforcer dispatch` is POSIX only (use WSL): there is no bash, `chmod` is a no-op so credential file protection is advisory, and there are no process groups. `enforcer doctor` prints this position on win32.
+
+## Licence
+
+Everything in this repository is released under the Functional Source License,
+Version 1.1, Apache 2.0 Future License (FSL-1.1-ALv2); see `LICENSE`. You may
+use, copy, modify and redistribute it for any purpose except offering a
+competing commercial product or service. Each release converts to Apache 2.0
+two years after it is published. `jev-hooks` is a separate project under its own
+licence.
