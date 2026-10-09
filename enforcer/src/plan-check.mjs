@@ -1,7 +1,7 @@
 // @ts-nocheck TODO(typecheck): many inferred-shape errors from untyped option objects, not bugs; annotate with JSDoc when tightening
 // `enforcer plan check <graph> [--repo-root dir]`: run each open node's acceptance commands and flag lines
 // whose quoted output never appears. Per line: ok | MISMATCH (ran, literal absent; shows the real last line) | SKIPPED.
-// Each result is printed as soon as it is known, with a running count on stderr. Exit 1 on MISMATCH only.
+// Each result is printed as soon as it is known, with a running count on stderr. Exit 1 on MISMATCH (with --strict, also on any SKIPPED line). Each SKIPPED line gets a WARN with a hint; the run ends with a summary line.
 // Only lines that fully match a shape in src/acceptance-allowlist.mjs run (no shell), in the node's repo checkout,
 // 300 s each (--timeout), with a minimal env and a temporary HOME.
 // Options: --repo-root <dir>, --only <node key>, --timeout <seconds>.
@@ -37,6 +37,27 @@ export function parseLine(line) {
 export function skipReason(cmd, root = process.cwd()) {
   if (/<[^<>\s][^<>]*>/.test(cmd)) return 'placeholder in command';
   return allowedCommand(cmd, { root }).skip ?? null;
+}
+
+const PLACEHOLDERS = ['<graph>', '<n> or <pr> (in gh pr view)', '<key>', '<node-key>', '<node-id>', '<test db>'];
+
+/** One specific, actionable hint for a line that will not be run. `note` is the checkLine skip reason. */
+export function skipHint(line, note, root = process.cwd()) {
+  const p = parseLine(line);
+  if (/no "prints\|exits/.test(note) || !p) return 'Write it as `<command> prints \\`<literal line of real output>\\`` or `<command> exits 0`.';
+  if (/placeholder/.test(note)) return `Supported placeholders: ${PLACEHOLDERS.join(', ')}.`;
+  if (/not an allowed command shape/.test(note)) {
+    const word = p.cmd.trim().split(/\s+/).slice(0, 2).join(' ');
+    const first = word.split(' ')[0];
+    const near =
+      ACCEPTANCE_SHAPES.find((s) => s.name === word) ??
+      ACCEPTANCE_SHAPES.find((s) => s.name.split(/[ ,]+/).includes(first) || s.usage.startsWith(first + ' ')) ??
+      ACCEPTANCE_SHAPES.find((s) => s.name.startsWith(first));
+    return near ? `Closest allowed shape: ${near.usage}.` : `Allowed shapes: ${ACCEPTANCE_SHAPES.map((s) => s.name).join(', ')}.`;
+  }
+  if (/no checkout/.test(note)) return 'Pass --repo-root <dir> pointing at the directory that holds the repo checkouts.';
+  if (/timed out/.test(note)) return 'Raise --timeout <seconds> or pick a faster command.';
+  return 'Quote a literal line of real output the command prints.';
 }
 
 export function checkLine(line, cwd, env, { timeoutMs = 300000, graph = '' } = {}) {
@@ -83,7 +104,15 @@ export async function serverLint(base, graph, h, acceptance) {
 }
 
 /** Returns {code, lines}. `onLine(text, {done, total})` is called with each line as soon as it is known. */
-export async function planCheck({ graph, repoRoot = join(homedir(), 'apps'), env = process.env, only = null, timeoutMs = 300000, onLine = () => {} } = {}) {
+export async function planCheck({
+  graph,
+  repoRoot = join(homedir(), 'apps'),
+  env = process.env,
+  only = null,
+  timeoutMs = 300000,
+  strict = false,
+  onLine = () => {},
+} = {}) {
   const base = resolveConfig({ env }).graphUrl;
   const h = await headers(env);
   const nodes = (await allNodes(base, graph, h)).filter((n) => !CLOSED.has(n.status) && (!only || n.key === only));
@@ -93,7 +122,9 @@ export async function planCheck({ graph, repoRoot = join(homedir(), 'apps'), env
   };
   const total = nodes.reduce((k, n) => k + accOf(n).length, 0);
   const lines = [];
-  let bad = 0;
+  let bad = 0,
+    ok = 0,
+    skipped = 0;
   const emit = (text) => {
     lines.push(text);
     onLine(text, { done: lines.filter((l) => !l.startsWith('WARN ')).length, total });
@@ -106,11 +137,16 @@ export async function planCheck({ graph, repoRoot = join(homedir(), 'apps'), env
       const cwd = n.data?.repo ? join(repoRoot, n.data.repo) : repoRoot;
       const r = checkLine(String(a), cwd, env, { timeoutMs, graph });
       if (r.state === 'MISMATCH') bad++;
+      else if (r.state === 'ok') ok++;
+      else skipped++;
       emit(`${r.state} ${n.key}: ${String(a).replace(/\s+/g, ' ').slice(0, 100)}${r.note ? ' -- ' + r.note : ''}`);
+      if (r.state === 'SKIPPED')
+        emit(`WARN ${n.key}: line ${i} will not be run (${r.note}); the judge will see only the worker's own output. ${skipHint(String(a), r.note, cwd)}`);
       for (const w of warns.filter((w) => w.index === i)) emit(`WARN ${n.key}: [${w.code}] ${w.hint ?? ''}`.trimEnd());
     }
   }
-  return { code: bad ? 1 : 0, lines };
+  emit(`plan check: ${ok} runnable, ${skipped} will not be run, ${bad} mismatch`);
+  return { code: bad || (strict && skipped) ? 1 : 0, lines, ok, skipped, mismatch: bad };
 }
 
 export async function main(argv) {
@@ -121,7 +157,7 @@ export async function main(argv) {
   const valued = new Set(['--repo-root', '--only', '--timeout']);
   const graph = argv.find((a, i) => !a.startsWith('-') && !valued.has(argv[i - 1]));
   if (!graph) {
-    process.stderr.write('usage: enforcer plan check <graph> [--repo-root dir] [--only <node key>] [--timeout <seconds>]\n');
+    process.stderr.write('usage: enforcer plan check <graph> [--repo-root dir] [--only <node key>] [--timeout <seconds>] [--strict]\n');
     return 2;
   }
   const secs = opt('--timeout') === undefined ? 300 : Number(opt('--timeout'));
@@ -134,10 +170,11 @@ export async function main(argv) {
       graph,
       only: opt('--only') ?? null,
       timeoutMs: secs * 1000,
+      strict: argv.includes('--strict'),
       ...(opt('--repo-root') ? { repoRoot: opt('--repo-root') } : {}),
       onLine: (text, { done, total }) => {
         process.stdout.write(text + '\n');
-        if (!text.startsWith('WARN ')) process.stderr.write(`[${done}/${total}]\n`);
+        if (!text.startsWith('WARN ') && !text.startsWith('plan check:')) process.stderr.write(`[${done}/${total}]\n`);
       },
     });
     return code;
