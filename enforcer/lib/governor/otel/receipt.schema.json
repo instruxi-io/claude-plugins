@@ -5,7 +5,7 @@
   "description": "One line of receipts.jsonl exactly as the governor writes it (core/verdict.mjs entry(), core/governor.mjs session summary, core/store.mjs writeReceipt). Lines are append-only. Unknown extra keys are allowed so a newer governor does not break an older reader. Receipts never contain prompts, tool input or command text.",
   "type": "object",
   "required": ["ts", "agent", "verdict"],
-  "additionalProperties": true,
+  "additionalProperties": false,
   "properties": {
     "ts": { "type": "string", "description": "ISO 8601 UTC timestamp with milliseconds, e.g. 2026-10-08T20:09:21.370Z." },
     "agent": { "type": "string", "description": "Agent id, e.g. claude:abc123." },
@@ -32,7 +32,7 @@
     "decision": {
       "type": "object",
       "required": ["decision", "code", "rule", "tool", "summary"],
-      "additionalProperties": true,
+      "additionalProperties": false,
       "properties": {
         "decision": { "enum": ["allow", "deny", "ask", "escalate"], "description": "A rewrite is reported as ask." },
         "code": { "type": "string", "description": "Machine code from core/codes.mjs, e.g. checks_off, no_rule_matched." },
