@@ -63,6 +63,9 @@ const receiptsOf = (box) => {
       const o = JSON.parse(l);
       for (const k of ['ts', 'hash', 'prevHash']) if (k in o) o[k] = `<${k}>`;
       if ('adapter_version' in o) o.adapter_version = '<version>';
+      // An unregistered client is named from the cwd: its folder name on POSIX, the whole temp path
+      // on Windows. Keep only the folder name so the golden holds on every OS.
+      if (typeof o.client === 'string') o.client = o.client.replace(/^(\?).*[\\/](golden-project)$/, '$1$2');
       return o;
     });
 };
