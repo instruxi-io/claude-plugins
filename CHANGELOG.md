@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 1.3.2
+
+This release makes acceptance evidence visible to the judge: pull request lines resolve and escaped literals match, and plan check flags lines that will not be run.
+
+- Evidence runs resolve <n> to the node's pull request and match escaped literals (\t, \n, \\) in quoted output.
+- enforcer plan check now prints a WARN with a specific hint for every acceptance line that will not be run, ends with a summary line, and exits 1 on skipped lines with --strict.
+
 ## 1.3.1
 
 This release is security hardening from an independent audit: the governor fails closed when its config is unreadable, the organisation floor cannot be redirected away, and an environment variable can no longer silently turn rules off. Telemetry never exports prompts, and the dispatcher only runs allow-listed acceptance commands.
