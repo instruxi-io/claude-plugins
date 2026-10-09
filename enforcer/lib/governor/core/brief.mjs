@@ -19,13 +19,15 @@
 //    fires when the situation CHANGES and then goes quiet, so `said` is state,
 //    not a log.
 
+import { isOff } from './bool.mjs';
+
 const PCT = (a) => (a.budget > 0 ? a.tokens / a.budget : 0);
 
 /** The situation, as one of a few named states. Null means nothing worth saying. */
 function situationOf(a, cfg) {
   if (!a) return null;
   if (a.status === 'grounded') return 'stopped';
-  if (cfg.budgetOn === false) return null;
+  if (isOff(cfg.budgetOn)) return null;
   const pct = PCT(a);
   if (pct >= cfg.soft) return 'near-limit';
   // Warn early enough to be actionable. At the soft mark the turn is usually

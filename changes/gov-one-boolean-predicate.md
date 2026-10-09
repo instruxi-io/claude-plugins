@@ -1,0 +1,1 @@
+A boolean setting reads one way everywhere (true/on/yes/1 and false/off/no/0, any case), so governor status cannot disagree with the gate; an organisation floor sent as a string is honored; an unrecognised value is ignored with a notice.

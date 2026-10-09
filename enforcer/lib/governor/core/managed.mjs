@@ -22,6 +22,7 @@ import { hookFetch } from './http.mjs';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { FIXED_DIR } from './store.mjs';
+import { normalizeBooleans, isOn, isOff } from './bool.mjs';
 import { baseUrl, authHeaders, credentialId } from './credentials.mjs';
 
 // FIXED_DIR, not DIR: GOVERNOR_HOME and ENFORCER_CONFIG_HOME redirect the
@@ -58,7 +59,7 @@ const lower = (managed, local) => {
   return Math.min(m, l);
 };
 /** A check: on is stricter, so a managed `true` cannot be turned off locally. */
-const onWins = (managed, local) => (managed === true ? true : local);
+const onWins = (managed, local) => (isOn(managed) ? true : local);
 /** A check whose managed value stands as written (neither direction is safety). */
 const managedWins = (managed, local) => (managed === undefined ? local : managed);
 
@@ -137,7 +138,7 @@ export function envReading(env = process.env, cfg = {}) {
   const applied = {};
   const ignoredOff = [];
   const unrecognised = {};
-  const allowOff = cfg?.allowEnvOff === true;
+  const allowOff = isOn(cfg?.allowEnvOff);
   for (const [key, name] of Object.entries(ENV_OVERRIDES)) {
     if (env?.[name] === undefined) continue;
     const raw = String(env[name]);
@@ -202,12 +203,13 @@ export function readManaged({ now = Date.now } = {}) {
   try {
     const d = JSON.parse(readFileSync(CACHE, 'utf8'));
     if (!d || typeof d.settings !== 'object' || d.settings === null) return {};
+    const settings = normalizeBooleans(d.settings, 'organisation settings');
     // Fetched with a different credential: stale() sends SessionStart back to
     // the network, and refresh() replaces this floor once it succeeds with the
     // new credential. Until then the LAST floor stands; dropping it on a
     // mismatch let any process unset the floor by setting ENFORCER_API_KEY.
     if (now() - (d.at || 0) > TTL_MS) return {};
-    return d.settings;
+    return settings;
   } catch {
     return {};
   }
@@ -261,9 +263,9 @@ export function decisioningLine(cfg = {}, { managed = readManaged(), env = proce
   const fromEnv = envOverrides(env, cfg);
   const applied = merge(withEnv(cfg, env), managed);
   const on = Object.keys(CHECK_NAMES)
-    .filter((k) => applied[k] === true)
+    .filter((k) => isOn(applied[k]))
     .map((k) => {
-      const mark = managed[k] === true ? ' (organisation)' : k in fromEnv ? ' (environment)' : '';
+      const mark = isOn(managed[k]) ? ' (organisation)' : k in fromEnv ? ' (environment)' : '';
       return CHECK_NAMES[k] + mark;
     });
   return on.length ? `Decisioning: ON (${on.join(', ')})` : 'Decisioning: OFF (report only). Turn on: enforcer governor enable rules';

@@ -13,6 +13,7 @@
 //   - fail loudly: any error is swallowed and the receipt simply has no `would`.
 // When rulesOn is true there is no `would`: the real decision is the receipt.
 import { evaluate as capability, resolveRules } from './capability.mjs';
+import { isOn, isOff } from './bool.mjs';
 import { decisionRecord } from './codes.mjs';
 
 /**
@@ -23,7 +24,7 @@ import { decisionRecord } from './codes.mjs';
  *   apply or the evaluation failed.
  */
 export function shadow(ev, cfg = {}, { rules = resolveRules } = {}) {
-  if (cfg.rulesOn !== false || cfg.shadow === false) return undefined;
+  if (!isOff(cfg.rulesOn) || isOff(cfg.shadow)) return undefined;
   try {
     const v = capability(rules({ ...cfg, rulesOn: true }), ev);
     if (!v) return { decision: 'allow', code: 'no_rule_matched', rule: null };

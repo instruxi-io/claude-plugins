@@ -15,6 +15,7 @@
 // below noticing.
 
 import { Verdict, ECONOMICS, CAPABILITY, OPERATOR } from './verdict.mjs';
+import { isOn, isOff } from './bool.mjs';
 import { nameOf } from './tools.mjs';
 import { PERIODS, burnRate, spawnRate, addSpend, getAgent, setModel, clientFor, rollPeriods, modelAdvice, taskShape, BURN_WINDOW, dayKey } from './policy.mjs';
 
@@ -100,7 +101,7 @@ function declined(state, a, ev, cfg, now) {
 
 /** Fleet totals first: agents can each sit inside their own limit and together blow the budget. */
 function periodCaps(state, a, ev, cfg) {
-  if (!cfg.budgetOn || !state.periods) return null;
+  if (!isOn(cfg.budgetOn) || !state.periods) return null;
   const caps = { day: cfg.dailyLimit, week: cfg.weeklyLimit, month: cfg.monthlyLimit };
   const word = { day: 'today', week: 'this week', month: 'this month' };
   for (const [name] of PERIODS) {
@@ -116,7 +117,7 @@ function periodCaps(state, a, ev, cfg) {
 
 /** Speed before totals: by the time a daily cap notices, the day's money is gone. */
 function burn(state, a, ev, cfg, now) {
-  if (!cfg.budgetOn || a.burnFlagged) return null;
+  if (!isOn(cfg.budgetOn) || a.burnFlagged) return null;
   const mine = burnRate(state, now, a.id),
     all = burnRate(state, now);
   const hit =
@@ -133,7 +134,7 @@ function burn(state, a, ev, cfg, now) {
 
 /** Flagged once per burst, so a genuine twenty-agent job asks one question, not twenty. */
 function fanout(state, a, ev, cfg, now) {
-  if (!cfg.budgetOn || !(cfg.fanoutLimit > 0) || state.fanoutFlagged) return null;
+  if (!isOn(cfg.budgetOn) || !(cfg.fanoutLimit > 0) || state.fanoutFlagged) return null;
   const spawned = spawnRate(state, now);
   if (spawned < cfg.fanoutLimit) return null;
   state.fanoutFlagged = true;
@@ -143,7 +144,7 @@ function fanout(state, a, ev, cfg, now) {
 
 /** A rate-limited call fails cheaply; the retry does not. */
 function retryStorm(state, a, ev, cfg, now) {
-  if (!cfg.budgetOn || !(cfg.retryLimit > 0) || !a.fails || a.retryFlagged) return null;
+  if (!isOn(cfg.budgetOn) || !(cfg.retryLimit > 0) || !a.fails || a.retryFlagged) return null;
   const recent = a.fails.reduce((n, t) => n + (t > now - BURN_WINDOW ? 1 : 0), 0);
   if (recent < cfg.retryLimit) return null;
   a.retryFlagged = true;
@@ -152,7 +153,7 @@ function retryStorm(state, a, ev, cfg, now) {
 }
 
 function clientCap(state, a, ev, cfg) {
-  if (!cfg.budgetOn || !a.client || !state.clients) return null;
+  if (!isOn(cfg.budgetOn) || !a.client || !state.clients) return null;
   const cap = (cfg.clientLimits || {})[a.client];
   const spent = state.clients.month.by[a.client] || 0;
   if (!(cap > 0) || spent < cap) return null;
@@ -161,13 +162,13 @@ function clientCap(state, a, ev, cfg) {
 }
 
 function hardLimit(state, a, ev, cfg) {
-  if (!cfg.budgetOn || a.tokens < a.budget) return null;
+  if (!isOn(cfg.budgetOn) || a.tokens < a.budget) return null;
   ground(a, 'limit');
   return Verdict.deny('it reached your spend limit', of);
 }
 
 function softLimit(state, a, ev, cfg, now) {
-  if (!cfg.budgetOn || a.escalated || a.tokens < a.budget * a.soft) return null;
+  if (!isOn(cfg.budgetOn) || a.escalated || a.tokens < a.budget * a.soft) return null;
   a.escalated = true;
   if (cfg.softAction === 'escalate') {
     pause(a);

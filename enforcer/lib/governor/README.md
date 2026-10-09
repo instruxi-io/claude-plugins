@@ -215,7 +215,7 @@ The record is written three places: as the `decision` field, last, on the hash-c
 | `spend_warning` | the agent passed the warn-me mark of its spend limit |
 | `no_rule_matched` | no rule objected and spend is within limits |
 | `spend_unchecked` | no rule objected; the governor could not read its state, so spend was not checked |
-| `checks_off` | no rule objected; spend checks are switched off |
+| `checks_off` | no rule objected; decision checks are switched off |
 
 ### Headless graph workers
 

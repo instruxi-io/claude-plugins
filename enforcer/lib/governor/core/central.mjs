@@ -33,6 +33,7 @@
 // else is broken.
 
 import { hookFetch } from './http.mjs';
+import { isOn, isOff } from './bool.mjs';
 import { readFileSync, writeFileSync, mkdirSync, renameSync, chmodSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
@@ -139,7 +140,7 @@ export function interpret(decision) {
  */
 export async function consult(rule, cfg = {}, { fetchImpl = hookFetch, now = Date.now } = {}) {
   if (!rule) return null;
-  if (cfg.policyOn === false) return null;
+  if (isOff(cfg.policyOn)) return null;
   if (typeof fetchImpl !== 'function') return { opinion: UNREACHABLE, detail: 'no fetch in this runtime' };
 
   const cred = credentialId();

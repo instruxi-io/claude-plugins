@@ -29,6 +29,7 @@ import {
 import { join, resolve } from 'node:path';
 import { createHash, randomBytes } from 'node:crypto';
 import { makeState } from './policy.mjs';
+import { normalizeBooleans, isOn } from './bool.mjs';
 import { migrateDir } from './migrate.mjs';
 
 const HOME = process.env.HOME || process.env.USERPROFILE || '.';
@@ -234,13 +235,13 @@ let unreadableNoticed = false;
 // not be able to opt itself in.
 const FIXED_CONFIG = join(FIXED_DIR, 'config.json');
 export function loadConfig() {
-  const c = readConfig(CONFIG);
+  const c = normalizeBooleans(readConfig(CONFIG), 'config.json');
   if (resolve(CONFIG) === resolve(FIXED_CONFIG)) return c;
   const out = { ...c };
   delete out.allowEnvOff;
   try {
     const fixed = JSON.parse(readFileSync(FIXED_CONFIG, 'utf8'));
-    if (fixed?.allowEnvOff === true) out.allowEnvOff = true;
+    if (isOn(normalizeBooleans(fixed, 'config.json')?.allowEnvOff)) out.allowEnvOff = true;
   } catch {}
   return out;
 }
