@@ -74,6 +74,7 @@ const RULE_CODES = Object.freeze({
   'secrets.edit': 'secret_in_command',
   'deploy.publish': 'deploy_publish',
   'governor.settings': 'settings_write',
+  'governor.home': 'settings_write',
 });
 
 export function isCode(c) {

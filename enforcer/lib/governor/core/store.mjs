@@ -38,6 +38,11 @@ const HOME = process.env.HOME || process.env.USERPROFILE || '.';
 export const CONFIG_HOME = process.env.ENFORCER_CONFIG_HOME || join(HOME, '.config', 'enforcer');
 export const LEGACY_DIR = join(HOME, '.enforcer-governor');
 export const DIR = process.env.GOVERNOR_HOME || join(CONFIG_HOME, 'governor');
+// The organisation floor's cache (managed.mjs) lives at a FIXED per-user path,
+// derived from the home directory only: GOVERNOR_HOME and ENFORCER_CONFIG_HOME
+// are ignored for it, so a process cannot drop the floor by pointing them at an
+// empty directory.
+export const FIXED_DIR = join(HOME, '.config', 'enforcer', 'governor');
 if (!process.env.GOVERNOR_HOME) migrateDir(LEGACY_DIR, DIR);
 export const RECEIPTS = join(DIR, 'receipts.jsonl');
 const STATE = join(DIR, 'state.json');
@@ -216,7 +221,36 @@ export function saveState(s) {
     } catch {}
   }
 }
-export const loadConfig = () => readJSON(CONFIG, {});
+// A MISSING config.json is a fresh install: the defaults apply and decisioning
+// is off. One that EXISTS but cannot be read or parsed is not a fresh install:
+// with decisioning off by default, falling back to `{}` there would let one
+// chmod (or a garbage write) switch the capability rules off. So that case
+// keeps the rules ON (they fail closed, README) and says so once per process;
+// spend checks keep failing open, so budgetOn is left to the defaults.
+let unreadableNoticed = false;
+export function loadConfig() {
+  let text;
+  try {
+    text = readFileSync(CONFIG, 'utf8');
+  } catch (e) {
+    if (e?.code === 'ENOENT') return {};
+    return unreadableConfig(e?.code || 'unreadable');
+  }
+  try {
+    const c = JSON.parse(text);
+    if (c && typeof c === 'object' && !Array.isArray(c)) return c;
+  } catch {}
+  return unreadableConfig('not a JSON object');
+}
+function unreadableConfig(why) {
+  if (!unreadableNoticed) {
+    unreadableNoticed = true;
+    try {
+      process.stderr.write(`enforcer-governor: ${CONFIG} cannot be read (${why}); the capability rules stay on until it can\n`);
+    } catch {}
+  }
+  return { rulesOn: true };
+}
 export const saveConfig = (c) => {
   try {
     mkdirSync(DIR, { recursive: true });

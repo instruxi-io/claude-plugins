@@ -21,10 +21,12 @@
 import { hookFetch } from './http.mjs';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { DIR } from './store.mjs';
+import { FIXED_DIR } from './store.mjs';
 import { baseUrl, authHeaders, credentialId } from './credentials.mjs';
 
-const CACHE = join(DIR, 'managed-settings.json');
+// FIXED_DIR, not DIR: GOVERNOR_HOME and ENFORCER_CONFIG_HOME redirect the
+// governor's own records, never the organisation floor (store.mjs).
+const CACHE = join(FIXED_DIR, 'managed-settings.json');
 const PATH = '/api/v1/governance/settings';
 
 // A day. The cache is refreshed on every SessionStart, so this is the ceiling
@@ -154,9 +156,10 @@ export function readManaged({ now = Date.now } = {}) {
   try {
     const d = JSON.parse(readFileSync(CACHE, 'utf8'));
     if (!d || typeof d.settings !== 'object' || d.settings === null) return {};
-    // Bound to the credential it was fetched with. Signing in as another
-    // tenant must not inherit the previous tenant's floor.
-    if (d.cred && d.cred !== credentialId()) return {};
+    // Fetched with a different credential: stale() sends SessionStart back to
+    // the network, and refresh() replaces this floor once it succeeds with the
+    // new credential. Until then the LAST floor stands; dropping it on a
+    // mismatch let any process unset the floor by setting ENFORCER_API_KEY.
     if (now() - (d.at || 0) > TTL_MS) return {};
     return d.settings;
   } catch {
@@ -166,7 +169,7 @@ export function readManaged({ now = Date.now } = {}) {
 
 function writeManaged(settings, at) {
   try {
-    mkdirSync(DIR, { recursive: true });
+    mkdirSync(FIXED_DIR, { recursive: true });
     writeFileSync(CACHE, JSON.stringify({ at, cred: credentialId(), settings }));
   } catch {
     /* a cache we cannot write is a floor we do not apply */
