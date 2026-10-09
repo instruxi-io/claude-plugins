@@ -1,7 +1,7 @@
 // `enforcer dispatch <graph>|status|stop|--help`: the plain front door to the Node dispatcher (src/dispatch/run.mjs).
 // Outcome words: done, needs you, landing blocked, blocked on CI, over budget. Never "failed" for merged work.
 import { spawn } from 'node:child_process';
-import { existsSync, readdirSync, mkdirSync, openSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
+import { existsSync, chmodSync, readdirSync, mkdirSync, openSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -72,7 +72,12 @@ export async function start(argv, env = process.env) {
     return 2;
   }
   const dir = stateDir(graph, env);
-  mkdirSync(dir, { recursive: true });
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  try {
+    chmodSync(dir, 0o700);
+  } catch {
+    /* best effort */
+  }
   const old = readJson(join(dir, 'pids.json'));
   if (old?.dispatcher && alive(old.dispatcher)) {
     process.stderr.write(`enforcer dispatch: already running for ${graph} (pid ${old.dispatcher}); see: enforcer dispatch status ${graph}\n`);

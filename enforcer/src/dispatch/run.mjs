@@ -3,7 +3,7 @@
 // SIGTERM/SIGINT drain, and `main` (the `enforcer dispatch` entry).
 // Warm sessions, salvage, landing-blocked and triage launches live in the sibling modules.
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, rmSync, appendFileSync } from 'node:fs';
+import { existsSync, chmodSync, mkdirSync, readFileSync, writeFileSync, renameSync, rmSync, appendFileSync } from 'node:fs';
 import { hostname, homedir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -38,7 +38,7 @@ import { unsafeIdent } from './ident.mjs';
 import HEADLESS_PROFILE from '../../lib/governor/profiles/headless-worker.mjs';
 import { loadRepoBases } from './prune.mjs';
 import { clip, parseTs } from './util.mjs';
-import { writeLog, redactFile, pruneLogs, addSecret, DEFAULT_LOG_DAYS, DEFAULT_LOG_MAX_BYTES } from './logs.mjs';
+import { writeLog, redactFile, redactLogsDir, pruneLogs, addSecret, DEFAULT_LOG_DAYS, DEFAULT_LOG_MAX_BYTES } from './logs.mjs';
 
 /** Per-worker spend cap passed as --max-budget-usd unless the operator overrides it. */
 export const DEFAULT_MAX_BUDGET_USD = HEADLESS_PROFILE.spend.defaultMaxBudgetUsd;
@@ -339,17 +339,19 @@ export class Dispatcher {
     const attempt = (this.attempts.get(n.key) || 0) + 1;
     this.attempts.set(n.key, attempt);
     const logPath = join(this.logs, `${n.key}.${attempt}.jsonl`);
+    // The worker gets a minted one-day token when ENFORCER_WORKER_AGENT_ID is set; the agent key stays in the dispatcher.
+    // Without it the agent key is the only credential there is, so it is passed on (see docs/graph/DISPATCHER.md).
     let token = null;
-    if (this.args.agentKey) token = this.args.agentKey;
-    else
-      try {
-        token = typeof this.api.call === 'function' ? await mintWorkerToken(this.api, process.env, `worker-${n.key}`.slice(0, 60)) : null;
-      } catch (e) {
-        this.say(`worker token not minted for ${n.key}: ${e.message}`);
-      }
+    try {
+      token = typeof this.api.call === 'function' ? await mintWorkerToken(this.api, process.env, `worker-${n.key}`.slice(0, 60)) : null;
+    } catch (e) {
+      this.say(`worker token not minted for ${n.key}: ${e.message}`);
+    }
+    if (token) addSecret(token);
+    else if (this.args.agentKey) token = this.args.agentKey;
     if (mcpConfig) {
       try {
-        writeAgentMcpConfig(this.state, n.key, a.mcpUrl, a.agentKey);
+        writeAgentMcpConfig(this.state, n.key, a.mcpUrl, token || a.agentKey);
       } catch (e) {
         this.say(`refuse ${n.key}: could not write its MCP config: ${e.message}`);
         return;
@@ -360,7 +362,7 @@ export class Dispatcher {
       logPath,
       env: workerEnv(this.g, process.env, { token, release: n.type === 'release', workerRules: this.args.workerRules }),
       cleanup: mcpConfig ? [mcpConfig] : [],
-      secrets: a.agentKey ? [a.agentKey] : [],
+      secrets: [a.agentKey, token].filter(Boolean),
     });
     const w = {
       kind: 'agent',
@@ -609,7 +611,8 @@ export class Dispatcher {
       // what proves a pid is still the worker we launched: its start time and the launch nonce in its environment
       const meta = Object.fromEntries(live.map(([k, w]) => [k, { start: w.proc.start ?? null, nonce: w.proc.nonce ?? null }]));
       const p = join(this.state, 'pids.json');
-      writeFileSync(p + '.tmp', JSON.stringify({ dispatcher: process.pid, host: hostname(), workers, meta }));
+      writeFileSync(p + '.tmp', JSON.stringify({ dispatcher: process.pid, host: hostname(), workers, meta }), { mode: 0o600 });
+      chmodSync(p + '.tmp', 0o600);
       renameSync(p + '.tmp', p);
     } catch {
       /* state dir gone */
@@ -698,8 +701,16 @@ export class Dispatcher {
     }
     try {
       if (!a.dryRun) {
-        mkdirSync(this.state, { recursive: true });
+        mkdirSync(this.state, { recursive: true, mode: 0o700 });
+        chmodSync(this.state, 0o700);
         await this.reapOrphans();
+        removeAgentMcpConfigs(this.state); // a SIGKILLed dispatcher leaves the per-run configs (and their key) behind
+        try {
+          mkdirSync(this.logs, { recursive: true, mode: 0o700 });
+          redactLogsDir(this.logs, [a.agentKey].filter(Boolean));
+        } catch {
+          /* best effort */
+        }
         if (existsSync(a.stopFile)) {
           rmSync(a.stopFile, { force: true });
           this.say(`removed a stale stop file at startup: ${a.stopFile}`);
@@ -979,7 +990,7 @@ export async function main(argv, env = process.env) {
   }
   const { headers } = await import('../preflight.mjs');
   const api = new API(resolveConfig({ env }).graphUrl, { headers: () => headers(env) });
-  if (!args.dryRun) mkdirSync(args.stateDir, { recursive: true });
+  if (!args.dryRun) mkdirSync(args.stateDir, { recursive: true, mode: 0o700 });
   try {
     return await new Dispatcher(api, args).run();
   } catch (e) {
