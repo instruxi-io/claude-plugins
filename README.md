@@ -14,7 +14,7 @@ plugin to drift out of date.
 | `enforcer` | **on** | The `enforcer` MCP server and one sign-in, `/enforcer:login`, that every plugin here shares. A short skill on how Enforcer is organised. | this repo, `enforcer/` |
 | `enforcer-files` | deprecated | Now part of `enforcer` (skill `files`, `/enforcer:upload`, `/enforcer:download`). Alias for one release. | `aliases/enforcer-files/` |
 | `enforcer-graph` | deprecated | Now part of `enforcer` (the graph worker). Empty alias; uninstall it. | `aliases/enforcer-graph/` |
-| `jev-hooks` | opt-in, **Instruxi staff** | Jev-backed hooks: Bash and edit risk gates, subagent model routing, subagent verification, a stop self-check, loop detection, compaction triage. | `instruxi-io/jev-hooks`, default branch |
+| `jev-hooks` | opt-in, community | Jev-backed hooks: Bash and edit risk gates, subagent model routing, subagent verification, a stop self-check, loop detection, compaction triage. | `austpryb/jev-hooks`, default branch |
 | `enforcer-governor` | deprecated | Now part of `enforcer`. Empty alias; uninstall it. | `aliases/enforcer-governor/` |
 
 ## Before you start
@@ -22,9 +22,7 @@ plugin to drift out of date.
 - **An Enforcer account** in your workspace (an invite from an admin), and the
   workspace's tenant code: the sign-in page asks for it, and the code decides
   which workspace you land in. There is no API key to get.
-- **Instruxi staff only, for `jev-hooks`:** access to the private
-  `instruxi-io/jev-hooks` repo (Claude Code clones it with your own git
-  credentials) and your own `TYPESAFE_API_KEY` from console.typesafe.ai.
+- **For `jev-hooks`:** your own `TYPESAFE_API_KEY` from console.typesafe.ai.
 
 ## Install
 
@@ -71,13 +69,13 @@ It copies the runtime to `~/.config/enforcer/grok/<version>`, writes
 puts an `enforcer` shim in `~/.local/bin`. Changed files are backed up first. Then sign in
 with `enforcer login`.
 
-**Instruxi staff** can also install `jev-hooks@instruxi` (put your Jev key in
+You can also install `jev-hooks@instruxi` (put your Jev key in
 `~/.claude/settings.json` as `{ "env": { "TYPESAFE_API_KEY": "<your key>" } }`),
-or run the `claude-loadout` wizard from the private jev-hooks releases, which
+or run the `claude-loadout` wizard from the jev-hooks releases, which
 does all of this and reads `kit.json` for the defaults:
 
 ```sh
-gh release download -R instruxi-io/jev-hooks \
+gh release download -R austpryb/jev-hooks \
   --pattern "claude-loadout-$(uname -s | tr 'A-Z' 'a-z')-$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')" \
   --output ~/.local/bin/claude-loadout --clobber && chmod +x ~/.local/bin/claude-loadout
 claude-loadout setup          # --dry-run first, if you want to see the plan

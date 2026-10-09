@@ -21,11 +21,11 @@
     },
     {
       "name": "jev-hooks",
-      "description": "Instruxi staff only (private repo; installing needs instruxi-io access). Claude Code hooks backed by TypeSafe's Jev: a Bash and edit risk gate, subagent model routing, subagent verification, a stop self-check, loop detection and compaction triage.",
+      "description": "Claude Code hooks (public, maintained separately by its author; needs your own TypeSafe key) backed by TypeSafe's Jev: a Bash and edit risk gate, subagent model routing, subagent verification, a stop self-check, loop detection and compaction triage.",
       "category": "safety",
       "source": {
         "source": "github",
-        "repo": "instruxi-io/jev-hooks",
+        "repo": "austpryb/jev-hooks",
         "ref": "v0.21.1",
         "sha": "3a1f742b28ec03fa715b3d152d8ba09a0b2f8a39"
       },
