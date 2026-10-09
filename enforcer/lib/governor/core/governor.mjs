@@ -18,17 +18,19 @@ import { createHash } from 'node:crypto';
 import { gate } from './gate.mjs';
 import { isOn, isOff } from './bool.mjs';
 import { matchRule, DEFAULT_RULES, resolveRules } from './capability.mjs';
-import { consult } from './central.mjs';
+// Network-facing modules load lazily, only when a call needs them: a tool call with no rule matched
+// (always, with decisioning off) never asks the tenant, so a hook does not pay to load them.
+const consult = async (...a) => (await import('./central.mjs')).consult(...a);
 import { evaluate as workerEvaluate } from './worker.mjs';
 import { evaluate as economics } from './economics.mjs';
 import { DEFAULTS, priceOf, tokensForDollars, dollarsForTokens, getAgent, setModel, clientFor, sha256 } from './policy.mjs';
 import { withLock, loadState, saveState, loadConfig, writeReceipt, commit } from './store.mjs';
 import { effective, refresh, stale } from './managed.mjs';
-import { kick, SHIPPER } from './ship.mjs';
+import { kick, SHIPPER } from './kick.mjs';
 import { brief as briefFor, markTold } from './brief.mjs';
 import { costUsd } from './cost.mjs';
 import { signedInOperator, refreshIdentity, identityStale } from './identity.mjs';
-import { attributeSession } from './attribution.mjs';
+const attributeSession = async (...a) => (await import('./attribution.mjs')).attributeSession(...a);
 import { shadow } from './shadow.mjs';
 
 // The tool a receipt names: the harness's own name when the adapter gave one,

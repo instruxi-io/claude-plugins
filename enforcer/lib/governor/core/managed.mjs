@@ -18,7 +18,8 @@
 // managed floor — the same failure-open direction as every other check here,
 // and the only honest one: a governor that refused to decide because a settings
 // endpoint was slow would stop work over its own configuration.
-import { hookFetch } from './http.mjs';
+// Lazy: only a refresh fetches, and a hook deciding a tool call never refreshes.
+const hookFetch = async (...a) => (await import('./http.mjs')).hookFetch(...a);
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { FIXED_DIR, privateDir, FILE_MODE } from './store.mjs';

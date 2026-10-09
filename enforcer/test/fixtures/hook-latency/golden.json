@@ -1,0 +1,70 @@
+{
+  "plain": {
+    "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\"}}\n",
+    "decision": "enforcer-governor:decision {\"decision\":\"allow\",\"code\":\"checks_off\",\"rule\":null,\"tool\":\"Bash\",\"summary\":\"decision checks are switched off\"}",
+    "receipts": [
+      {
+        "ts": "<ts>",
+        "agent": "claude:hook-lat",
+        "verdict": "allow",
+        "reason": "decision checks are switched off",
+        "source": "economics",
+        "tool": "Bash",
+        "model": "",
+        "tokens": 0,
+        "client": "?golden-project",
+        "meter": "transcript",
+        "harness": "claude-code",
+        "adapter_version": "<version>",
+        "spent_usd": 0,
+        "decision": {
+          "decision": "allow",
+          "code": "checks_off",
+          "rule": null,
+          "tool": "Bash",
+          "summary": "decision checks are switched off"
+        },
+        "would": {
+          "decision": "allow",
+          "code": "no_rule_matched",
+          "rule": null
+        },
+        "hash": "<hash>"
+      }
+    ]
+  },
+  "shadowed": {
+    "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\"}}\n",
+    "decision": "enforcer-governor:decision {\"decision\":\"allow\",\"code\":\"checks_off\",\"rule\":null,\"tool\":\"Bash\",\"summary\":\"decision checks are switched off\"}",
+    "receipts": [
+      {
+        "ts": "<ts>",
+        "agent": "claude:hook-lat",
+        "verdict": "allow",
+        "reason": "decision checks are switched off",
+        "source": "economics",
+        "tool": "Bash",
+        "model": "",
+        "tokens": 0,
+        "client": "?golden-project",
+        "meter": "transcript",
+        "harness": "claude-code",
+        "adapter_version": "<version>",
+        "spent_usd": 0,
+        "decision": {
+          "decision": "allow",
+          "code": "checks_off",
+          "rule": null,
+          "tool": "Bash",
+          "summary": "decision checks are switched off"
+        },
+        "would": {
+          "decision": "deny",
+          "code": "pipe_to_shell",
+          "rule": "shell.pipe_to_shell"
+        },
+        "hash": "<hash>"
+      }
+    ]
+  }
+}

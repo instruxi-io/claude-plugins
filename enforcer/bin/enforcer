@@ -6,6 +6,10 @@
 //   enforcer hook <event> [handler]                          alias of: event <event> --graph-only
 // V8 compile cache (node >= 22.1): the governor's module graph loads in a few ms instead of tens.
 try { process.getBuiltinModule?.('node:module')?.enableCompileCache?.(join(process.getBuiltinModule('node:os').tmpdir(), `enforcer-v8-${process.getuid?.() ?? 0}`)); } catch {}
+// A hook runs each capability pattern once or twice and exits: compiling a pattern straight to
+// native code costs a third of interpreting it first and then compiling it anyway (the default
+// tier-up), about 10 ms a call across the rule set. Matching is the same either way.
+try { process.getBuiltinModule?.('node:v8')?.setFlagsFromString('--no-regexp-tier-up'); } catch {}
 const spawnSync = (...a) => process.getBuiltinModule('node:child_process').spawnSync(...a);
 import { readFileSync, existsSync, appendFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
