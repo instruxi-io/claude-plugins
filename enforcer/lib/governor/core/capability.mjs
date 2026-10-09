@@ -79,6 +79,22 @@ export const DEFAULT_RULES = [
     match: '(?:(?:^|[\\s;&|(])' + PS_WRITE + '\\b|[^0-9&<]>{1,2}(?!&))[^;&\\n]*?(?:^|[\\s"\'=/\\\\])(?:' + SETTINGS_ANY + ')',
   },
 
+  // Moving, deleting, relinking or changing the mode of the governor's own
+  // directory: one `chmod 000` there once made config.json unreadable and the
+  // rules fell back to off. store.mjs now keeps them on in that case, and this
+  // asks before the attempt. Matches ~/.config/enforcer, its governor
+  // directory and anything under it, the pre-2.10 ~/.enforcer-governor, and
+  // $GOVERNOR_HOME.
+  {
+    id: 'governor.home',
+    authz: 'write',
+    name: "change the governor's own directory",
+    tool: 'shell',
+    action: 'ask',
+    match:
+      '(?:^|[\\s;&|(])(?:chmod|chown|chgrp|chattr|setfacl|mv|rm|rmdir|unlink|ln)\\s+[^;&|\\n]*?(?:\\.config[\\\\/]enforcer(?:[\\\\/]governor(?=[\\s\'"\\\\/|;&)]|$)[^\\s;&|]*)?[\\\\/]?(?=[\\s\'"|;&)]|$)|\\.enforcer-governor\\b|\\$\\{?GOVERNOR_HOME\\b)',
+  },
+
   // A force-push is the one dangerous git action with a strictly safer form
   // that preserves the intent: --force-with-lease refuses when someone else
   // has pushed since you last fetched, which is the case that loses work.

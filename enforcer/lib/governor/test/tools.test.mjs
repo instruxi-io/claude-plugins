@@ -49,6 +49,7 @@ ok('the default rules speak the core vocabulary, and their policy ids have not m
     [
       'shell.pipe_to_shell',
       'governor.settings',
+      'governor.home',
       'git.force_push',
       'fs.delete_tree',
       'git.rewrite_history',
