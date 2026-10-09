@@ -26,7 +26,7 @@ import {
   existsSync,
   statSync,
 } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { createHash, randomBytes } from 'node:crypto';
 import { makeState } from './policy.mjs';
 import { migrateDir } from './migrate.mjs';
@@ -228,10 +228,26 @@ export function saveState(s) {
 // keeps the rules ON (they fail closed, README) and says so once per process;
 // spend checks keep failing open, so budgetOn is left to the defaults.
 let unreadableNoticed = false;
+// allowEnvOff lets an environment `off` turn a check off (managed.mjs). It is
+// read from the config.json at the FIXED per-user path only: a process that
+// points GOVERNOR_HOME or ENFORCER_CONFIG_HOME at a directory of its own must
+// not be able to opt itself in.
+const FIXED_CONFIG = join(FIXED_DIR, 'config.json');
 export function loadConfig() {
+  const c = readConfig(CONFIG);
+  if (resolve(CONFIG) === resolve(FIXED_CONFIG)) return c;
+  const out = { ...c };
+  delete out.allowEnvOff;
+  try {
+    const fixed = JSON.parse(readFileSync(FIXED_CONFIG, 'utf8'));
+    if (fixed?.allowEnvOff === true) out.allowEnvOff = true;
+  } catch {}
+  return out;
+}
+function readConfig(path) {
   let text;
   try {
-    text = readFileSync(CONFIG, 'utf8');
+    text = readFileSync(path, 'utf8');
   } catch (e) {
     if (e?.code === 'ENOENT') return {};
     return unreadableConfig(e?.code || 'unreadable');

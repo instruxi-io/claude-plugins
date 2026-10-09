@@ -124,6 +124,13 @@ export const SETTINGS = {
     describe: "Ask your organisation's Enforcer policy about actions a rule matched. Off by default.",
     hint: 'Only matched actions are asked, so ordinary tool calls never wait on the network. Signed out, it does nothing.',
   },
+  allowEnvOff: {
+    group: 'checks',
+    type: 'boolean',
+    check: bool(),
+    describe: 'Let ENFORCER_GOVERNOR_RULES, _BUDGET or _POLICY=off turn a check off for one process tree. Off by default.',
+    hint: 'An environment `on` always applies. A project can set environment variables for its sessions, so `off` needs this opt-in, and it is read only from config.json.',
+  },
   policyTimeoutMs: {
     group: 'checks',
     type: 'number',
