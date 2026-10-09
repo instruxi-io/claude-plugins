@@ -2,7 +2,7 @@
 // Everything the slash commands print. Plain text on stdout -- these are read
 // by a person mid-session, so money first and jargon never.
 import { loadState, loadConfig, saveConfig, saveState, verify, withLock, commit, RECEIPTS } from './store.mjs';
-import { readManaged, merge, envOverrides, ENV_OVERRIDES, decisioningLine } from './managed.mjs';
+import { readManaged, merge, envReading, envIgnoredLines, ENV_OVERRIDES, decisioningLine } from './managed.mjs';
 import { DEFAULTS, priceOf, dollarsForTokens, burnRate, release } from './policy.mjs';
 import { SETTINGS, GROUPS, RETIRED, validate, parseValue } from './settings.mjs';
 
@@ -15,9 +15,13 @@ const arg = rest.join(' ').trim();
 const cfg = { ...DEFAULTS, ...loadConfig() };
 const state = loadState();
 // Checks this process's environment turns on or off (ENFORCER_GOVERNOR_RULES,
-// _BUDGET, _POLICY). They beat config.json for this process tree only, so both
-// `config` and `status` say where a value came from.
-const fromEnv = envOverrides();
+// _BUDGET, _POLICY). `on` beats config.json for this process tree; `off` only
+// with allowEnvOff in config.json (managed.mjs). Both `config` and `status`
+// say where a value came from, and which variables were ignored and why.
+const envSays = envReading(process.env, cfg);
+const fromEnv = envSays.applied;
+const ignoredEnv = envIgnoredLines(process.env, cfg);
+const ignoredLine = () => (ignoredEnv.length ? "Ignored from this process's environment: " + ignoredEnv.join('; ') + '.' : '');
 const envLine = () =>
   Object.keys(fromEnv).length
     ? "Set by this process's environment: " +
@@ -68,7 +72,14 @@ if (cmd === 'config') {
       // visible explanation.
       const mine = k in fromEnv ? fromEnv[k] : live[k];
       const floored = k in managed && applied[k] !== mine && mine !== undefined;
-      const env = k in fromEnv ? `  [from the environment: ${ENV_OVERRIDES[k]}=${fromEnv[k] ? 'on' : 'off'}]` : '';
+      const env =
+        k in fromEnv
+          ? `  [from the environment: ${ENV_OVERRIDES[k]}=${fromEnv[k] ? 'on' : 'off'}]`
+          : envSays.ignoredOff.includes(k)
+            ? `  [${ENV_OVERRIDES[k]}=off ignored: allowEnvOff is off]`
+            : k in envSays.unrecognised
+              ? `  [${ENV_OVERRIDES[k]}=${JSON.stringify(envSays.unrecognised[k])} ignored: expected on or off]`
+              : '';
       console.log(
         `  ${k.padEnd(width)}  ${shown.padEnd(12)}${k in managed ? '!' : k in fromEnv ? '~' : set ? '*' : ' '} ${spec.describe}` +
           env +
@@ -82,6 +93,7 @@ if (cmd === 'config') {
     console.log(`  ! set by your organisation (${Object.keys(managed).length} setting(s)). You can make these stricter, not looser.`);
   }
   if (Object.keys(fromEnv).length) console.log(`  ~ set by this process's environment. ${envLine()}`);
+  if (ignoredEnv.length) console.log(`  ${ignoredLine()}`);
   console.log('  Change one with /enforcer-governor:set <name> <value>.');
   const dead = Object.keys(RETIRED).filter((k) => k in live);
   if (dead.length) {
@@ -122,6 +134,8 @@ if (cmd === 'set') {
   }
   if (key in fromEnv) {
     console.log(`${ENV_OVERRIDES[key]}=${fromEnv[key] ? 'on' : 'off'} is set in this process's environment and beats config.json here and in its children.`);
+  } else if (envSays.ignoredOff.includes(key)) {
+    console.log(`${ENV_OVERRIDES[key]}=off is set in this process's environment but ignored, because config.json does not set allowEnvOff.`);
   }
   console.log('Agents already running pick this up on their next action.');
   process.exit(0);
@@ -168,6 +182,7 @@ if (cmd === 'resume') {
 
 console.log(decisioningLine(cfg));
 if (Object.keys(fromEnv).length) console.log(envLine() + '\n');
+if (ignoredEnv.length) console.log(ignoredLine() + '\n');
 const agents = Object.values(state.agents || {});
 if (!agents.length) {
   console.log('No agents seen yet.');

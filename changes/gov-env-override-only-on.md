@@ -1,0 +1,1 @@
+Governor: an environment `on` (ENFORCER_GOVERNOR_RULES, _BUDGET, _POLICY) always turns a check on, but an environment `off` is honored only when config.json sets the new `allowEnvOff` setting; an ignored `off` or an unrecognised value prints one stderr notice per process and shows in `governor status` and `governor config`.
