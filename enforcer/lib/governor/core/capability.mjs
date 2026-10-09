@@ -13,6 +13,7 @@
 // agent has spent, it belongs in economics.mjs, not here.
 
 import { Verdict, CAPABILITY } from './verdict.mjs';
+import { isOn, isOff } from './bool.mjs';
 import { toolMatches, nativeField } from './tools.mjs';
 import { ruleCode } from './codes.mjs';
 import { SETTINGS_PATHS } from './worker.mjs';
@@ -236,7 +237,7 @@ export function ruleProblem(r) {
  * rule is a broken config, not "no rules": that throws, and the hook denies.
  */
 export function resolveRules(cfg = {}) {
-  if (cfg.rulesOn === false) return [];
+  if (isOff(cfg.rulesOn)) return [];
   if (cfg.rules == null) return DEFAULT_RULES;
   if (!Array.isArray(cfg.rules)) throw new Error('config.rules is not an array');
   const good = [];

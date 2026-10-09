@@ -3,6 +3,7 @@
 // No I/O, no deps. decide() is a pure function of (state, event, config).
 // This is the whole brain: everything else is plumbing around it.
 import { createHash } from 'node:crypto';
+import { isOn, isOff } from './bool.mjs';
 
 export const sha256 = (s) => createHash('sha256').update(s).digest('hex');
 
@@ -512,7 +513,7 @@ export function getAgent(state, id, cfg, now = Date.now()) {
 // Decisioning is off: spend checks off and capability rules off, which is what
 // a fresh install has (budgetOn and rulesOn false by default). Loop detection
 // belongs to jev-hooks, not the governor.
-export const checksOff = (cfg = {}) => cfg.budgetOn === false && cfg.rulesOn === false;
+export const checksOff = (cfg = {}) => isOff(cfg.budgetOn) && isOff(cfg.rulesOn);
 
 export function decide(state, ev, config = {}) {
   const cfg = { ...DEFAULTS, ...config };
@@ -572,7 +573,7 @@ export function decide(state, ev, config = {}) {
 
   // Capability first. "You may not do this" outranks "you have budget left",
   // and a cheap command can still be the destructive one.
-  if (cfg.rulesOn !== false) {
+  if (!isOff(cfg.rulesOn)) {
     const hit = matchRule(cfg.rules || DEFAULT_RULES, ev);
     if (hit && hit.action === 'deny') {
       // Refuse the ACTION, do not ground the agent. A capability check says
@@ -606,7 +607,7 @@ export function decide(state, ev, config = {}) {
 
   // Totals first: a team of agents can each sit inside its own limit while
   // together spending many times what the human intended.
-  if (cfg.budgetOn && state.periods) {
+  if (isOn(cfg.budgetOn) && state.periods) {
     const caps = { day: cfg.dailyLimit, week: cfg.weeklyLimit, month: cfg.monthlyLimit };
     const word = { day: 'today', week: 'this week', month: 'this month' };
     for (const [name] of PERIODS) {
@@ -625,7 +626,7 @@ export function decide(state, ev, config = {}) {
   // the day's money is already gone. Escalating rather than denying is
   // deliberate: an overnight run stops and waits for a human, which is exactly
   // what should have happened in every one of these incidents.
-  if (cfg.budgetOn && !a.burnFlagged) {
+  if (isOn(cfg.budgetOn) && !a.burnFlagged) {
     const mine = burnRate(state, now, a.id),
       all = burnRate(state, now);
     const hit =
@@ -643,7 +644,7 @@ export function decide(state, ev, config = {}) {
 
   // Fan-out. Flagged once per burst on the agent that trips it, so a genuine
   // twenty-agent job asks a single question rather than twenty.
-  if (cfg.budgetOn && cfg.fanoutLimit > 0 && !state.fanoutFlagged) {
+  if (isOn(cfg.budgetOn) && cfg.fanoutLimit > 0 && !state.fanoutFlagged) {
     const spawned = spawnRate(state, now);
     if (spawned >= cfg.fanoutLimit) {
       state.fanoutFlagged = true;
@@ -653,7 +654,7 @@ export function decide(state, ev, config = {}) {
   }
 
   // Retry storm. A rate-limited call fails cheaply; the retry does not.
-  if (cfg.budgetOn && cfg.retryLimit > 0 && a.fails && !a.retryFlagged) {
+  if (isOn(cfg.budgetOn) && cfg.retryLimit > 0 && a.fails && !a.retryFlagged) {
     const recent = a.fails.reduce((n, t) => n + (t > now - BURN_WINDOW ? 1 : 0), 0);
     if (recent >= cfg.retryLimit) {
       a.retryFlagged = true;
@@ -662,7 +663,7 @@ export function decide(state, ev, config = {}) {
     }
   }
 
-  if (cfg.budgetOn && a.client && state.clients) {
+  if (isOn(cfg.budgetOn) && a.client && state.clients) {
     const cap = (cfg.clientLimits || {})[a.client];
     const spent = state.clients.month.by[a.client] || 0;
     if (cap > 0 && spent >= cap) {
@@ -672,12 +673,12 @@ export function decide(state, ev, config = {}) {
     }
   }
 
-  if (cfg.budgetOn && a.tokens >= a.budget) {
+  if (isOn(cfg.budgetOn) && a.tokens >= a.budget) {
     a.status = 'grounded';
     a.groundedBy = 'limit';
     return record(state, a, 'deny', 'it reached your spend limit', a.tokens);
   }
-  if (cfg.budgetOn && !a.escalated && a.tokens >= a.budget * a.soft) {
+  if (isOn(cfg.budgetOn) && !a.escalated && a.tokens >= a.budget * a.soft) {
     a.escalated = true;
     if (cfg.softAction === 'escalate') {
       a.status = 'paused';

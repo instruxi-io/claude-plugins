@@ -16,6 +16,7 @@
 //   - a tenant policy that cannot be reached leaves the local rule in charge.
 import { createHash } from 'node:crypto';
 import { gate } from './gate.mjs';
+import { isOn, isOff } from './bool.mjs';
 import { matchRule, DEFAULT_RULES, resolveRules } from './capability.mjs';
 import { consult } from './central.mjs';
 import { evaluate as workerEvaluate } from './worker.mjs';
@@ -100,7 +101,7 @@ export function createGovernor({ harness = 'unknown', adapterVersion = '', cost 
     const central = matched ? await consult(matched, cfg) : null;
     // A worker rule (graph.push, graph.pr_create, graph.land ...) is a rule too:
     // the tenant is asked about it, or it could never be vetoed.
-    const wv = cfg.rulesOn !== false ? workerEvaluate(event) : null;
+    const wv = !isOff(cfg.rulesOn) ? workerEvaluate(event) : null;
     const workerCentral = wv?.ruleId && wv.ruleId !== matched?.id ? await consult({ id: wv.ruleId, name: wv.rule }, cfg) : central;
 
     // Shadow mode (shadow.mjs): with the capability rules off, what they WOULD

@@ -4,6 +4,7 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { ruleCode } from './codes.mjs';
+import { isOn, isOff } from './bool.mjs';
 
 const UNIT = { h: 3600e3, d: 86400e3 };
 export function parseSince(s) {
@@ -64,7 +65,7 @@ export function buildReport(dir, { since = '24h', now = Date.now(), verbose = fa
   const from = now - parseSince(since);
   const receipts = readReceipts(dir).filter((r) => Date.parse(r.ts) >= from);
   const cfg = readJSON(join(dir, 'config.json')) || {};
-  const checksOff = cfg.budgetOn !== true;
+  const checksOff = !isOn(cfg.budgetOn);
 
   // Session -> project, from the receipts that name one (agent ids are `<harness>:<session>`).
   const projectOf = {};

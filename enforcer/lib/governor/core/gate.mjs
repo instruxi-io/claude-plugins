@@ -20,6 +20,7 @@
 // without any of the logic below knowing.
 
 import { Verdict, ECONOMICS, CAPABILITY, POLICY } from './verdict.mjs';
+import { isOn, isOff } from './bool.mjs';
 import { evaluate as capability, DEFAULT_RULES, resolveRules } from './capability.mjs';
 import { evaluate as worker } from './worker.mjs';
 import { checksOff } from './policy.mjs';
@@ -81,7 +82,7 @@ export function gate(ev, cfg = {}, deps = {}) {
   // The graph-worker rules (worker.mjs) go first: they are the only rules that
   // can ALLOW, and a headless force-push must be refused rather than rewritten
   // into a prompt nobody will answer. A tenant can still refuse what they allow.
-  if (cfg.rulesOn !== false) {
+  if (!isOff(cfg.rulesOn)) {
     // The tenant is asked about the WORKER rule id (deps.workerCentral), not only
     // the capability rule that matched: otherwise a tenant could never veto a push.
     const w = compose(worker(ev), deps.workerCentral !== undefined ? deps.workerCentral : deps.central);
@@ -122,7 +123,7 @@ export function gate(ev, cfg = {}, deps = {}) {
   // spend tracking silently gave up `curl | sh` and `rm -rf` as well. Nothing
   // in the suite pinned it, which is why it survived.
   if (checksOff(cfg)) {
-    return Verdict.allow('spend checks are switched off', {
+    return Verdict.allow('decision checks are switched off', {
       code: 'checks_off',
       source: ECONOMICS,
       checked: [CAPABILITY, ECONOMICS],
