@@ -79,10 +79,12 @@ await t('matching literal is ok, placeholder is SKIPPED, one line each, exit 0',
   const r = await run(only);
   assert.equal(r.code, 0, r.out);
   const ls = r.stdout.trim().split('\n');
-  assert.equal(ls.length, 3);
+  assert.equal(ls.length, 5); // three results, the WARN for the skipped line, the summary
   assert.match(ls[0], /^ok fx:/);
   assert.match(ls[1], /^SKIPPED fx:/);
-  assert.match(ls[2], /^ok fx:/);
+  assert.match(ls[2], /^WARN fx: line 1 will not be run/);
+  assert.match(ls[3], /^ok fx:/);
+  assert.match(ls[4], /^plan check: 2 runnable, 1 will not be run, 0 mismatch$/);
 });
 await t('exit code mismatch is a MISMATCH', async () => {
   acceptance = ['node exit3.mjs exits 0'];

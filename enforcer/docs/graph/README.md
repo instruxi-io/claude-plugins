@@ -292,6 +292,21 @@ the judge reads the worker's own captured output instead. The cases that must
 never run, and ten real acceptance lines that must still run, are in
 `test/acceptance-allowlist.test.mjs`.
 
+`enforcer plan check <graph>` prints a `WARN` with a specific hint for every
+line that will not be run and ends with `plan check: <ok> runnable, <skipped>
+will not be run, <mismatch> mismatch`; `--strict` exits 1 when any line is
+skipped.
+
+### Writing lines the judge can verify
+
+A line that is not run leaves the judge only the worker's own output, and in
+live data about a third of rejected runs were later overruled by a human.
+
+- Quote a literal line of real output (`prints \`3 passed\``), never a paraphrase such as `prints all tests passed`.
+- Use only the allowed shapes in the table above.
+- Put the PR line last: `gh pr view <n> -R <owner/repo> --json state,mergeCommit prints ...`.
+- Keep one claim per line.
+
 ## Files
 
 Working on this code (agents and humans): start from [WORKER_BRIEF.md](WORKER_BRIEF.md).
