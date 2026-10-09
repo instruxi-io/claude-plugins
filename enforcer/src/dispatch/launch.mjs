@@ -99,8 +99,16 @@ export const ENV_ALLOW = [
   'JEV_HOOKS_HEADLESS',
   'CLAUDE_PLUGIN_ROOT',
   'ENFORCER_PLUGIN_ROOT',
+  // named locale and Claude variables (no CLAUDE_* or LC_* prefix passes: an unknown variable may carry a secret)
+  'LC_ALL',
+  'LC_CTYPE',
+  'LC_MESSAGES',
+  'CLAUDE_CONFIG_DIR',
+  'CLAUDE_CODE_OAUTH_TOKEN',
+  'CLAUDE_CODE_USE_BEDROCK',
+  'CLAUDE_CODE_USE_VERTEX',
 ];
-export const ENV_ALLOW_PREFIX = ['CLAUDE_', 'LC_'];
+export const ENV_ALLOW_PREFIX = [];
 /** The owner's default for whether dispatched workers run with the worker rules on: decisioning is off unless configured. The one place to change it. */
 export const DEFAULT_WORKER_RULES = 'off';
 export const WORKER_RULES_MODES = ['on', 'off'];
