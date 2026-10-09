@@ -5,6 +5,7 @@
 // Only lines that fully match a shape in src/acceptance-allowlist.mjs run (no shell), in the node's repo checkout,
 // 300 s each (--timeout), with a minimal env and a temporary HOME.
 // Options: --repo-root <dir>, --only <node key>, --timeout <seconds>.
+import { literalIn } from './literal-match.mjs';
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -57,7 +58,7 @@ export function checkLine(line, cwd, env, { timeoutMs = 300000, graph = '' } = {
       .map((s) => s.trimEnd())
       .filter(Boolean)
       .at(-1) ?? '(no output)';
-  const missing = p.literals.filter((l) => !out.includes(l));
+  const missing = p.literals.filter((l) => !literalIn(out, l));
   if (p.exit !== null && r.exit !== p.exit) return { state: 'MISMATCH', note: `exit ${r.exit}, expected ${p.exit}; last line: ${last}` };
   if (missing.length) return { state: 'MISMATCH', note: `output never contains ${missing.map((l) => JSON.stringify(l)).join(', ')}; last line: ${last}` };
   return { state: 'ok', note: '' };

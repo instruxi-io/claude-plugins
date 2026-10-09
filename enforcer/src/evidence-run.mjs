@@ -19,6 +19,8 @@ import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { ACCEPTANCE_SHAPES, allowedCommand, goTestArgv, spawnAllowed } from './acceptance-allowlist.mjs';
 import { parseLine } from './plan-check.mjs';
+import { literalIn, matchingLine } from './literal-match.mjs';
+import { spawnSync } from 'node:child_process';
 import { headers, allNodes } from './preflight.mjs';
 import { resolveConfig } from './config.mjs';
 
@@ -45,22 +47,68 @@ export function goTestFlags(cmd, literals) {
   return add.length ? cmd.replace(/\bgo test\b/, () => `go test ${add.join(' ')}`) : cmd;
 }
 
-/** Substitute placeholders. Returns {cmd} or {skip: reason}. */
-export function substitute(cmd, { graph, nodeKey, nodeId, testDb }) {
+const REPO_RE = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
+
+/** The default pull request lookup: `gh pr list -R <repo> --head graph/<key> --state all --json number --limit 1`, fixed
+ *  argv, no shell. Returns the number or null. */
+export function ghPrLookup(repo, nodeKey, { run = spawnSync } = {}) {
+  const r = run('gh', ['pr', 'list', '-R', repo, '--head', `graph/${nodeKey}`, '--state', 'all', '--json', 'number', '--limit', '1'], {
+    shell: false,
+    encoding: 'utf8',
+    windowsHide: true,
+    timeout: 60000,
+  });
+  if (r.error || r.status !== 0) return null;
+  try {
+    const n = JSON.parse(r.stdout || '[]')?.[0]?.number;
+    return Number.isInteger(n) && n > 0 ? n : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The pull request number for `<n>` / `<pr>`: an explicit value (the `--pr` flag, then ENFORCER_EVIDENCE_PR) wins; else
+ *  the owner/repo is taken from the line's own `-R <owner/repo>` (validated) and looked up by branch.
+ *  Returns {n} or {skip: reason}. */
+export function resolvePr(cmd, { nodeKey, pr, env = process.env, lookup = ghPrLookup }) {
+  const explicit = pr ?? env.ENFORCER_EVIDENCE_PR;
+  if (explicit !== undefined && explicit !== '') {
+    return /^\d+$/.test(String(explicit)) ? { n: String(explicit) } : { skip: `invalid pull request number ${JSON.stringify(String(explicit))}` };
+  }
+  const m = /(?:^|\s)(?:-R|--repo)\s+(\S+)/.exec(cmd);
+  if (!m || !REPO_RE.test(m[1])) return { skip: 'no valid -R <owner/repo> on the line to look up the pull request' };
+  if (!nodeKey || !/^[A-Za-z0-9_.-]+$/.test(String(nodeKey))) return { skip: 'no node key to look up the pull request' };
+  const n = lookup(m[1], nodeKey);
+  return n ? { n: String(n) } : { skip: `no pull request for graph/${nodeKey} yet` };
+}
+
+/** Substitute placeholders. Returns {cmd, resolvedPr?} or {skip: reason}. */
+export function substitute(cmd, { graph, nodeKey, nodeId, testDb, pr, env, lookup }) {
   const values = { graph, 'test db': testDb, key: nodeKey, 'node-key': nodeKey, 'node-id': nodeId };
-  let skip = null;
+  let skip = null,
+    resolvedPr = false;
   const out = cmd.replace(/<([^<>\s][^<>]*)>/g, (all, name) => {
-    const v = values[name.trim()];
+    const k = name.trim();
+    if ((k === 'n' || k === 'pr') && /^gh\s+pr\s+view\s/.test(cmd.trim())) {
+      const r = resolvePr(cmd, { nodeKey, pr, env, lookup });
+      if (r.n) {
+        resolvedPr = true;
+        return r.n;
+      }
+      skip ??= r.skip;
+      return all;
+    }
+    const v = values[k];
     if (v) return v;
-    skip ??= values[name.trim()] === undefined && !(name.trim() in values) ? `placeholder ${all}` : `no value for ${all}`;
+    skip ??= values[k] === undefined && !(k in values) ? `placeholder ${all}` : `no value for ${all}`;
     return all;
   });
-  return skip ? { skip } : { cmd: out };
+  return skip ? { skip } : { cmd: out, resolvedPr };
 }
 
 /** Prepare one acceptance line: {cmd, argv, cwd, literals, exit} to run, or {skip}. Pure. `cwd` is the checkout every
  *  path in the line must resolve inside. */
-export function prepareLine(line, { cwd, graph, nodeKey, nodeId, testDb }) {
+export function prepareLine(line, { cwd, graph, nodeKey, nodeId, testDb, pr, env, lookup }) {
   let p = parseLine(line);
   if (!p) {
     // `<command> prints the file` quotes nothing, but the command's output is still the evidence
@@ -69,11 +117,11 @@ export function prepareLine(line, { cwd, graph, nodeKey, nodeId, testDb }) {
     p = { cmd: m[1].trim().replace(/^`([^`]*)`$/, '$1'), exit: null, literals: [] };
   }
   let cmd = p.cmd;
-  const sub = substitute(cmd, { graph, nodeKey, nodeId, testDb });
+  const sub = substitute(cmd, { graph, nodeKey, nodeId, testDb, pr, env, lookup });
   if (sub.skip) return { skip: sub.skip };
   cmd = sub.cmd;
   if (/(^|[\s;&|(])(\S*bin\/enforcer|enforcer)\s+evidence\s+run\b/.test(cmd)) return { skip: 'would run itself' };
-  if (/(^|[\s;&|(])gh\s/.test(cmd) || /\bpull request\b/i.test(line)) return { skip: 'PR line: proved by the delivery step' };
+  if (!sub.resolvedPr && (/(^|[\s;&|(])gh\s/.test(cmd) || /\bpull request\b/i.test(line))) return { skip: 'PR line: proved by the delivery step' };
   const ok = allowedCommand(cmd, { root: cwd });
   if (ok.skip) return { skip: ok.skip };
   return { cmd: goTestFlags(cmd, p.literals), argv: goTestArgv(ok.argv, p.literals), cwd, literals: p.literals, exit: p.exit };
@@ -89,8 +137,8 @@ export function clipEvidence(out, literals = []) {
   let clipped = text.length > 3000 ? text.slice(0, 1200) + '\n...\n' + text.slice(-1800) : text;
   if (clipped !== text) {
     for (const l of literals) {
-      if (!text.includes(l) || clipped.includes(l)) continue;
-      const hit = text.split('\n').find((s) => s.includes(l));
+      const hit = matchingLine(text, l);
+      if (!hit || clipped.includes(hit)) continue;
       if (hit) clipped += `\n[match] ${hit.slice(0, 300)}`;
     }
   }
@@ -120,6 +168,8 @@ export function runEvidence(
     env = process.env,
     timeoutMs,
     retryDelayMs,
+    pr,
+    lookup,
     testDb = env.ENFORCER_TEST_DB || env.TEST_DATABASE_URL || '',
     run,
   } = /** @type {any} */ ({}),
@@ -131,7 +181,7 @@ export function runEvidence(
     total = 0;
   acceptanceOf(node).forEach((line, i) => {
     if (only !== null && i !== only) return;
-    const p = prepareLine(line, { cwd, graph, nodeKey: node.key, nodeId: node.node_id ?? node.id, testDb });
+    const p = prepareLine(line, { cwd, graph, nodeKey: node.key, nodeId: node.node_id ?? node.id, testDb, pr, env, lookup });
     if (p.skip) {
       skipped.push({ line_index: i, reason: p.skip });
       return;
@@ -143,7 +193,7 @@ export function runEvidence(
     const r = runPrepared(p, { env, timeoutMs, retryDelayMs, run });
     if (r.retried) retried.push(i);
     total += p.literals.length;
-    found += p.literals.filter((l) => r.out.includes(l)).length;
+    found += p.literals.filter((l) => literalIn(r.out, l)).length;
     items.push({ kind: 'command', cmd: p.cmd, exit: r.exit, output: clipEvidence(r.out, p.literals), line_index: i });
   });
   return { items, skipped, found, total, retried };
@@ -166,7 +216,7 @@ export async function main(argv, env = process.env) {
     return 2;
   }
   const rest = argv.slice(1);
-  const valued = new Set(['--graph', '--cwd', '--only', '--timeout', '--test-db']);
+  const valued = new Set(['--graph', '--cwd', '--only', '--timeout', '--test-db', '--pr']);
   const opt = (n) => {
     const i = rest.indexOf(n);
     return i >= 0 ? rest[i + 1] : undefined;
@@ -197,6 +247,7 @@ export async function main(argv, env = process.env) {
       graph,
       only,
       env,
+      ...(opt('--pr') ? { pr: opt('--pr') } : {}),
       timeoutMs: secs * 1000,
       ...(opt('--test-db') ? { testDb: opt('--test-db') } : {}),
     });
