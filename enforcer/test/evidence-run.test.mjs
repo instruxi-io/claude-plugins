@@ -13,6 +13,8 @@ import { runEvidence, prepareLine, goTestFlags, clipEvidence } from '../src/evid
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const tmp = mkdtempSync(join(tmpdir(), 'evidence-run-test-'));
 mkdirSync(join(tmp, 'sub', 'dir'), { recursive: true });
+writeFileSync(join(tmp, 'echo.mjs'), "console.log(process.argv.slice(2).join(' '));\n");
+writeFileSync(join(tmp, 'sub', 'dir', 'seven.mjs'), 'console.log(7);\n');
 after(() => {
   try {
     rmSync(tmp, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
@@ -41,20 +43,23 @@ test('go test lines get -run -v', () => {
   assert.match(goTestFlags('go test ./x', ['--- PASS: TestA', '--- PASS: TestB']), /-run '\^\(TestA\|TestB\)\$'/);
   // and it is what actually runs
   const log = [];
-  const r = runEvidence(node([line]), { cwd: tmp, run: fakeRun(log, { status: 0, stdout: '--- PASS: TestMigrate (0.01s)\n', stderr: '' }), runners: ['go'] });
-  assert.match(log[0].args[1], /-tags integration -v -run '\^\(TestMigrate\)\$'/);
+  const r = runEvidence(node([line]), { cwd: tmp, run: fakeRun(log, { status: 0, stdout: '--- PASS: TestMigrate (0.01s)\n', stderr: '' }) });
+  assert.equal(log[0].cmd, 'go');
+  assert.deepEqual(log[0].args, ['test', '-tags', 'integration', '-v', '-run', '^(TestMigrate)$', './internal/db']);
+  assert.equal(log[0].opts.shell, false);
   assert.equal(r.found, 1);
   assert.equal(r.total, 1);
 });
 
 test('placeholders are substituted', () => {
   const log = [];
-  const r = runEvidence(
-    node(['node -e "console.log(process.argv[1])" <graph> prints `g-123`', 'bash -c "echo $0" <test db> prints `postgres://t`', 'node -e "1" <n> prints `x`']),
-    { cwd: tmp, graph: 'g-123', testDb: '', run: fakeRun(log) },
-  );
-  assert.match(log[0].args[1], /<graph>|g-123/);
-  assert.ok(!log[0].args[1].includes('<graph>'), log[0].args[1]);
+  const r = runEvidence(node(['node echo.mjs <graph> prints `g-123`', 'node echo.mjs <test db> prints `postgres://t`', 'node echo.mjs <n> prints `x`']), {
+    cwd: tmp,
+    graph: 'g-123',
+    testDb: '',
+    run: fakeRun(log),
+  });
+  assert.deepEqual(log[0].args, ['echo.mjs', 'g-123']);
   assert.deepEqual(
     r.skipped.map((s) => [s.line_index, s.reason]),
     [
@@ -62,20 +67,20 @@ test('placeholders are substituted', () => {
       [2, 'placeholder <n>'],
     ],
   );
-  const withDb = prepareLine('bash -c "echo $0" <test db> prints `x`', { cwd: tmp, graph: 'g', testDb: 'postgres://t' });
-  assert.match(withDb.cmd, /postgres:\/\/t/);
+  const withDb = prepareLine('node echo.mjs <test db> prints `x`', { cwd: tmp, graph: 'g', testDb: 'postgres://t' });
+  assert.deepEqual(withDb.argv, ['node', 'echo.mjs', 'postgres://t']);
 });
 
-test('cd prefix sets the directory', () => {
+test('cd is never allowed; a path argument names the directory instead', () => {
   const log = [];
-  runEvidence(node(['cd sub/dir && ls prints `x`']), { cwd: tmp, run: fakeRun(log) });
-  assert.equal(log[0].opts.cwd, join(tmp, 'sub', 'dir'));
-  assert.equal(log[0].args[1], 'ls');
-  // for real: the command sees that directory
+  const r = runEvidence(node(['cd sub/dir && ls prints `x`']), { cwd: tmp, run: fakeRun(log) });
+  assert.equal(log.length, 0);
+  assert.match(r.skipped[0].reason, /not run: not an allowed command shape/);
+  // for real: the command lists that directory
   writeFileSync(join(tmp, 'sub', 'dir', 'marker.txt'), 'm');
-  const r = runEvidence(node(['cd sub/dir && ls prints `marker.txt`']), { cwd: tmp });
-  assert.equal(r.found, 1);
-  assert.equal(r.items[0].output, 'marker.txt');
+  const ok = runEvidence(node(['ls sub/dir prints `marker.txt`']), { cwd: tmp });
+  assert.equal(ok.found, 1);
+  assert.match(ok.items[0].output, /marker\.txt/);
 });
 
 test('the PR line is skipped', () => {
@@ -107,10 +112,10 @@ console.log('second run passed');`,
   assert.equal(r.found, 1);
   // a plain failure is not retried; a collision that persists is retried only once
   const log = [];
-  runEvidence(node(['node -e "1" prints `a`']), { cwd: tmp, retryDelayMs: 0, run: fakeRun(log, { status: 1, stdout: 'database is locked', stderr: '' }) });
+  runEvidence(node(['node flaky.mjs prints `a`']), { cwd: tmp, retryDelayMs: 0, run: fakeRun(log, { status: 1, stdout: 'database is locked', stderr: '' }) });
   assert.equal(log.length, 2);
   const log2 = [];
-  runEvidence(node(['node -e "1" prints `a`']), { cwd: tmp, retryDelayMs: 0, run: fakeRun(log2, { status: 1, stdout: 'assertion failed', stderr: '' }) });
+  runEvidence(node(['node flaky.mjs prints `a`']), { cwd: tmp, retryDelayMs: 0, run: fakeRun(log2, { status: 1, stdout: 'assertion failed', stderr: '' }) });
   assert.equal(log2.length, 1);
 });
 
@@ -128,7 +133,7 @@ test('enforcer evidence run prints one JSON item per command and the literals su
     };
     if (req.headers['x-api-key'] !== 'good') return send(401, {});
     if (req.url.startsWith('/graphs/g1/nodes')) {
-      const d = [node(['ls prints `marker.txt`', 'node -e "console.log(7)" prints `never-there`', '`gh pr view 1` prints `MERGED`'])];
+      const d = [node(['ls prints `marker.txt`', 'node seven.mjs prints `never-there`', '`gh pr view 1` prints `MERGED`'])];
       return send(200, { data: d, meta: { total: 1 } });
     }
     send(404, {});

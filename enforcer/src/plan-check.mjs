@@ -2,18 +2,20 @@
 // `enforcer plan check <graph> [--repo-root dir]`: run each open node's acceptance commands and flag lines
 // whose quoted output never appears. Per line: ok | MISMATCH (ran, literal absent; shows the real last line) | SKIPPED.
 // Each result is printed as soon as it is known, with a running count on stderr. Exit 1 on MISMATCH only.
-// Only read-only commands run, in the node's repo checkout, 300 s each (--timeout), isolated env.
+// Only lines that fully match a shape in src/acceptance-allowlist.mjs run (no shell), in the node's repo checkout,
+// 300 s each (--timeout), with a minimal env and a temporary HOME.
 // Options: --repo-root <dir>, --only <node key>, --timeout <seconds>.
-import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync, lstatSync, readdirSync, chmodSync } from 'node:fs';
-import { tmpdir, homedir } from 'node:os';
+import { existsSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { request } from '../lib/api/client.mjs';
 import { headers, allNodes } from './preflight.mjs';
 import { resolveConfig } from './config.mjs';
-import { substitute, goTestFlags } from './evidence-run.mjs'; // the one place that knows the acceptance-line rules
+import { substitute } from './evidence-run.mjs'; // the one place that knows the acceptance-line rules
+import { ACCEPTANCE_SHAPES, allowedCommand, goTestArgv, removeTree, spawnAllowed } from './acceptance-allowlist.mjs';
 
-const RUNNABLE = new Set(['node', 'bash', 'sh', 'grep', 'ls', 'npm', 'cat', 'test', 'wc', 'head', 'tail']);
+/** The shared allow list (src/acceptance-allowlist.mjs); removeTree moved there with the runner. */
+export { ACCEPTANCE_SHAPES, removeTree };
 const CLOSED = new Set(['done', 'cancelled', 'succeeded']);
 
 /** "<command> prints|exits ... <quoted literal>" -> {cmd, exit, literals} or null. */
@@ -30,98 +32,35 @@ export function parseLine(line) {
   return { cmd, exit: ex ? Number(ex[1]) : null, literals };
 }
 
-/** Why a command cannot run here, or null when it can. */
-export function skipReason(cmd) {
+/** Why a command cannot run here, or null when it can. `root` is the checkout its paths must stay inside. */
+export function skipReason(cmd, root = process.cwd()) {
   if (/<[^<>\s][^<>]*>/.test(cmd)) return 'placeholder in command';
-  const parts = cmd
-    .split(/\s*(?:&&|;|\|\|?)\s*/)
-    .map((s) => s.trim())
-    .filter(Boolean);
-  for (const p of parts) {
-    const w = p.split(/\s+/);
-    if (w[0] === 'cd') continue;
-    if (w[0] === 'gh') {
-      if (!/^gh pr view\b/.test(p)) return 'gh command is not pr view';
-      continue;
-    }
-    if (!RUNNABLE.has(w[0])) return `not a runnable command: ${w[0]}`;
-  }
-  if (/(^|\s)(rm|mv|curl)\s/.test(cmd) || />\s*[^&\s]/.test(cmd.replace(/2>&1|>\s*\/dev\/null/g, ''))) return 'not read-only';
-  return null;
-}
-
-/** Remove a temp tree for good: Go writes its module cache 0444 inside 0555 directories, which rm cannot unlink
- *  until the tree is made writable. Never throws: a cleanup problem must not replace the report. */
-export function removeTree(dir) {
-  const attempt = () => {
-    try {
-      rmSync(dir, { recursive: true, force: true });
-      return !existsSync(dir);
-    } catch {
-      return false;
-    }
-  };
-  if (attempt()) return true;
-  const walk = (d) => {
-    try {
-      chmodSync(d, 0o700);
-    } catch {
-      /* best effort */
-    }
-    let names = [];
-    try {
-      names = readdirSync(d);
-    } catch {
-      return;
-    }
-    for (const n of names) {
-      const f = join(d, n);
-      try {
-        const st = lstatSync(f);
-        if (st.isDirectory()) walk(f);
-        else if (!st.isSymbolicLink()) chmodSync(f, 0o600);
-      } catch {
-        /* best effort */
-      }
-    }
-  };
-  walk(dir);
-  return attempt();
+  return allowedCommand(cmd, { root }).skip ?? null;
 }
 
 export function checkLine(line, cwd, env, { timeoutMs = 300000, graph = '' } = {}) {
   const p = parseLine(line);
   if (!p) return { state: 'SKIPPED', note: 'no "prints|exits <literal>" form' };
   const sub = substitute(p.cmd, { graph });
-  if (!sub.skip) p.cmd = goTestFlags(sub.cmd, p.literals); // `<graph>` filled in, Go tests get -tags/-run/-v, as `enforcer evidence run` does
-  const why = skipReason(p.cmd);
-  if (why) return { state: 'SKIPPED', note: why };
+  if (!sub.skip) p.cmd = sub.cmd; // `<graph>` filled in, as `enforcer evidence run` does
+  if (/<[^<>\s][^<>]*>/.test(p.cmd)) return { state: 'SKIPPED', note: 'placeholder in command' };
   if (!cwd || !existsSync(cwd)) return { state: 'SKIPPED', note: `no checkout at ${cwd}` };
-  const home = mkdtempSync(join(tmpdir(), 'plan-check-'));
-  try {
-    const r = spawnSync('sh', ['-c', p.cmd], {
-      cwd,
-      encoding: 'utf8',
-      timeout: timeoutMs,
-      maxBuffer: 64 << 20,
-      env: { PATH: env.PATH, HOME: home, TMPDIR: home, LANG: 'C.UTF-8', CI: '1', GOFLAGS: '-modcacherw' },
-    });
-    if (r.error?.code === 'ETIMEDOUT') return { state: 'SKIPPED', note: `timed out after ${Math.round(timeoutMs / 1000)}s` };
-    if (r.error) return { state: 'SKIPPED', note: `could not run: ${r.error.message}` };
-    const out = (r.stdout || '') + (r.stderr || '');
-    const last =
-      out
-        .split('\n')
-        .map((s) => s.trimEnd())
-        .filter(Boolean)
-        .at(-1) ?? '(no output)';
-    const missing = p.literals.filter((l) => !out.includes(l));
-    if (p.exit !== null && r.status !== p.exit) return { state: 'MISMATCH', note: `exit ${r.status}, expected ${p.exit}; last line: ${last}` };
-    if (missing.length) return { state: 'MISMATCH', note: `output never contains ${missing.map((l) => JSON.stringify(l)).join(', ')}; last line: ${last}` };
-    return { state: 'ok', note: '' };
-  } finally {
-    removeTree(home);
-  }
+  const ok = allowedCommand(p.cmd, { root: cwd });
+  if (ok.skip) return { state: 'SKIPPED', note: ok.skip };
+  const r = spawnAllowed(goTestArgv(ok.argv, p.literals), { cwd, env, timeoutMs });
+  if (r.timedOut) return { state: 'SKIPPED', note: `timed out after ${Math.round(timeoutMs / 1000)}s` };
+  if (r.error) return { state: 'SKIPPED', note: `could not run: ${r.error.message}` };
+  const out = r.out;
+  const last =
+    out
+      .split('\n')
+      .map((s) => s.trimEnd())
+      .filter(Boolean)
+      .at(-1) ?? '(no output)';
+  const missing = p.literals.filter((l) => !out.includes(l));
+  if (p.exit !== null && r.exit !== p.exit) return { state: 'MISMATCH', note: `exit ${r.exit}, expected ${p.exit}; last line: ${last}` };
+  if (missing.length) return { state: 'MISMATCH', note: `output never contains ${missing.map((l) => JSON.stringify(l)).join(', ')}; last line: ${last}` };
+  return { state: 'ok', note: '' };
 }
 
 /** Server-side advisory lint (one ruleset, enforcer-graph POST /graphs/{id}/acceptance/lint). Never fatal: [] on any failure. */
