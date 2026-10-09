@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 1.3.3
+
+This release makes the hooks cost far less per tool call: the pre-tool-use hook loads only what it needs, so the governor adds a few milliseconds instead of tens with decisioning off.
+
+- The pre-tool-use hook is cheaper with decisioning off: the tenant lookup, shipper, HTTP client and attribution load lazily, and capability patterns compile straight to native code (`--no-regexp-tier-up`), so the shadow evaluation costs about 5 ms instead of about 23 ms; median overhead above bare node (`node enforcer/scripts/bench-hook.mjs`, before and after interleaved) went from 29-34 ms to 26-32 ms on a quiet machine and from 73-79 ms to 61-68 ms under load, with decisions and receipts unchanged (golden in enforcer/test/hook-latency.test.mjs).
+
 ## 1.3.2
 
 This release makes acceptance evidence visible to the judge: pull request lines resolve and escaped literals match, and plan check flags lines that will not be run.
