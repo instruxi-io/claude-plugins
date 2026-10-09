@@ -24,20 +24,25 @@ receivers:
   # Enabled per machine with:
   #   CLAUDE_CODE_ENABLE_TELEMETRY=1
   #   OTEL_METRICS_EXPORTER=otlp
-  #   OTEL_EXPORTER_OTLP_ENDPOINT=http://<collector>:4317
+  #   OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
   # Fleet-wide that is a managed-settings decision, not a plugin one: a
   # SessionStart hook cannot set environment variables for the process that is
   # already running.
+  # The receivers bind to localhost: OTLP here has no authentication and no
+  # TLS. To accept traffic from other machines, change the endpoint to an
+  # address on a private network AND add TLS and an auth extension (see the
+  # collector's `tls` and `auth` receiver settings), or put a reverse proxy
+  # that does both in front of it. Do not bind a public interface as is.
   otlp:
     protocols:
       grpc:
-        endpoint: 0.0.0.0:4317
+        endpoint: localhost:4317
       http:
-        endpoint: 0.0.0.0:4318
+        endpoint: localhost:4318
 
   # ── what the governor decided ─────────────────────────────────────────────
   filelog/receipts:
-    include: [ "${env:HOME}/.enforcer-governor/receipts.jsonl" ]
+    include: [ "${env:HOME}/.config/enforcer/governor/receipts.jsonl" ]
     # The record is append-only and must never be consumed or rotated by the
     # collector: it is the local half of the evidence chain and the governor's
     # own verify() reads it. Tail it, never own it.
@@ -63,7 +68,7 @@ receivers:
 processors:
   # Batching is correct for telemetry and would be wrong for the evidence
   # chain. These receipts are a COPY for observability; the authoritative ones
-  # ship to the control plane over gRPC with synchronous validation. If this
+  # ship to the control plane as OTLP/JSON over HTTPS (fetch) with synchronous validation. If this
   # pipeline drops a line, the record is still intact on disk and on the
   # server — which is exactly why receipts may not depend on this path.
   batch:
@@ -76,7 +81,7 @@ processors:
   attributes/identify:
     actions:
       - key: service.name
-        value: enforcer-governor
+        value: "enforcer_governor"
         action: upsert
       - key: governed.source
         from_attribute: source
@@ -95,7 +100,9 @@ processors:
         action: delete
 
 exporters:
-  # The designed path: Kafka you already run, then a consumer into Postgres.
+  # The designed path: Kafka you already run. Add TLS and SASL under this
+  # exporter (`tls:` and `auth: sasl:`) before pointing it at a shared broker;
+  # as written it connects in plaintext, which is for a local broker only, then a consumer into Postgres.
   # Telemetry is high-volume and drop-tolerant, which is what Kafka is for —
   # unlike receipts, which need synchronous chain validation and go direct.
   kafka/telemetry:
@@ -105,7 +112,9 @@ exporters:
     producer:
       compression: snappy
 
-  # For getting started before Kafka is wired, and for proving the pipeline.
+  # Not in any pipeline by default: it prints receipts, including `operator`
+  # (an email), to stdout. To prove the pipeline, add `debug` to a pipeline's
+  # exporters temporarily.
   debug:
     verbosity: normal
 
@@ -122,7 +131,7 @@ service:
     logs/verdicts:
       receivers: [filelog/receipts]
       processors: [attributes/identify, attributes/trim, batch]
-      exporters: [kafka/telemetry, debug]
+      exporters: [kafka/telemetry]
   telemetry:
     logs:
       level: warn
