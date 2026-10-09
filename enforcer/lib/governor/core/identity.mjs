@@ -11,7 +11,8 @@
 // it was fetched with (credentialId()): sign out, or sign in as someone else,
 // and it stops counting at once rather than naming the previous person until
 // the next refresh. An explicit `operator` setting always wins over it.
-import { hookFetch } from './http.mjs';
+// Lazy: only a refresh fetches, and a hook deciding a tool call never refreshes.
+const hookFetch = async (...a) => (await import('./http.mjs')).hookFetch(...a);
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { DIR, privateDir, FILE_MODE } from './store.mjs';

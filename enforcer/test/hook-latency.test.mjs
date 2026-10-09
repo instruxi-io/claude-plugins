@@ -72,7 +72,9 @@ const decisionLines = (stderr) =>
     .filter((l) => l.startsWith('enforcer-governor:decision'))
     .join('\n');
 
-test('pre-tool-use with decisioning off does not load the deferred modules', { skip: typeof nodeModule.register !== 'function' && 'module.register needs node >= 20.6' }, () => {
+test('pre-tool-use with decisioning off does not load the deferred modules', {
+  skip: typeof nodeModule.register !== 'function' && 'module.register needs node >= 20.6',
+}, () => {
   const box = sandbox();
   try {
     const r = runPre(box, PAYLOADS.plain, ['--import', LOAD_LOG]);
@@ -80,8 +82,14 @@ test('pre-tool-use with decisioning off does not load the deferred modules', { s
       .split('\n')
       .filter((l) => l.startsWith('LOADED '))
       .map((l) => l.slice(7).trim());
-    assert.ok(loaded.some((u) => u.endsWith('/lib/governor/core/governor.mjs')), `the governor ran (loaded: ${loaded.length} modules)`);
-    assert.ok(loaded.some((u) => u.endsWith('/lib/governor/core/capability.mjs')), 'the shadow evaluation still loads the capability rules');
+    assert.ok(
+      loaded.some((u) => u.endsWith('/lib/governor/core/governor.mjs')),
+      `the governor ran (loaded: ${loaded.length} modules)`,
+    );
+    assert.ok(
+      loaded.some((u) => u.endsWith('/lib/governor/core/capability.mjs')),
+      'the shadow evaluation still loads the capability rules',
+    );
     const hit = DEFERRED.filter((m) => loaded.some((u) => u.endsWith(`/${m}`)));
     assert.deepEqual(hit, [], `deferred modules loaded on the decisioning-off path: ${hit.join(', ')}`);
   } finally {

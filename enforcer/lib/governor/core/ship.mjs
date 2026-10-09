@@ -23,9 +23,7 @@
 import { hookFetch } from './http.mjs';
 import { readFileSync, writeFileSync, openSync, closeSync, unlinkSync, statSync } from 'node:fs';
 import { createHash, randomUUID } from 'node:crypto';
-const spawn = (...a) => process.getBuiltinModule('node:child_process').spawn(...a); // lazy: only the throttled kick spawns
-import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 import { DIR, privateDir, FILE_MODE } from './store.mjs';
 import { pending, markShipped, markFailure } from './outbox.mjs';
 import { authHeaders, baseUrl, isFederated } from './credentials.mjs';
@@ -36,7 +34,6 @@ export const INGEST_PATH = '/api/v1/governance/otlp/v1/logs';
 const sha256 = (s) => createHash('sha256').update(s).digest('hex');
 const INSTALL = () => join(DIR, 'install.json');
 const LOCK = () => join(DIR, '.ship.lock');
-const KICKED = () => join(DIR, '.ship.kicked');
 
 /**
  * This machine's stable id: the chain id the server files receipts under. One
@@ -223,28 +220,5 @@ function dropLock() {
   } catch {}
 }
 
-// The shipper kick() starts when the adapter names none: the core's own, which
-// travels with the core wherever it is installed. It used to be the plugin's
-// bin/ship.mjs, reached by walking out of core/ -- see core/bin/ship.mjs.
-export const SHIPPER = join(dirname(fileURLToPath(import.meta.url)), 'bin', 'ship.mjs');
-
-/**
- * Start a detached shipper if one has not been started recently. Called from
- * hooks: it costs a stat and, at most every `everyMs`, a process spawn that the
- * hook does not wait for. `shipper` is the script to start.
- */
-export function kick(everyMs = 30_000, shipper = SHIPPER) {
-  try {
-    if (Date.now() - statSync(KICKED()).mtimeMs < everyMs) return false;
-  } catch {
-    /* never kicked */
-  }
-  try {
-    privateDir(DIR);
-    writeFileSync(KICKED(), String(Date.now()), { mode: FILE_MODE });
-    spawn(process.execPath, [shipper], { detached: true, stdio: 'ignore', env: process.env }).unref();
-    return true;
-  } catch {
-    return false;
-  }
-}
+// kick() and SHIPPER live in kick.mjs, so a hook can kick without loading this module.
+export { kick, SHIPPER } from './kick.mjs';
