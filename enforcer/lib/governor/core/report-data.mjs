@@ -3,7 +3,7 @@
 // `reason` and `summary` are never read, only counts, codes and names.
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { ruleCode } from './codes.mjs';
+import { ruleCode, isCode } from './codes.mjs';
 import { isOn, isOff } from './bool.mjs';
 
 const UNIT = { h: 3600e3, d: 86400e3 };
@@ -49,7 +49,12 @@ function readReceipts(dir) {
   return out;
 }
 
-function decisionCode(r, checksOff) {
+// The receipt's own decision record carries the machine code (codes.mjs). Read
+// it first: `rule` holds the rule's human name ("delete a directory tree"),
+// which is not a policy id, so deriving the code from it labels every
+// built-in rule `custom_rule`. The fallbacks are for receipts from before 2.9.
+export function decisionCode(r, checksOff) {
+  if (r.verdict !== 'allow' && typeof r.decision?.code === 'string' && isCode(r.decision.code)) return r.decision.code;
   if (typeof r.code === 'string') return r.code;
   if (r.verdict === 'allow') {
     if (r.unchecked) return 'spend_unchecked';

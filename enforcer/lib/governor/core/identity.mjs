@@ -12,9 +12,9 @@
 // and it stops counting at once rather than naming the previous person until
 // the next refresh. An explicit `operator` setting always wins over it.
 import { hookFetch } from './http.mjs';
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { DIR } from './store.mjs';
+import { DIR, privateDir, FILE_MODE } from './store.mjs';
 import { authHeaders, baseUrl, credentialId } from './credentials.mjs';
 
 const FILE = () => join(DIR, 'identity.json');
@@ -58,8 +58,8 @@ export async function refreshIdentity(cfg = {}, { fetchImpl = hookFetch, now = D
     if (!res.ok) return { ok: false, detail: `HTTP ${res.status}` };
     const me = (await res.json())?.data || {};
     const email = me.person?.primary_email || me.email || '';
-    mkdirSync(DIR, { recursive: true });
-    writeFileSync(FILE(), JSON.stringify({ credential: id, email, account_id: me.account_id || '', fetched_at: now() }));
+    privateDir(DIR);
+    writeFileSync(FILE(), JSON.stringify({ credential: id, email, account_id: me.account_id || '', fetched_at: now() }), { mode: FILE_MODE });
     return { ok: true, email };
   } catch (e) {
     const detail = e?.name === 'TimeoutError' || e?.name === 'AbortError' ? `no answer within ${timeoutMs}ms` : 'Enforcer could not be reached';

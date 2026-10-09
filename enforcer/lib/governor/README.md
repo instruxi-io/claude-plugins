@@ -103,7 +103,7 @@ deny contains "ask: publishing from an agent needs a person to confirm" if {
 
 **Rate limits, not just totals.** The incidents that cost real money are rate incidents. Dollars per minute, new agents per minute, and errors per minute are each watched and each *ask* rather than block, and ask once, so an overnight run waits for you instead of dying or nagging.
 
-**A record an audit can read.** `node bin/enforcer governor verify` walks the file and names the first line that does not add up. Every receipt carries who the agent acted for, what it tried, which model answered, and which rule decided.
+**A record an audit can read.** `node bin/enforcer governor verify` walks the file and names the first line that does not add up. It also fails when lines are missing from the end, or when `receipts.jsonl` is gone while `state.json` still names a head. What it cannot see from this machine alone is a file truncated together with `state.json` deleted: everything it checks against lives here. The receipts shipped to the server are the only external anchor. Every receipt carries who the agent acted for, what it tried, which model answered, and which rule decided.
 
 ## Commands
 
@@ -149,7 +149,7 @@ Nothing waits on the network to decide: the settings are fetched at session star
 
 ## What leaves your machine
 
-Nothing, until you sign in. The governor decides and records locally, and a machine that has never signed in (`/enforcer:login`) makes no network calls at all.
+Nothing, until you sign in. The governor decides and records locally, and a machine that has never signed in (`/enforcer:login`) makes no network calls at all: the session-start version and tool check skips its health fetch when there is no credential. Everything the governor writes (`~/.config/enforcer` and the governor directory 0700, its files 0600) is private to you, and existing files are tightened on start.
 
 Once you sign in to an Enforcer workspace, these can leave, each under a switch:
 
@@ -158,7 +158,7 @@ Once you sign in to an Enforcer workspace, these can leave, each under a switch:
 | **Decision receipts**, the verdict, the rule that fired, the tool name, the model, token counts, a project name derived from the working directory, the `operator` you set, and which harness decided (`claude-code`) with its adapter version. Never the command text, never file contents, never prompts. | shipped in the background after each session, to your workspace's governance API | `shipOn` (default on) |
 | **A session's project**, at session start, the session id the receipts use (`claude:` + 8 characters) and the project name derived from the working directory, so the session is filed under its project even if it never makes a governed decision. Nothing else. | once per session start, one short request, never retried | `shipOn` (default on) |
 | **Your organisation's policy answers**, for an action a local rule matched, the governor asks your workspace whether to allow, ask or deny. The request names the rule, not the command. | only when a rule matches | `policyOn` (default on) |
-| **Claude Code's own telemetry**, cost, tokens and tool-use metrics from Claude Code's built-in OpenTelemetry exporter. Prompt text is not exported. | only if you turn it on | `telemetry on` (default off; `enforcer governor telemetry on`) |
+| **Claude Code's own telemetry**, cost, tokens and tool-use metrics from Claude Code's built-in OpenTelemetry exporter. Prompt text and tool parameters are not exported: `telemetry on` removes `OTEL_LOG_USER_PROMPTS` and `OTEL_LOG_TOOL_DETAILS` from Claude Code's settings if they are there, and `telemetry status` warns when they are. | only if you turn it on | `telemetry on` (default off; `enforcer governor telemetry on`) |
 
 Everything goes to the workspace you signed in to and nowhere else. `/enforcer:login logout` stops all of them on this machine; what has already been sent stays in your workspace's records, which is the point of a record.
 

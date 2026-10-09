@@ -25,8 +25,10 @@ import {
   unlinkSync,
   existsSync,
   statSync,
+  chmodSync,
+  readdirSync,
 } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { join, resolve, relative, isAbsolute } from 'node:path';
 import { createHash, randomBytes } from 'node:crypto';
 import { makeState } from './policy.mjs';
 import { normalizeBooleans, isOn } from './bool.mjs';
@@ -49,6 +51,58 @@ export const RECEIPTS = join(DIR, 'receipts.jsonl');
 const STATE = join(DIR, 'state.json');
 const CONFIG = join(DIR, 'config.json');
 const LOCK = join(DIR, '.lock');
+
+// ── Private by default ──────────────────────────────────────────────────────
+// Receipts, config, the identity cache (email and account id), the outbox
+// watermark and the per-session scratch files are this user's alone. Under a
+// common umask of 022 a plain mkdir/write leaves them world-readable, so every
+// directory here is created 0700 and every file 0600, and a process tightens
+// what an older version left behind once, on start. chmod is best-effort: on
+// Windows it changes nothing and that is fine.
+export const DIR_MODE = 0o700;
+export const FILE_MODE = 0o600;
+/** mkdir -p with mode 0700, then chmod: the umask narrows the create mode, and an existing dir keeps its old one. */
+export function privateDir(dir) {
+  mkdirSync(dir, { recursive: true, mode: DIR_MODE });
+  try {
+    chmodSync(dir, DIR_MODE);
+  } catch {}
+}
+const tighten = (p) => {
+  const m = statSync(p).mode & 0o777;
+  if (m & 0o077) chmodSync(p, m & 0o700);
+};
+const inside = (child, parent) => {
+  const r = relative(parent, child);
+  return r === '' || (!!r && !r.startsWith('..') && !isAbsolute(r));
+};
+/**
+ * Take group and other bits off the governor's directories and the files
+ * directly in them (0755 becomes 0700, 0644 becomes 0600). Owner bits are left
+ * as they are: a directory its owner made 000 stays 000. Never throws.
+ */
+export function hardenPermissions(dirs = [DIR, FIXED_DIR]) {
+  if (process.platform === 'win32') return;
+  const seen = new Set();
+  for (const d of dirs) {
+    if (seen.has(d)) continue;
+    seen.add(d);
+    try {
+      if (!existsSync(d)) continue;
+      // The enforcer config home above the governor dir holds sessions and
+      // credentials too: it is private as well.
+      if (inside(d, CONFIG_HOME) && existsSync(CONFIG_HOME)) tighten(CONFIG_HOME);
+      tighten(d);
+      for (const ent of readdirSync(d, { withFileTypes: true })) {
+        if (!ent.isFile()) continue;
+        try {
+          tighten(join(d, ent.name));
+        } catch {}
+      }
+    } catch {}
+  }
+}
+hardenPermissions();
 
 const sha256 = (s) => createHash('sha256').update(s).digest('hex');
 const readJSON = (f, fallback) => {
@@ -103,7 +157,7 @@ function acquire() {
   const token = randomBytes(8).toString('hex');
   for (;;) {
     try {
-      const fd = openSync(LOCK, 'wx');
+      const fd = openSync(LOCK, 'wx', FILE_MODE);
       try {
         writeSync(fd, `${process.pid}:${token}`);
       } finally {
@@ -143,7 +197,7 @@ const release = () => {
 // crashes the hook is worse than one that fails to record.
 export function withLock(fn) {
   try {
-    mkdirSync(DIR, { recursive: true });
+    privateDir(DIR);
   } catch {}
   if (!acquire()) return { ok: false, value: undefined };
   try {
@@ -270,8 +324,8 @@ function unreadableConfig(why) {
 }
 export const saveConfig = (c) => {
   try {
-    mkdirSync(DIR, { recursive: true });
-    writeFileSync(CONFIG, JSON.stringify(c, null, 2));
+    privateDir(DIR);
+    writeFileSync(CONFIG, JSON.stringify(c, null, 2), { mode: FILE_MODE });
   } catch {}
 };
 
@@ -282,7 +336,7 @@ export function writeReceipt(entry, hash) {
   // A line with no hash must say so (`chained: false`, the blind path): verify()
   // accepts those as recorded-but-unchained and rejects any other hashless line.
   try {
-    appendFileSync(RECEIPTS, JSON.stringify(hash ? { ...entry, hash } : entry) + '\n');
+    appendFileSync(RECEIPTS, JSON.stringify(hash ? { ...entry, hash } : entry) + '\n', { mode: FILE_MODE });
     return true;
   } catch {
     return false;
@@ -306,8 +360,20 @@ export function commit(state, entry, hash, before = state.prevHash) {
 // that does not add up, so an edit or a deletion anywhere is named -- and
 // still counts every line, so "line 3 of N" says how much of the record
 // sits after the break.
+//
+// What this cannot see: a file truncated AND its state.json deleted (or both
+// rewritten together) chains cleanly from genesis, because everything it is
+// checked against lives on this machine. The receipts shipped to the server
+// are the only copy outside it, and so the only external anchor.
 export function verify(file = RECEIPTS, { state } = /** @type {any} */ ({})) {
-  if (!existsSync(file)) return { ok: true, receipts: 0, brokeAt: 0 };
+  if (!existsSync(file)) {
+    // No file is a fresh install only when state never recorded a head.
+    const st = state ?? (file === RECEIPTS ? readJSON(STATE, null) : null);
+    if (st && typeof st.prevHash === 'string' && st.prevHash && st.prevHash !== 'genesis') {
+      return { ok: false, receipts: 0, brokeAt: 0, missing: true, head: st.prevHash };
+    }
+    return { ok: true, receipts: 0, brokeAt: 0 };
+  }
   let prev = 'genesis',
     n = 0,
     legacy = 0,

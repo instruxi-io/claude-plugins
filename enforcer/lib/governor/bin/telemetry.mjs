@@ -15,6 +15,7 @@ try {
     const r = enable(cfg);
     out(`Telemetry on. Claude Code will export its metrics and events to ${r.endpoint}.`);
     out(`Authenticated with your Enforcer sign-in through otelHeadersHelper (${r.helper}); no credential is written to settings.`);
+    if (r.removed.length) out(`Removed ${r.removed.join(' and ')} from ${r.settings}: they would export prompt text or tool parameters.`);
     out('Prompt text is not exported. Restart Claude Code to start exporting.');
     if (!isFederated()) out('You are not signed in, so exports will be refused until you run /enforcer-governor:login.');
   } else if (cmd === 'off') {
@@ -23,6 +24,10 @@ try {
   } else if (cmd === 'status') {
     const t = status();
     const q = stats();
+    if (t.sensitive?.length)
+      out(
+        `Warning: ${t.sensitive.join(' and ')} ${t.sensitive.length > 1 ? 'are' : 'is'} set in Claude Code settings, so prompt text or tool parameters are exported. Run /enforcer-governor:telemetry on to remove ${t.sensitive.length > 1 ? 'them' : 'it'}.`,
+      );
     out(t.on ? `Claude Code telemetry: on, exporting to ${t.endpoint}.` : 'Claude Code telemetry: off. Turn it on with /enforcer-governor:telemetry on.');
     out(
       cfg.shipOn === false

@@ -22,7 +22,7 @@
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { DIR } from '../../core/store.mjs';
+import { DIR, FILE_MODE } from '../../core/store.mjs';
 import { priceOf } from '../../core/policy.mjs';
 import { readUsage } from './usage.mjs';
 
@@ -42,7 +42,7 @@ export function recordHarnessCost(sessionId, cost) {
   const usd = cost && typeof cost.total_cost_usd === 'number' ? cost.total_cost_usd : null;
   if (usd === null || !Number.isFinite(usd) || usd < 0) return false;
   try {
-    writeFileSync(file(sessionId), JSON.stringify({ usd, at: Date.now() }));
+    writeFileSync(file(sessionId), JSON.stringify({ usd, at: Date.now() }), { mode: FILE_MODE });
     return true;
   } catch {
     return false;

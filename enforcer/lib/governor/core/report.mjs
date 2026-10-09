@@ -34,7 +34,15 @@ const usd = (t, m) => '$' + dollarsForTokens(t, priceOf(m, cfg.model).in).toFixe
 
 if (cmd === 'verify') {
   const v = verify();
-  if (!v.receipts) console.log('No decisions recorded yet.');
+  if (v.missing)
+    console.log(
+      `The record does NOT check out. ${RECEIPTS} is missing, but the governor's state still names a head (${v.head.slice(0, 12)}...), so receipts were written and the file has been deleted or moved.\nThe receipts shipped to the server are the only copy outside this machine.`,
+    );
+  else if (v.headMismatch)
+    console.log(
+      `The record does NOT check out. All ${v.receipts} lines chain, but the last one is not the head the governor last recorded: lines are missing from the end.\nFile: ${RECEIPTS}`,
+    );
+  else if (!v.receipts) console.log('No decisions recorded yet.');
   else if (v.ok)
     console.log(
       `All ${v.receipts} records check out.${v.unverifiable ? ` (${v.unverifiable} carry no hash and could not be chain-checked: either written before hashes were stored, or decided while the governor could not read its own chain.)` : ''}`,
@@ -217,4 +225,6 @@ if (agents.some((a) => a.status === 'grounded')) {
 const burn = burnRate(state);
 if (burn > 0) console.log(`\nRight now: $${burn.toFixed(2)}/min across every agent.`);
 const v = verify();
-console.log(`\nRecord: ${v.receipts} decisions, ${v.ok ? 'all check out' : `BROKEN at line ${v.brokeAt}`}.`);
+console.log(
+  `\nRecord: ${v.receipts} decisions, ${v.ok ? 'all check out' : v.missing ? 'BROKEN: the receipt file is missing' : `BROKEN at line ${v.brokeAt}`}.`,
+);

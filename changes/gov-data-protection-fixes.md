@@ -1,0 +1,1 @@
+Data minimization: `telemetry on` removes OTEL_LOG_USER_PROMPTS and OTEL_LOG_TOOL_DETAILS (status warns) and keeps the settings file mode; governor dirs are 0700 and files 0600; verify fails when receipts.jsonl is missing but state has a head; no health fetch without a credential; the report labels built-in rules by their code.
