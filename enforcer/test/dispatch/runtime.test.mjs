@@ -213,7 +213,15 @@ test('pids.json orphans from a dead dispatcher are reaped', async () => {
   const sh = script(state, 'orphan', 'sleep 60');
   const p = spawnWorker([sh], { cwd: state, logPath: join(state, 'o.log') });
   await new Promise((r) => setTimeout(r, 100));
-  writeFileSync(join(state, 'pids.json'), JSON.stringify({ dispatcher: 2147483000, host: (await import('node:os')).hostname(), workers: { x: p.pid } }));
+  writeFileSync(
+    join(state, 'pids.json'),
+    JSON.stringify({
+      dispatcher: 2147483000,
+      host: (await import('node:os')).hostname(),
+      workers: { x: p.pid },
+      meta: { x: { start: p.start, nonce: p.nonce } },
+    }),
+  );
   const d = new Dispatcher(new FakeAPI([]), mkArgs(state), () => {});
   assert.deepEqual(await d.reapOrphans(), ['x']);
   // the worker handle is unref'd, so hold the loop open until its exit is delivered (macOS reports the group gone before the zombie is reaped)

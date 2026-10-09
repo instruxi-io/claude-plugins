@@ -85,6 +85,18 @@ and, for each ready node, up to `--workers` at once:
   - 5 usage error (bad arguments);
   - 6 finished, but failed or denied nodes remain.
   A stale stop file is removed at startup; `pids.json` is written atomically and removed on exit.
+  Each worker gets a launch nonce (`ENFORCER_LAUNCH_NONCE`) in its environment; `pids.json` records it with the
+  worker's start time. At startup an orphan from a dead dispatcher is killed only when both still match, so a stale
+  file naming a reused pid (a login shell, a tmux session) kills nothing; a pid that cannot be verified is left
+  running and logged. After a worker's group is killed, any process still carrying its nonce (one that left the
+  group with `setsid`) is killed too, where `/proc` exists (Linux); on macOS and Windows such a process survives.
+- **Merge nodes land only this graph's pull requests.** Before claiming, the dispatcher reads the PR with
+  `gh pr view` and refuses (`REFUSE <key>: will not land ...`) unless it is in the node's `data.repo` (or a repo
+  named with `--merge-allow owner/repo`, repeatable, or `--merge-allow-file <path>`, one per line), its head is a
+  branch of that repo (not a fork), and the head is `graph/<key>` for the merge node's key or another key in this
+  graph. The lander runs with the worker environment allowlist, not the dispatcher's full environment.
+- Node keys and `data.repo` are validated (`^[A-Za-z0-9._-]+$`, not `.` or `..`) by every function that turns them
+  into a path (`worktreeFor`, the agent MCP config path, preflight's repo check), not only by the launcher.
 
 ### Headless workers: the graph tools are refused in `claude -p` (2026-10-02)
 
