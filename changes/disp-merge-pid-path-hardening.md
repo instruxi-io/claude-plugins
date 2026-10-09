@@ -1,1 +1,0 @@
-A merge node lands only a pull request in its own data.repo (or --merge-allow) whose head is graph/<key of this graph>, the lander gets the worker env allowlist, orphan reaping verifies start time and launch nonce before killing, and node keys and repos are validated in worktreeFor, mcpConfigPath and preflight.
