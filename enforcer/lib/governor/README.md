@@ -258,6 +258,8 @@ Seven hooks, no daemon, no port, nothing listening. State lives in `~/.config/en
 
 That split is the architecture, and the two halves fail in opposite directions on purpose. **Spend fails open**: if the state is unreadable the hook allows the action and says in the reason line that it did not check, because a governor that blocks real work over a missing file of its own has failed at something more important than enforcing. **Capability fails closed**, because it can afford to, the rules are patterns matched against the action text and need no state, so an unreadable state directory does not reach them. A refusal decided that way is still written to the record, deliberately without a hash: there is no readable chain tail to hash against, and `verify` counts an unhashed line as unverifiable rather than as a break. Recording nothing would hide a real refusal, and forging a link would cry tampering on an honest file.
 
+The same direction holds for the configuration. A missing `config.json` is a fresh install, so the defaults apply and decisioning is off; a `config.json` that exists but cannot be read or parsed keeps `rulesOn` on (one stderr notice per process) while spend keeps failing open, and the `governor.home` rule asks before `chmod`, `mv`, `rm` or `ln` against the governor's directory. The organisation floor's cache, `managed-settings.json`, sits at the fixed per-user `~/.config/enforcer/governor/` whatever `GOVERNOR_HOME` or `ENFORCER_CONFIG_HOME` say, and a different `ENFORCER_API_KEY` keeps the last floor until a refresh with the new credential succeeds.
+
 The transcript is read forward from where the last call stopped, so the cost of checking does not grow with the length of your session.
 
 ## Run the tests
