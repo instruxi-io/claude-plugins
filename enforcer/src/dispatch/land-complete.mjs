@@ -3,12 +3,14 @@
 import { spawnSync } from 'node:child_process';
 import { clip } from './util.mjs';
 import { runEvidence } from '../evidence-run.mjs';
+import { allowedCommand } from '../acceptance-allowlist.mjs';
+// Which lines run is decided by the one shared allow list (src/acceptance-allowlist.mjs).
+export { ACCEPTANCE_SHAPES } from '../acceptance-allowlist.mjs';
 
 export const LAND_CODES = { 0: 'merged', 2: 'CI failed', 3: 'conflict with the base', 4: 'timed out', 5: 'usage or gh error', 7: 'CI unavailable' };
-export const ACCEPT_RUNNERS = ['node', 'bash', 'grep', 'ls'];
 
-/** The node's `<command> prints ...` acceptance lines, read-only runners only; PR (gh/git) lines are skipped. */
-export function acceptanceCommands(node) {
+/** The node's `<command> prints ...` acceptance lines that match the shared allow list; PR (gh/git) lines are skipped. */
+export function acceptanceCommands(node, cwd = process.cwd()) {
   const out = [];
   for (const line of (node.data || {}).acceptance || []) {
     if (typeof line !== 'string' || !line.includes(' prints ')) continue;
@@ -18,17 +20,16 @@ export function acceptanceCommands(node) {
       .replace(/^`+|`+$/g, '')
       .trim();
     if (/\bgh\b|\bgit\b/.test(cmd)) continue;
-    const rest = cmd.replace(/^cd\s+\S+\s*&&\s*/, '');
-    if (!ACCEPT_RUNNERS.includes(rest.split(' ')[0])) continue;
+    if (allowedCommand(cmd, { root: cwd }).skip) continue;
     out.push(cmd);
   }
   return out;
 }
 
-/** Run each acceptance command in cwd with the harness env cleared; one {kind:'command'} record each.
- *  The rules (Go test flags, cd prefix, one retry on a collision, head+tail output) are `enforcer evidence run`'s. */
+/** Run each allowed acceptance command in cwd (no shell, minimal env, temporary HOME); one {kind:'command'} record each.
+ *  The rules (allow list, Go test flags, one retry on a collision, head+tail output) are `enforcer evidence run`'s. */
 export function landingEvidence(node, cwd, { run = spawnSync, env = process.env } = {}) {
-  return runEvidence(node, { cwd, env, run, runners: ACCEPT_RUNNERS, graph: node.graph_id ?? '' }).items;
+  return runEvidence(node, { cwd, env, run, graph: node.graph_id ?? '' }).items;
 }
 
 /** The completion body for a landed (or not) PR; `evidence` is the acceptance output, attached on success. */

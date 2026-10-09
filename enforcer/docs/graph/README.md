@@ -254,6 +254,44 @@ Every hook fails open: no config, no key, API down, or malformed input means
 exit 0 and no output. The graph is a coordination service; it must never be
 the reason a session stalls.
 
+### Which acceptance lines run
+
+A node's acceptance lines come from the graph, and graph content can be
+written by other people. The report hook (`attach.mjs`), `enforcer evidence
+run`, `enforcer plan check` and the dispatcher's landing completion all run
+those lines, so a line runs only when it fully matches one shape in
+`ACCEPTANCE_SHAPES` (`src/acceptance-allowlist.mjs`), the one list every
+caller uses:
+
+| Shape | Form |
+| --- | --- |
+| node --test | `node --test <path under the repo>...` |
+| node script | `node <script .js/.mjs/.cjs under the repo> [plain args]` |
+| npm test | `npm [--prefix <dir>] test`, `npm [--prefix <dir>] run <test, lint, format:check, typecheck>` |
+| go test | `go [-C <dir>] test <./pkg/...> [-v -race -short -cover -failfast -json -count -p -run -tags -timeout]` |
+| go vet | `go [-C <dir>] vet <./pkg/...>` |
+| ls, cat, head, tail, wc, test | a few named flags and relative paths |
+| grep | `grep [-cnilEFwvxrRhHqo] <literal> <relative path>...` |
+| git grep | `git grep [-nciElwvFIhq] <literal> [--] [relative path]...` |
+| git merge-base | `git merge-base --is-ancestor <sha> <ref>` |
+| gh pr view | `gh pr view <n> [-R <owner/repo>] [--json <fields>]` |
+
+Every argument is checked: no shell is used (the line is split into argv and
+spawned directly), no shell metacharacter (`; | & < > $` and backtick,
+parentheses, braces, newline, double quote, backslash) may appear outside a
+token wholly in single quotes (a single-quoted token is a literal, such as a
+grep pattern or a `-run` regex), every path must resolve inside the checkout
+(symlinks followed), and `cd` is never allowed: a line names its directory
+with `npm --prefix` or `go -C`. A trailing `2>&1` is dropped, since both
+streams are captured anyway. An allowed line runs with a minimal environment
+(PATH, locale, the Go cache locations) and a temporary HOME that is removed
+afterwards, so no credential under `~/.config` is readable.
+
+Everything else is reported as `not run: not an allowed command shape` and
+the judge reads the worker's own captured output instead. The cases that must
+never run, and ten real acceptance lines that must still run, are in
+`test/acceptance-allowlist.test.mjs`.
+
 ## Files
 
 Working on this code (agents and humans): start from [WORKER_BRIEF.md](WORKER_BRIEF.md).

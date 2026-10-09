@@ -15,6 +15,8 @@ import { OUTPUT_CLIP } from '../clip.mjs';
 import { apiFetch } from '../../../lib/api/client.mjs';
 import { authHeaders } from '../../credentials.mjs';
 import { runEvidence } from '../../evidence-run.mjs';
+// Which lines run is decided by the one shared allow list (src/acceptance-allowlist.mjs), through runEvidence.
+export { ACCEPTANCE_SHAPES } from '../../acceptance-allowlist.mjs';
 import { findConfig, isGraphTool, isObj, actorTranscript, transcriptUsage, typedUsage } from './common.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -129,7 +131,6 @@ export function evidenceGaps(hints, evidence) {
   return gaps;
 }
 
-const ACCEPT_RUNNERS = ['node', 'python3', 'bash', 'sh', 'grep', 'ls', 'npm', 'cat', 'test', 'wc', 'head', 'tail', 'gh'];
 // The whole acceptance pass must fit inside hooks.json's PreToolUse timeout (30 s) with room for the
 // PR check and uploads after it: Claude Code kills a hook that overruns and the report then goes out
 // WITHOUT the evidence this hook was about to attach (2026-10-07: three zero-evidence reports, each
@@ -139,7 +140,7 @@ const ACCEPT_BUDGET_MS = 15_000;
 const ACCEPT_MIN_MS = 500;
 // Cheap read-only commands run first so a slow suite never starves the one-second `ls` the judge asks for.
 const FAST = /^\s*(ls|cat|grep|wc|head|tail|test|stat|git\s+(log|status|rev-parse|tag|diff)|gh\s+(pr|run)\s+(view|list|checks))\b/;
-const NOTE_REASONS = /not read-only|not a runnable command/;
+const NOTE_REASONS = /not an allowed command shape/;
 
 /** Run the claimed node's acceptance lines in the worktree within a time budget: command records, a note per
  *  refused write, and a note per line the budget did not reach. Never throws. */
@@ -168,7 +169,6 @@ export function acceptanceRecords(inp, run, deps = {}) {
         cwd,
         graph: run.graph_id || '',
         only: i,
-        runners: ACCEPT_RUNNERS,
         timeoutMs: Math.min(lineMs, left),
         retryDelayMs: 0,
         run: deps.acceptanceRun,

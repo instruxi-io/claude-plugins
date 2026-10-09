@@ -164,6 +164,7 @@ function freshAcc(acceptance) {
   const cwd = join(root, 'wt');
   mkdirSync(cwd);
   writeFileSync(join(cwd, 'f.txt'), 'hello\n');
+  writeFileSync(join(cwd, 'sleep.mjs'), 'setTimeout(() => {}, 5000);\n');
   return { sid, cwd };
 }
 
@@ -182,15 +183,15 @@ test('report attaches the output of each acceptance command', async () => {
 });
 
 test('a timed-out acceptance command becomes a note, not a failed command record', async () => {
-  const { sid, cwd } = freshAcc(['node -e "setTimeout(()=>{},5000)" prints nothing']);
+  const { sid, cwd } = freshAcc(['node sleep.mjs prints nothing']);
   const out = await attachEvidence({ ...rep(sid), cwd }, { acceptanceTimeoutMs: 300 });
   const ev = ui(out).evidence;
-  assert.ok(!ev.some((e) => (e.cmd || '').startsWith('node -e')), 'no exit-124 command record');
+  assert.ok(!ev.some((e) => (e.cmd || '').startsWith('node sleep')), 'no exit-124 command record');
   assert.match(ev.find((e) => e.kind === 'note').text, /did not finish within the report hook/);
 });
 
 test('acceptance lines past the time budget are noted, not run; cheap lines run first', async () => {
-  const slow = 'node -e "setTimeout(()=>{},5000)" prints nothing';
+  const slow = 'node sleep.mjs prints nothing';
   const { sid, cwd } = freshAcc([slow, slow, 'ls f.txt prints the file']);
   const out = await attachEvidence({ ...rep(sid), cwd }, { acceptanceTimeoutMs: 300, acceptanceBudgetMs: 700 });
   const ev = ui(out).evidence;
@@ -206,8 +207,8 @@ test('a write command in an acceptance line is skipped with a note', async () =>
   const { sid, cwd } = freshAcc(['rm f.txt prints nothing', 'echo x > g.txt prints nothing', 'git push prints done']);
   const out = await attachEvidence({ ...rep(sid), cwd }, {});
   const ev = ui(out).evidence;
-  assert.equal(ev.filter((e) => e.kind === 'note').length, 2);
-  assert.match(ev.find((e) => e.kind === 'note').text, /was not run/);
+  assert.equal(ev.filter((e) => e.kind === 'note').length, 3);
+  assert.match(ev.find((e) => e.kind === 'note').text, /was not run \(not run: not an allowed command shape/);
   assert.ok(!ev.some((e) => e.kind === 'command'));
   assert.equal(existsSync(join(cwd, 'f.txt')), true);
   assert.equal(existsSync(join(cwd, 'g.txt')), false);

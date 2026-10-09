@@ -3,28 +3,29 @@
 //
 // One place for the rules every completion path (a worker before graph_report, the dispatcher's landing completion,
 // a coordinator, `plan check`) re-learned the hard way before the judge accepted their evidence:
-//   - run each `<command> prints|exits ...` acceptance line with the harness environment cleared and a timeout;
+//   - run each `<command> prints|exits ...` acceptance line that fully matches a shape in src/acceptance-allowlist.mjs,
+//     without a shell, with a minimal environment, a temporary HOME and a timeout; any other line is not run;
 //   - the judge reads the evidence, not the repository, so quote the literal output: head and tail of the output, and
 //     the line holding a quoted literal when the clip would drop it;
 //   - Go tests need `-tags integration -run <Name> -v` so `--- PASS: <Name>` appears;
 //   - substitute `<graph>` (and `<test db>`, `<key>`, `<node-id>`); a line with any other placeholder is skipped;
-//   - run from the directory the line implies (`cd enforcer/test && ...` sets the cwd, relative to --cwd);
+//   - run from --cwd (the checkout); `cd` is never allowed, a line names its directory (`npm --prefix`, `go -C`);
 //   - retry a suite once when it collides with a concurrent run (port in use, locked database);
-//   - skip the PR (gh, git) and prose lines: those are proved by the delivery step, not by a command here.
+//   - skip the PR (gh) and prose lines: those are proved by the delivery step, not by a command here.
 // Output: one JSON evidence item per command run ({kind:'command', cmd, exit, output, line_index}), skipped lines on
 // stderr, then `literals found: <k>/<n>`. Exit 0 when every quoted literal was found, 1 when one was not, 2 on usage or
 // a node that cannot be loaded. `line_index` is the 0-based position in the node's acceptance list.
-import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { resolve } from 'node:path';
+import { ACCEPTANCE_SHAPES, allowedCommand, goTestArgv, spawnAllowed } from './acceptance-allowlist.mjs';
 import { parseLine } from './plan-check.mjs';
 import { headers, allNodes } from './preflight.mjs';
 import { resolveConfig } from './config.mjs';
 
-export const DEFAULT_RUNNERS = ['node', 'bash', 'sh', 'grep', 'ls', 'npm', 'npx', 'cat', 'test', 'wc', 'head', 'tail', 'go', 'make'];
+/** The shared allow list (src/acceptance-allowlist.mjs): the only commands an acceptance line can run as. */
+export { ACCEPTANCE_SHAPES };
 export const COLLISION =
   /EADDRINUSE|address already in use|database is locked|SQLITE_BUSY|deadlock detected|could not obtain lock|resource temporarily unavailable|text file busy|ETXTBSY|port is already allocated|being accessed by other users/i;
-const CLEAN_ENV = ['PATH', 'HOME', 'LANG', 'TMPDIR', 'GOPATH', 'GOCACHE', 'GOMODCACHE', 'GOFLAGS', 'GOROOT'];
 
 /** The node's acceptance lines as an array of strings. */
 export const acceptanceOf = (node) => {
@@ -57,8 +58,9 @@ export function substitute(cmd, { graph, nodeKey, nodeId, testDb }) {
   return skip ? { skip } : { cmd: out };
 }
 
-/** Prepare one acceptance line: {cmd, cwd, literals, exit} to run, or {skip}. Pure. */
-export function prepareLine(line, { cwd, graph, nodeKey, nodeId, testDb, runners = DEFAULT_RUNNERS }) {
+/** Prepare one acceptance line: {cmd, argv, cwd, literals, exit} to run, or {skip}. Pure. `cwd` is the checkout every
+ *  path in the line must resolve inside. */
+export function prepareLine(line, { cwd, graph, nodeKey, nodeId, testDb }) {
   let p = parseLine(line);
   if (!p) {
     // `<command> prints the file` quotes nothing, but the command's output is still the evidence
@@ -71,24 +73,10 @@ export function prepareLine(line, { cwd, graph, nodeKey, nodeId, testDb, runners
   if (sub.skip) return { skip: sub.skip };
   cmd = sub.cmd;
   if (/(^|[\s;&|(])(\S*bin\/enforcer|enforcer)\s+evidence\s+run\b/.test(cmd)) return { skip: 'would run itself' };
-  if (/(^|[\s;&|(])(gh|git)\s/.test(cmd) || /\bpull request\b/i.test(line)) return { skip: 'PR line: proved by the delivery step' };
-  let dir = cwd;
-  const cd = /^cd\s+(\S+)\s*&&\s*(.*)$/s.exec(cmd);
-  if (cd) {
-    dir = resolve(cwd, cd[1].replace(/^['"]|['"]$/g, ''));
-    cmd = cd[2].trim();
-  }
-  const parts = cmd
-    .split(/\s*(?:&&|;|\|\|?)\s*/)
-    .map((s) => s.trim())
-    .filter(Boolean);
-  for (const part of parts) {
-    const w = part.split(/\s+/)[0];
-    if (w === 'cd') continue;
-    if (!runners.includes(w)) return { skip: `not a runnable command: ${w}` };
-  }
-  if (/(^|[\s;&|(])(rm|mv|curl|tee)\s|\bsed\s+-[a-zA-Z]*i|(^|\s)>{1,2}\s*(?!\/dev\/null|&)\S/.test(cmd)) return { skip: 'not read-only' };
-  return { cmd: goTestFlags(cmd, p.literals), cwd: dir, literals: p.literals, exit: p.exit };
+  if (/(^|[\s;&|(])gh\s/.test(cmd) || /\bpull request\b/i.test(line)) return { skip: 'PR line: proved by the delivery step' };
+  const ok = allowedCommand(cmd, { root: cwd });
+  if (ok.skip) return { skip: ok.skip };
+  return { cmd: goTestFlags(cmd, p.literals), argv: goTestArgv(ok.argv, p.literals), cwd, literals: p.literals, exit: p.exit };
 }
 
 const sleep = (ms) => {
@@ -109,30 +97,17 @@ export function clipEvidence(out, literals = []) {
   return clipped;
 }
 
-/** Run a prepared line with the harness env cleared; retry once on a collision. */
-export function runPrepared(p, { env = process.env, timeoutMs = 600000, retryDelayMs = 2000, run = spawnSync } = {}) {
-  const clean = Object.fromEntries(Object.entries(env).filter(([k]) => CLEAN_ENV.includes(k)));
-  const once = () => {
-    const r = run('bash', ['-c', p.cmd], {
-      cwd: p.cwd,
-      env: clean,
-      stdio: ['ignore', 'pipe', 'pipe'],
-      encoding: 'utf8',
-      timeout: timeoutMs,
-      maxBuffer: 64 << 20,
-    });
-    if (r.error?.code === 'ETIMEDOUT') return { exit: 124, out: `timed out after ${Math.round(timeoutMs / 1000)} s` };
-    if (r.error) return { exit: 127, out: String(r.error.message) };
-    return { exit: r.status ?? 1, out: (r.stdout || '') + (r.stderr || '') };
-  };
+/** Run a prepared line (no shell, minimal env, temporary HOME); retry once on a collision. */
+export function runPrepared(p, { env = process.env, timeoutMs = 600000, retryDelayMs = 2000, run } = {}) {
+  const once = () => spawnAllowed(p.argv, { cwd: p.cwd, env, timeoutMs, ...(run ? { run } : {}) });
   let r = once(),
     retried = false;
-  if (r.exit !== 0 && COLLISION.test(r.out)) {
+  if (r.exit !== 0 && !r.timedOut && COLLISION.test(r.out)) {
     retried = true;
     sleep(retryDelayMs);
     r = once();
   }
-  return { ...r, retried };
+  return { exit: r.exit, out: r.out, retried };
 }
 
 /** Run a node's acceptance lines. Returns {items, skipped, found, total, retried}. */
@@ -146,7 +121,6 @@ export function runEvidence(
     timeoutMs,
     retryDelayMs,
     testDb = env.ENFORCER_TEST_DB || env.TEST_DATABASE_URL || '',
-    runners,
     run,
   } = /** @type {any} */ ({}),
 ) {
@@ -157,7 +131,7 @@ export function runEvidence(
     total = 0;
   acceptanceOf(node).forEach((line, i) => {
     if (only !== null && i !== only) return;
-    const p = prepareLine(line, { cwd, graph, nodeKey: node.key, nodeId: node.node_id ?? node.id, testDb, runners });
+    const p = prepareLine(line, { cwd, graph, nodeKey: node.key, nodeId: node.node_id ?? node.id, testDb });
     if (p.skip) {
       skipped.push({ line_index: i, reason: p.skip });
       return;

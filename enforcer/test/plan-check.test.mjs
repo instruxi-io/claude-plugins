@@ -15,7 +15,13 @@ const t = test;
 const tmpRoot = join(tmp, 'tmpdir');
 mkdirSync(tmpRoot);
 
-const say = `node -e "console.log('3 passed, 0 failed')"`;
+// acceptance lines run only in an allowed shape (no `node -e`, no `bash -c`): each probe is a script in the checkout
+const script = (name, body) => writeFileSync(join(tmp, 'apps', 'r1', name), body);
+script('say.mjs', "console.log('3 passed, 0 failed');\n");
+script('exit3.mjs', 'process.exit(3);\n');
+script('late.mjs', "setTimeout(function () { console.log('late'); }, 2500);\n");
+script('sleep.mjs', 'setTimeout(function () {}, 5000);\n');
+const say = 'node say.mjs';
 const nodes = (acc) => [
   { key: 'fx', status: 'ready', data: { repo: 'r1', acceptance: acc } },
   { key: 'other', status: 'ready', data: { repo: 'r1', acceptance: [`${say} prints 'zzz'`] } },
@@ -79,7 +85,7 @@ await t('matching literal is ok, placeholder is SKIPPED, one line each, exit 0',
   assert.match(ls[2], /^ok fx:/);
 });
 await t('exit code mismatch is a MISMATCH', async () => {
-  acceptance = ['bash -c "exit 3" exits 0'];
+  acceptance = ['node exit3.mjs exits 0'];
   const r = await run(only);
   assert.equal(r.code, 1);
   assert.match(r.out, /exit 3, expected 0/);
@@ -94,7 +100,7 @@ await t('server warnings are merged into the report', async () => {
   assert.match(r.out, /^WARN fx: \[vague_phrase\] name a command/m);
 });
 await t('results stream before the run ends', async () => {
-  acceptance = [`${say} prints \`0 failed\``, `node -e "setTimeout(function(){console.log('late')},2500)" prints \`late\``];
+  acceptance = [`${say} prints \`0 failed\``, 'node late.mjs prints `late`'];
   const started = Date.now();
   const r = await run(only);
   assert.equal(r.code, 0, r.out);
@@ -117,9 +123,9 @@ console.log('made');`,
   assert.match(r.out, /^ok fx:.*made/m);
   assert.match(r.out, /^ok fx:.*0 failed/m);
   assert.deepEqual(
-    readdirSync(tmpRoot).filter((n) => n.startsWith('plan-check-')),
+    readdirSync(tmpRoot).filter((n) => n.startsWith('enforcer-accept-')),
     [],
-    'no plan-check-* tree left behind',
+    'no enforcer-accept-* tree left behind',
   );
 });
 await t('--only filters to one node', async () => {
@@ -133,7 +139,7 @@ await t('--only filters to one node', async () => {
   assert.equal(one.code, 1);
 });
 await t('a command past --timeout is SKIPPED, not a MISMATCH, and the exit code stays 0', async () => {
-  acceptance = [`node -e "setTimeout(function(){},5000)" prints \`never\``];
+  acceptance = ['node sleep.mjs prints `never`'];
   const r = await run([...only, '--timeout', '1']);
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /^SKIPPED fx:.*timed out after 1s/m);
