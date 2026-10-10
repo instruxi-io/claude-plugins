@@ -57,6 +57,7 @@ ok('the default rules speak the core vocabulary, and their policy ids have not m
       'secrets.edit',
       'enforcer.api_write',
       'enforcer.credential',
+      'enforcer.graph_decide',
       'deploy.publish',
     ],
   );

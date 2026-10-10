@@ -35,6 +35,7 @@ const PR_URL = /https?:\/\/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/;
 const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 const mode = () => (process.env.GRAPH_EVIDENCE_MODE || 'input').trim().toLowerCase();
 
+export const GATE_NOTE = 'this is a gate: decide it with graph_decide, do not report it';
 const NOTE = (n) => `enforcer-graph: ${n} evidence item(s) captured from your own tool results were attached to this report. Do not hand-write evidence.`;
 const HANDOFF = (js) =>
   "enforcer-graph: this harness cannot rewrite an MCP tool's arguments, so pass the following captured evidence as the `evidence` argument of graph_report VERBATIM - do not edit, summarise, reorder or add to it. It was captured from your own tool results while the run was open.\n\n" +
@@ -295,6 +296,15 @@ export async function decide(inp, deps = {}) {
     return usage && mode() !== 'context' ? { hookEventName: 'PreToolUse', updatedInput: withUsage(inp.tool_input, usage, false) } : null;
   }
   if (isReport) usage = transcriptUsage(actorTranscript(inp), run.claimed_at);
+  // A gate is decided by a person through graph_decide, not judged: run no acceptance line, attach one note, pass the report through.
+  if (isReport && run.type === 'gate') {
+    const a = usage ? withUsage(inp.tool_input, usage) : inp.tool_input;
+    return {
+      hookEventName: 'PreToolUse',
+      updatedInput: { ...(isObj(a) ? a : {}), evidence: [{ kind: 'note', text: GATE_NOTE }] },
+      additionalContext: 'enforcer-graph: ' + GATE_NOTE,
+    };
+  }
   const acc = isReport && (inp.tool_input || {}).status === 'succeeded' ? acceptanceRecords(inp, run, deps) : [];
   if (!records.length && !acc.length)
     return usage && mode() !== 'context' ? { hookEventName: 'PreToolUse', updatedInput: withUsage(inp.tool_input, usage) } : null;

@@ -23,6 +23,7 @@ const TOOLS = {
   graph_remember: ['graph', 'node_id', 'body', 'source', 'data', 'evidence'],
   graph_plan_status: null,
   graph_review: null,
+  graph_decide: null,
   graph_reset: null,
   graph_query: null,
   graph_access: null,

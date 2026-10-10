@@ -188,6 +188,10 @@ It will ask three things of you: resolve the gates (smoke tests and releases are
 (the plugin's server), `mcp__enforcer__` and `mcp__enforcer-graph__` (a
 standalone server added with `claude mcp add`). Keep the one your session shows.
 
+## Gates
+
+A `type: gate` node is decided by a person through `graph_decide` (or the portal), never claimed with `graph_next_work`. If you find yourself holding a gate, report it `cancelled` with a note and tell the person. The report hook attaches the note `this is a gate: decide it with graph_decide, do not report it` and runs no acceptance line for a gate.
+
 ## Hooks
 
 Every hook is the one command `node ${CLAUDE_PLUGIN_ROOT}/bin/enforcer event <name>`
