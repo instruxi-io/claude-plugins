@@ -95,6 +95,7 @@ export const ENV_ALLOW = [
   'GRAPH_ID',
   'ENFORCER_PROFILE',
   'ENFORCER_GOVERNOR_RULES',
+  'ENFORCER_CONTEXT_PACK',
   'ENFORCER_HARNESS',
   'JEV_HOOKS_HEADLESS',
   'CLAUDE_PLUGIN_ROOT',
@@ -124,7 +125,11 @@ const allowed = (k) => ENV_ALLOW.includes(k) || ENV_ALLOW_PREFIX.some((p) => k.s
 
 /** The worker environment: the allowlist, the run's worker-scoped token (as GRAPH_API_KEY) and, if the operator
  *  provides one, a repo-scoped GH_TOKEN (ENFORCER_WORKER_GH_TOKEN). Nothing else. */
-export function workerEnv(graphId, env = process.env, { token = null, release = false, runId = null, workerRules = DEFAULT_WORKER_RULES } = {}) {
+export function workerEnv(
+  graphId,
+  env = process.env,
+  { token = null, release = false, runId = null, workerRules = DEFAULT_WORKER_RULES, context = 'on' } = {},
+) {
   const root = pluginDirs()[0];
   const out = {};
   for (const [k, v] of Object.entries(env)) if (allowed(k) && v !== undefined) out[k] = v;
@@ -136,6 +141,7 @@ export function workerEnv(graphId, env = process.env, { token = null, release = 
     ENFORCER_PLUGIN_ROOT: root,
   });
   out.ENFORCER_GOVERNOR_RULES = workerRules === 'on' ? 'on' : 'off'; // always set from the flag: an inherited value never decides
+  out.ENFORCER_CONTEXT_PACK = context === 'off' ? '0' : '1'; // always set from the flag
   if (release) out.ENFORCER_RELEASE_NODE = '1';
   if (runId) {
     out.GRAPH_RUN_ID = String(runId);

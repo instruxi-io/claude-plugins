@@ -10,7 +10,7 @@ import { resolveConfig } from './config.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 export const DEFAULTS = { workers: 3, model: 'sonnet', salvage: 'on', triage: 'on', warm: 'off' };
-export const HELP = `usage: enforcer dispatch <graph> [--workers N] [--model M] [--repo-root dir] [--worker-rules on|off]   preflight, then start the dispatcher in the background
+export const HELP = `usage: enforcer dispatch <graph> [--workers N] [--model M] [--repo-root dir] [--worker-rules on|off] [--context on|off]   preflight, then start the dispatcher in the background
        enforcer dispatch status [<graph>]                                              what it is doing and what it needs from you
        enforcer dispatch prune [--yes] [--repo-root dir]                               list (or with --yes remove) worktrees whose PR merged and no live worker holds
        enforcer dispatch stop <graph>                                                  finish running workers, start no new ones, then exit
@@ -45,7 +45,7 @@ const tailLine = (p) => {
 };
 
 export async function start(argv, env = process.env) {
-  const graph = argv.find((a, i) => !a.startsWith('-') && !['--workers', '--model', '--repo-root', '--worker-rules'].includes(argv[i - 1]));
+  const graph = argv.find((a, i) => !a.startsWith('-') && !['--workers', '--model', '--repo-root', '--worker-rules', '--context'].includes(argv[i - 1]));
   const flag = (n) => {
     const i = argv.indexOf(n);
     return i >= 0 ? argv[i + 1] : undefined;
@@ -54,6 +54,11 @@ export async function start(argv, env = process.env) {
   const workerRules = flag('--worker-rules');
   if (workerRules !== undefined && !['on', 'off'].includes(workerRules)) {
     process.stderr.write('enforcer dispatch: --worker-rules must be on or off\n');
+    return 2;
+  }
+  const context = flag('--context');
+  if (context !== undefined && !['on', 'off'].includes(context)) {
+    process.stderr.write('enforcer dispatch: --context must be on or off\n');
     return 2;
   }
   if (process.platform === 'win32') {
@@ -86,8 +91,8 @@ export async function start(argv, env = process.env) {
   const extra = argv.filter(
     (a, i) =>
       a !== graph &&
-      !['--workers', '--model', '--repo-root', '--worker-rules'].includes(a) &&
-      !['--workers', '--model', '--repo-root', '--worker-rules'].includes(argv[i - 1]),
+      !['--workers', '--model', '--repo-root', '--worker-rules', '--context'].includes(a) &&
+      !['--workers', '--model', '--repo-root', '--worker-rules', '--context'].includes(argv[i - 1]),
   );
   const args = [
     join(HERE, '../bin/enforcer'),
@@ -102,6 +107,7 @@ export async function start(argv, env = process.env) {
     '--state-dir',
     dir,
     ...(workerRules ? ['--worker-rules', workerRules] : []),
+    ...(context ? ['--context', context] : []),
     ...(repoRoot ? ['--repo-root', repoRoot] : []),
     ...extra,
   ];
