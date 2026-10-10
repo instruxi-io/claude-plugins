@@ -24,6 +24,7 @@ export async function trackRun(inp) {
           run_id: run.run_id,
           key: node.key,
           title: node.title,
+          type: typeof node.type === 'string' ? node.type : undefined,
           lease_expires_at: run.lease_expires_at,
           acceptance_evidence: (Array.isArray(hints) ? hints : []).filter(isObj),
           acceptance: (Array.isArray(out.acceptance) ? out.acceptance : []).filter((l) => typeof l === 'string'),

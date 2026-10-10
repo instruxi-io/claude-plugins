@@ -186,6 +186,17 @@ export const DEFAULT_RULES = [
     action: 'ask',
     match: '^mcp__[\\w-]*__agent_credential_(?:issue|rotate|revoke)\\w*:',
   },
+  // graph_decide decides a node (a gate, or a validation run): a write with the capability of graph_review's approve.
+  // A person decides it; a headless worker never does.
+  {
+    id: 'enforcer.graph_decide',
+    authz: 'write',
+    headless: 'deny',
+    name: 'decide a graph node',
+    tool: '',
+    action: 'ask',
+    match: '^mcp__[\\w-]*__graph_decide:',
+  },
   {
     id: 'deploy.publish',
     authz: 'write',
