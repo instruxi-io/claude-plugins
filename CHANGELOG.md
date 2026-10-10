@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 1.3.4
+
+This release makes a gate a human decision: a person decides it with graph_decide, and a worker never claims or reports one.
+
+- A gate is decided by a person with graph_decide, never claimed or reported by a worker: the governor classifies graph_decide as a write, and the report hook runs no acceptance line for a gate node.
+
 ## 1.3.3
 
 This release makes the hooks cost far less per tool call: the pre-tool-use hook loads only what it needs, so the governor adds a few milliseconds instead of tens with decisioning off.
