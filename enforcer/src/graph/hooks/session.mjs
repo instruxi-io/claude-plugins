@@ -7,6 +7,7 @@ import { actorKey, stateBase, tightenState, privateDir, privateWrite } from '../
 import { loadRun } from '../run.mjs';
 import { sweepSessions, prFooter } from '../evidence.mjs';
 import { http } from '../http.mjs';
+import { contextPackText } from '../context-pack.mjs';
 import { readCredentials, signInProblem, isFederated } from '../../credentials.mjs';
 import { envBaseUrl } from '../../config.mjs';
 import { configDir } from '../../../hooks/claude/paths.mjs';
@@ -113,6 +114,18 @@ export async function sessionStart(inp, opts = {}) {
       said = unseen(await notices(opts.health));
     } catch {}
     const lines = await statusLines(inp, opts.post);
+    try {
+      const cfg = findConfig(inp.cwd || process.env.CLAUDE_PROJECT_DIR);
+      const pack = cfg
+        ? await contextPackText(cfg, {
+            post: opts.post || http,
+            fetchFile: opts.fetchFile,
+            ...(opts.env ? { env: opts.env } : {}),
+            ...(opts.warn ? { warn: opts.warn } : {}),
+          })
+        : null;
+      if (pack) lines.unshift(pack);
+    } catch {}
     let w = null;
     try {
       w = workspaceLine(readCredentials());
@@ -151,6 +164,28 @@ export function lastAssistantText(path, limit = 1500) {
   return last.slice(0, limit);
 }
 
+/** The files the transcript's tool calls touched (file_path, path, notebook_path inputs), in first-seen order. */
+export function touchedFiles(path, limit = 200) {
+  const seen = new Set();
+  try {
+    for (const line of readFileSync(path, 'utf8').split('\n')) {
+      let rec;
+      try {
+        rec = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      const c = isObj(rec) && isObj(rec.message) ? rec.message.content : null;
+      if (!Array.isArray(c)) continue;
+      for (const b of c) {
+        if (!isObj(b) || b.type !== 'tool_use' || !isObj(b.input)) continue;
+        for (const k of ['file_path', 'path', 'notebook_path']) if (typeof b.input[k] === 'string' && b.input[k]) seen.add(b.input[k]);
+      }
+    }
+  } catch {}
+  return [...seen].slice(0, limit);
+}
+
 export async function rememberOnCompact(inp, post = http) {
   try {
     const sid = inp.session_id;
@@ -160,12 +195,14 @@ export async function rememberOnCompact(inp, post = http) {
     if (!cfg) return null;
     const text = lastAssistantText(inp.transcript_path || '') || 'context was compacted while this run was open; no assistant summary was available';
     const body = `Progress at compaction (${inp.trigger || 'auto'}), run ${run.run_id} in session ${sid}:\n${text}`;
-    // api-used: sends body,source,data
-    await post(cfg, 'POST', `/graphs/${run.graph_id}/nodes/${run.node_id}/observations`, {
-      body,
-      source: `claude-code:compact:${sid}`,
-      data: { session_id: sid, run_id: run.run_id, kind: 'progress' },
-    });
+    const source = `claude-code:compact:${sid}`;
+    const data = { session_id: sid, run_id: run.run_id, node_key: run.key || run.node_id, files: touchedFiles(inp.transcript_path || '') };
+    // api-used: sends body,source,kind,data
+    const wrote = await post(cfg, 'POST', `/graphs/${run.graph_id}/observations`, { body, source, kind: 'summary', scope: 'graph', data });
+    if (!wrote) {
+      // an older service without graph scope: today's node-scoped write
+      await post(cfg, 'POST', `/graphs/${run.graph_id}/nodes/${run.node_id}/observations`, { body, source, data: { ...data, kind: 'progress' } });
+    }
   } catch {}
   return null;
 }

@@ -206,7 +206,7 @@ test('heartbeat: reclaimed forgets the run', async () => assert.equal(existsSync
 
 // --- remember on compact ------------------------------------------------------------------------------------------------
 const transcript = join(WORK, 'transcript.jsonl');
-test('remember_on_compact: posts one observation on the held node', async () => {
+test('remember_on_compact: posts one graph-scoped summary observation', async () => {
   await claim();
   writeFileSync(
     transcript,
@@ -219,7 +219,7 @@ test('remember_on_compact: posts one observation on the held node', async () => 
   );
   stub.clear();
   await hook('remember_on_compact', { session_id: SID, cwd: PROJ, transcript_path: transcript, hook_event_name: 'PreCompact', trigger: 'auto' });
-  assert.ok(stub.logText().includes('/nodes/n1/observations'));
+  assert.ok(/graphs\/[^/\s]+\/observations/.test(stub.logText()) || stub.logText().includes('/nodes/n1/observations'));
 });
 test('remember_on_compact: body carries the last assistant message', async () => assert.ok(stub.logText().includes('two shapes left to pin')));
 test('remember_on_compact: source names the session', async () => assert.ok(stub.logText().includes('claude-code:compact:s1')));

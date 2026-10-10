@@ -118,6 +118,7 @@ export function defaultArgs(o = {}) {
     takeover: false,
     noLease: false,
     workerRules: DEFAULT_WORKER_RULES,
+    context: 'on',
     harness: 'claude',
     experimental: false,
     agentBin: null,
@@ -360,7 +361,7 @@ export class Dispatcher {
     const proc = spawnWorker(cmd, {
       cwd: path,
       logPath,
-      env: workerEnv(this.g, process.env, { token, release: n.type === 'release', workerRules: this.args.workerRules }),
+      env: workerEnv(this.g, process.env, { token, release: n.type === 'release', workerRules: this.args.workerRules, context: this.args.context }),
       cleanup: mcpConfig ? [mcpConfig] : [],
       secrets: [a.agentKey, token].filter(Boolean),
     });
@@ -408,7 +409,7 @@ export class Dispatcher {
     }
     const logPath = join(this.logs, `${n.key}.${this.attempts.get(n.key)}.log`);
     // the lander gets the worker allowlist like every other worker (gh reads its sign-in from HOME), never the full environment
-    const env = workerEnv(this.g, process.env, { runId: card.run_id, workerRules: a.workerRules });
+    const env = workerEnv(this.g, process.env, { runId: card.run_id, workerRules: a.workerRules, context: a.context });
     for (const k of GH_CONFIG_ENV) if (process.env[k]) env[k] = process.env[k];
     const proc = spawnWorker(cmd, { cwd, logPath, env });
     this.workers.set(n.key, {
@@ -894,6 +895,7 @@ const OPTS = {
   takeover: { type: 'boolean' },
   'no-lease': { type: 'boolean' },
   'worker-rules': { type: 'string' },
+  context: { type: 'string' },
   agent: { type: 'string' },
   'allow-browser-signin': { type: 'boolean' },
   harness: { type: 'string' },
@@ -924,6 +926,8 @@ export function parseDispatchArgs(argv, env = process.env) {
   if (why) throw new Error(why);
   const workerRules = v['worker-rules'] ?? DEFAULT_WORKER_RULES;
   if (!WORKER_RULES_MODES.includes(workerRules)) throw new Error('--worker-rules must be on or off');
+  const context = v.context ?? 'on';
+  if (!['on', 'off'].includes(context)) throw new Error('--context must be on or off');
   const workers = num(v.workers, 3);
   if (!(workers >= 1)) throw new Error('--workers must be >= 1');
   const cfg = env.ENFORCER_CONFIG_HOME || join(homedir(), '.config', 'enforcer');
@@ -955,6 +959,7 @@ export function parseDispatchArgs(argv, env = process.env) {
     pluginDir: v['plugin-dir'] || [],
     mergeAllow: mergeAllowList(v['merge-allow'], v['merge-allow-file']),
     workerRules,
+    context,
     takeover: !!v.takeover,
     noLease: !!v['no-lease'],
     harness,

@@ -145,6 +145,12 @@ export async function planCheck({
       for (const w of warns.filter((w) => w.index === i)) emit(`WARN ${n.key}: [${w.code}] ${w.hint ?? ''}`.trimEnd());
     }
   }
+  try {
+    const ctx = await request(`${base}/graphs/${encodeURIComponent(graph)}/context`, { headers: h }, { retries: 0 });
+    const d = ctx?.data ?? ctx;
+    if (!d?.pack?.sha256)
+      emit(`WARN graph ${graph}: no context pack; workers start without the graph's shared context (build it, or ignore for a one-off plan)`);
+  } catch {}
   emit(`plan check: ${ok} runnable, ${skipped} will not be run, ${bad} mismatch`);
   return { code: bad || (strict && skipped) ? 1 : 0, lines, ok, skipped, mismatch: bad };
 }

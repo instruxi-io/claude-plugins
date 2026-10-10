@@ -349,3 +349,11 @@ exited with "nothing runnable" (2026-10-05).
 ## Windows
 
 Windows support: MCP, files and the governor are supported. The graph hooks are supported after the Node port. The dispatcher is POSIX only (use WSL): no bash, `chmod` is a no-op so credential protection is advisory, and no process groups. `enforcer doctor` prints this on win32.
+
+## Context pack and memory
+
+A graph can carry one context pack: an immutable file in enforcer-files whose sha256 sits on the graph row. At SessionStart the plugin reads `GET /graphs/{id}/context`; when `pack.sha256` is set it fetches the file once per hash into the state dir (`context/<sha256>.md`, 0600, 3 s timeout) and injects one fixed line, `enforcer-graph context pack <sha256[:12]>`, followed by the file bytes unchanged, so every worker on the graph injects byte-identical text. With no pack, or on a fetch failure (one stderr notice), nothing is injected.
+
+Before a compaction, the PreCompact hook writes the last assistant summary as a graph-scoped observation of kind `summary` with `data.node_key`, `data.run_id` and `data.files` (the files the transcript touched). A service without graph scope gets the node-scoped write instead.
+
+`enforcer dispatch run --context on|off` (default on) sets `ENFORCER_CONTEXT_PACK=1|0` for workers; `off` suppresses the injection. `enforcer plan check` prints a WARN when the graph has no pack.

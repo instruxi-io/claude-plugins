@@ -2,6 +2,11 @@
   "_readme": "Understood drift between what the plugin does and what the spec says. Each entry is a call (id from used.json), the kind (path, method, sent, read, header), the field, and why it stands. The contract test fails when an entry stops being true, so fix the code or the spec and delete the entry.",
   "drift": [
     {
+      "id": "src/graph/hooks/session.mjs POST /graphs/{}/observations",
+      "kind": "path",
+      "reason": "Graph-scoped observations (kind summary, PreCompact) are the DAG-memory write; the pinned graph spec predates them. The hook falls back to the node-scoped write when the service answers an error. Delete this entry when the spec is re-pinned."
+    },
+    {
       "id": "lib/governor/core/ship.mjs POST /otlp/v1/logs",
       "kind": "path",
       "reason": "OTLP/HTTP log ingest is the standard OpenTelemetry endpoint, not an operation the governance swagger describes. Nothing to check it against until the service publishes it."

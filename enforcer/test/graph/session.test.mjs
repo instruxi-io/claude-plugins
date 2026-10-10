@@ -102,7 +102,7 @@ test('open-run guard: marker passes, second stop passes, subagent blocks, no run
   assert.equal((await openRunGuard({ session_id: sid, agent_id: 'ag-1', last_assistant_message: 'done' })).decision, 'block');
 });
 
-test('remember on compact posts one observation on the held node', async () => {
+test('remember on compact posts one graph-scoped summary observation', async () => {
   const { root, proj, sid } = fresh();
   hold(sid);
   const tp = join(root, 't.jsonl');
@@ -110,7 +110,8 @@ test('remember on compact posts one observation on the held node', async () => {
   const calls = [];
   await rememberOnCompact({ session_id: sid, cwd: proj, transcript_path: tp, trigger: 'auto' }, stub(calls));
   assert.equal(calls.length, 1);
-  assert.equal(calls[0][1], '/graphs/g/nodes/n/observations');
+  assert.equal(calls[0][1], '/graphs/g/observations');
+  assert.equal(calls[0][2].kind, 'summary');
   assert.match(calls[0][2].body, /two shapes left to pin/);
   assert.equal(calls[0][2].source, `claude-code:compact:${sid}`);
   const none = [];

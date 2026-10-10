@@ -195,16 +195,27 @@
       "headers": []
     },
     {
+      "id": "src/graph/hooks/session.mjs POST /graphs/{}/observations",
+      "file": "src/graph/hooks/session.mjs",
+      "service": "graph",
+      "method": "POST",
+      "path": "/graphs/{}/observations",
+      "sends": [
+        "body",
+        "source",
+        "kind",
+        "data"
+      ],
+      "reads": [],
+      "headers": []
+    },
+    {
       "id": "src/graph/hooks/session.mjs POST /graphs/{}/nodes/{}/observations",
       "file": "src/graph/hooks/session.mjs",
       "service": "graph",
       "method": "POST",
       "path": "/graphs/{}/nodes/{}/observations",
-      "sends": [
-        "body",
-        "source",
-        "data"
-      ],
+      "sends": [],
       "reads": [],
       "headers": []
     },
